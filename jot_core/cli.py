@@ -3,9 +3,10 @@ from __future__ import annotations
 import argparse
 import sys
 
+from . import __version__
 from .app import build_app_context
 from .config import ensure_app_dirs
-from .doctor import run_doctor
+from .doctor import run_doctor, run_doctor_config_error
 from .editor import open_in_editor
 from .events import collect_event_text, format_event_text, validate_event_type
 from .frontmatter import read_document
@@ -60,6 +61,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="emit machine-readable JSON instead of text",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}",
     )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -200,8 +206,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    ctx = build_app_context()
-    ensure_app_dirs(ctx.config)
+    try:
+        ctx = build_app_context()
+        ensure_app_dirs(ctx.config)
+    except Exception as exc:
+        if args.command == "doctor":
+            emit_result(run_doctor_config_error(f"failed to load config: {exc}"), json_mode=args.json)
+            return 0
+        warn(str(exc))
+        return 1
 
     try:
         if args.command == "doctor":

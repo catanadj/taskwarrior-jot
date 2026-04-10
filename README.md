@@ -71,6 +71,12 @@ jot search <query>
 
 All commands support `--json`.
 
+The CLI also supports:
+
+```bash
+jot --version
+```
+
 Supported task references:
 
 - numeric task ID

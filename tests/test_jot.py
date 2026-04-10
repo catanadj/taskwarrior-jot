@@ -92,6 +92,28 @@ class JotCliTestCase(unittest.TestCase):
             check=False,
         )
 
+    def run_jot_with_env(
+        self,
+        *args: str,
+        input_text: str | None = None,
+        extra_env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy()
+        env["HOME"] = str(self.home)
+        env["PATH"] = f"{self.bin_dir}:{env['PATH']}"
+        env["EDITOR"] = "true"
+        if extra_env:
+            env.update(extra_env)
+        return subprocess.run(
+            [sys.executable, str(JOT_SCRIPT), *args],
+            cwd=PROJECT_ROOT,
+            env=env,
+            input=input_text,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
 
 class FrontMatterTests(unittest.TestCase):
     def test_round_trip_preserves_lists_and_nulls(self) -> None:
@@ -121,6 +143,40 @@ class FrontMatterTests(unittest.TestCase):
 
 
 class CliIntegrationTests(JotCliTestCase):
+    def test_version_flag(self) -> None:
+        result = self.run_jot("--version")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "jot 0.1.0")
+
+    def test_doctor_reports_hardened_checks(self) -> None:
+        result = self.run_jot("--json", "doctor")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        checks = {item["name"]: item for item in payload["checks"]}
+        for name in (
+            "config",
+            "storage",
+            "root_dir",
+            "tasks_dir",
+            "chains_dir",
+            "projects_dir",
+            "templates_dir",
+            "editor",
+            "ops",
+            "index",
+            "taskwarrior",
+        ):
+            self.assertIn(name, checks)
+
+    def test_doctor_reports_invalid_config_without_crashing(self) -> None:
+        bad_config = self.root / "broken.toml"
+        bad_config.write_text("[paths\nroot = '/tmp'\n", encoding="utf-8")
+        result = self.run_jot_with_env("--json", "doctor", extra_env={"JOT_CONFIG": str(bad_config)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        checks = {item["name"]: item for item in payload["checks"]}
+        self.assertFalse(checks["config"]["ok"])
+        self.assertIn("failed to load config", checks["config"]["detail"])
     def test_paths_reports_resolved_storage_locations(self) -> None:
         result = self.run_jot("--json", "paths")
         self.assertEqual(result.returncode, 0, result.stderr)

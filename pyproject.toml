@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jot-taskwarrior"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Note-first companion for Taskwarrior and Taskwarrior-Nautical"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -19,3 +19,6 @@ jot = "jot_core.cli:main"
 
 [tool.setuptools]
 packages = ["jot_core"]
+
+[tool.setuptools.dynamic]
+version = {attr = "jot_core.__version__"}
