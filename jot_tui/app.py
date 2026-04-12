@@ -90,7 +90,9 @@ def run_tui(service: JotService) -> int:
             ("r", "refresh", "Refresh"),
             ("slash", "focus_search", "Search"),
             ("e", "edit_selected_task_note", "Edit note"),
-            ("a", "add_to_selected_task", "Add-to"),
+            ("a", "add_to_selected_task", "Add-to task"),
+            ("c", "add_to_selected_chain", "Add-to chain"),
+            ("p", "add_to_project_context", "Add-to project"),
         ]
 
         def __init__(self, svc: JotService) -> None:
@@ -98,6 +100,9 @@ def run_tui(service: JotService) -> int:
             self.svc = svc
             self.recent_rows: list[dict[str, Any]] = []
             self.current_task_ref: str | None = None
+            self.current_task_chain_path: str = ""
+            self.current_task_project: str = ""
+            self.current_project_name: str | None = None
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=True)
@@ -155,22 +160,71 @@ def run_tui(service: JotService) -> int:
             if not self.current_task_ref:
                 self.notify("Select a task row in Recent first", severity="warning")
                 return
-            self.push_screen(AddToHeadingModal(), self._on_add_to_payload)
+            self.push_screen(
+                AddToHeadingModal(),
+                lambda payload: self._on_add_to_payload("task", payload),
+            )
 
-        def _on_add_to_payload(self, payload: dict[str, Any] | None) -> None:
-            if not payload:
-                return
+        def action_add_to_selected_chain(self) -> None:
             if not self.current_task_ref:
                 self.notify("Select a task row in Recent first", severity="warning")
                 return
+            if not self.current_task_chain_path:
+                self.notify("Selected task has no chain note context", severity="warning")
+                return
+            self.push_screen(
+                AddToHeadingModal(),
+                lambda payload: self._on_add_to_payload("chain", payload),
+            )
+
+        def action_add_to_project_context(self) -> None:
+            project = self.current_project_name or self.current_task_project
+            if not project:
+                self.notify("Select a project row or a task with a project", severity="warning")
+                return
+            self.push_screen(
+                AddToHeadingModal(),
+                lambda payload: self._on_add_to_payload("project", payload),
+            )
+
+        def _on_add_to_payload(self, kind: str, payload: dict[str, Any] | None) -> None:
+            if not payload:
+                return
             try:
-                result = self.svc.add_to_task_heading(
-                    self.current_task_ref,
-                    heading=str(payload.get("heading") or ""),
-                    text=str(payload.get("entry") or ""),
-                    create_heading=bool(payload.get("create_heading")),
-                    exact=False,
-                )
+                if kind == "task":
+                    if not self.current_task_ref:
+                        self.notify("Select a task row in Recent first", severity="warning")
+                        return
+                    result = self.svc.add_to_task_heading(
+                        self.current_task_ref,
+                        heading=str(payload.get("heading") or ""),
+                        text=str(payload.get("entry") or ""),
+                        create_heading=bool(payload.get("create_heading")),
+                        exact=False,
+                    )
+                elif kind == "chain":
+                    if not self.current_task_ref:
+                        self.notify("Select a task row in Recent first", severity="warning")
+                        return
+                    result = self.svc.add_to_chain_heading(
+                        self.current_task_ref,
+                        heading=str(payload.get("heading") or ""),
+                        text=str(payload.get("entry") or ""),
+                        create_heading=bool(payload.get("create_heading")),
+                        exact=False,
+                    )
+                else:
+                    project = self.current_project_name or self.current_task_project
+                    if not project:
+                        self.notify("Select a project row or a task with a project", severity="warning")
+                        return
+                    result = self.svc.add_to_project_heading(
+                        project,
+                        heading=str(payload.get("heading") or ""),
+                        text=str(payload.get("entry") or ""),
+                        create_heading=bool(payload.get("create_heading")),
+                        exact=False,
+                    )
             except Exception as exc:
                 self.notify(f"Add-to failed: {exc}", severity="error")
                 return
@@ -179,7 +233,9 @@ def run_tui(service: JotService) -> int:
                 severity="information",
             )
             self._refresh_recent()
-            self._load_task(self.current_task_ref)
+            self._refresh_projects()
+            if self.current_task_ref:
+                self._load_task(self.current_task_ref)
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
             if event.input.id != "search-input":
@@ -190,17 +246,26 @@ def run_tui(service: JotService) -> int:
             self._run_search(query)
 
         def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-            if event.data_table.id != "recent-table":
+            if event.data_table.id == "recent-table":
+                row_index = event.cursor_row
+                if row_index < 0 or row_index >= len(self.recent_rows):
+                    return
+                item = self.recent_rows[row_index]
+                short_uuid = str(item.get("task_short_uuid") or "").strip()
+                if not short_uuid:
+                    return
+                self.current_task_ref = short_uuid
+                self.current_project_name = None
+                self._load_task(short_uuid)
                 return
-            row_index = event.cursor_row
-            if row_index < 0 or row_index >= len(self.recent_rows):
-                return
-            item = self.recent_rows[row_index]
-            short_uuid = str(item.get("task_short_uuid") or "").strip()
-            if not short_uuid:
-                return
-            self.current_task_ref = short_uuid
-            self._load_task(short_uuid)
+            if event.data_table.id == "projects-table":
+                row_index = event.cursor_row
+                projects = self.svc.projects()
+                if row_index < 0 or row_index >= len(projects):
+                    return
+                self.current_project_name = str(projects[row_index].get("project") or "").strip() or None
+                if self.current_project_name:
+                    self.notify(f"Project selected: {self.current_project_name}")
 
         def _refresh_recent(self) -> None:
             table = self.query_one("#recent-table", DataTable)
@@ -265,6 +330,8 @@ def run_tui(service: JotService) -> int:
             if tags:
                 lines.append(f"Tags: {', '.join(tags)}")
             notes = data.get("notes", {})
+            self.current_task_chain_path = str(notes.get("chain") or "").strip()
+            self.current_task_project = str(task.get("project") or "").strip()
             lines.append("")
             lines.append("Notes:")
             lines.append(f"  task: {notes.get('task')}")

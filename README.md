@@ -89,6 +89,8 @@ TUI keybinds:
 - `/` focus search input
 - `e` open editor for selected task note (select a task row in Recent first)
 - `a` add a timestamped entry under a heading for selected task
+- `c` add a timestamped entry under a heading for selected chain note (from selected task)
+- `p` add a timestamped entry under a heading for selected project (project row or selected task project)
 
 The CLI also supports:
 

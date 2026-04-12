@@ -18,6 +18,7 @@ from .notes import (
 from .report import list_project_notes, recent_activity
 from .search import search_all
 from .storage import add_to_task_heading_storage, finalize_task_note_edit
+from .storage import add_to_chain_heading_storage, add_to_project_heading_storage
 from .taskwarrior import TaskwarriorClient
 
 
@@ -90,3 +91,45 @@ class JotService:
             "task_short_uuid": task.task_short_uuid,
             **result,
         }
+
+    def add_to_chain_heading(
+        self,
+        task_ref: str,
+        *,
+        heading: str,
+        text: str,
+        create_heading: bool = False,
+        exact: bool = False,
+    ) -> dict[str, Any]:
+        task = self.taskwarrior.resolve_task(task_ref)
+        result = add_to_chain_heading_storage(
+            self.config,
+            task,
+            heading=heading,
+            text=text,
+            create_heading=create_heading,
+            exact=exact,
+        )
+        return {
+            "task_short_uuid": task.task_short_uuid,
+            **result,
+        }
+
+    def add_to_project_heading(
+        self,
+        project_name: str,
+        *,
+        heading: str,
+        text: str,
+        create_heading: bool = False,
+        exact: bool = False,
+    ) -> dict[str, Any]:
+        result = add_to_project_heading_storage(
+            self.config,
+            project_name,
+            heading=heading,
+            text=text,
+            create_heading=create_heading,
+            exact=exact,
+        )
+        return result
