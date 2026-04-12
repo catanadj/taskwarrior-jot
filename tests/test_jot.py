@@ -181,6 +181,7 @@ class CliIntegrationTests(JotCliTestCase):
         result = self.run_jot("--json", "paths")
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
+        self.assertTrue(payload["config_path"].endswith(".task/jot/config-jot.toml"))
         self.assertTrue(payload["root_dir"].endswith(".task/jot"))
         self.assertTrue(payload["projects_dir"].endswith(".task/jot/projects"))
         self.assertTrue(payload["index_path"].endswith(".task/jot/index.json"))

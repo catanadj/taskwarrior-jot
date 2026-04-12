@@ -12,6 +12,7 @@ from .models import AppConfig
 
 
 DEFAULT_ROOT = Path("~/.task/jot").expanduser()
+DEFAULT_CONFIG_NAME = "config-jot.toml"
 
 
 def _expand_path(raw: str | None, fallback: Path) -> Path:
@@ -30,7 +31,7 @@ def _read_config_file(path: Path) -> dict:
 
 
 def load_config() -> AppConfig:
-    config_path = _expand_path(os.environ.get("JOT_CONFIG"), DEFAULT_ROOT / "config.toml")
+    config_path = _expand_path(os.environ.get("JOT_CONFIG"), DEFAULT_ROOT / DEFAULT_CONFIG_NAME)
     data = _read_config_file(config_path)
 
     paths_cfg = data.get("paths") if isinstance(data.get("paths"), dict) else {}

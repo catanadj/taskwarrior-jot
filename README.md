@@ -95,7 +95,7 @@ User data lives in `~/.task/jot/`:
 - `projects/<project path>/index.md`
 - `index.json`
 - `ops.jsonl`
-- `config.toml`
+- `config-jot.toml`
 
 Rules:
 

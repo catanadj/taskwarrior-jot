@@ -5,6 +5,8 @@ set -euo pipefail
 PREFIX="${PREFIX:-$HOME/.local}"
 BIN_DIR="$PREFIX/bin"
 LIB_DIR="$PREFIX/lib/jot"
+CONFIG_DIR="${JOT_HOME:-$HOME/.task/jot}"
+CONFIG_PATH="$CONFIG_DIR/config-jot.toml"
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -17,6 +19,10 @@ Installs jot without pip by copying the launcher and jot_core package into:
 
 and creating:
   <prefix>/bin/jot -> <prefix>/lib/jot/jot
+
+Also installs a default config at:
+  ~/.task/jot/config-jot.toml
+if that file does not already exist.
 
 Default prefix:
   ~/.local
@@ -49,13 +55,25 @@ done
 
 mkdir -p "$BIN_DIR"
 mkdir -p "$LIB_DIR"
+mkdir -p "$CONFIG_DIR"
 rm -rf "$LIB_DIR/jot_core"
 
 install -m 755 "$SCRIPT_DIR/jot" "$LIB_DIR/jot"
-cp -R "$SCRIPT_DIR/jot_core" "$LIB_DIR/jot_core"
-find "$LIB_DIR/jot_core" -type d -name '__pycache__' -prune -exec rm -rf {} +
-find "$LIB_DIR/jot_core" -type f -name '*.pyc' -delete
+mkdir -p "$LIB_DIR/jot_core"
+tar -C "$SCRIPT_DIR" \
+  --exclude='jot_core/__pycache__' \
+  --exclude='jot_core/*.pyc' \
+  --exclude='jot_core/**/*.pyc' \
+  -cf - jot_core | tar -C "$LIB_DIR" -xf -
+install -m 644 "$SCRIPT_DIR/config-jot.toml" "$LIB_DIR/config-jot.toml"
 ln -sfn "$LIB_DIR/jot" "$BIN_DIR/jot"
+
+if [[ ! -e "$CONFIG_PATH" ]]; then
+  install -m 644 "$SCRIPT_DIR/config-jot.toml" "$CONFIG_PATH"
+  CONFIG_NOTE="Installed default config: $CONFIG_PATH"
+else
+  CONFIG_NOTE="Kept existing config: $CONFIG_PATH"
+fi
 
 cat <<EOF
 Installed jot to:
@@ -63,6 +81,8 @@ Installed jot to:
 
 Command link:
   $BIN_DIR/jot
+
+$CONFIG_NOTE
 
 If '$BIN_DIR' is not on your PATH, add this to your shell profile:
   export PATH="$BIN_DIR:\$PATH"
