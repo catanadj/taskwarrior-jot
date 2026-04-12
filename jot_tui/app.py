@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from jot_core.services import JotService
@@ -82,6 +83,7 @@ def run_tui(service: JotService) -> int:
         #right { width: 3fr; border: round $panel; }
         #search-input { margin: 0 1; }
         #task-detail { padding: 1; }
+        #context-hints { padding: 0 1; color: $text-muted; }
         #recent-table, #projects-table, #search-notes-table, #search-events-table { height: 1fr; }
         """
 
@@ -128,15 +130,18 @@ def run_tui(service: JotService) -> int:
                     events.add_columns("task", "annotation", "ts")
                     yield Static("Search Events", classes="title")
                     yield events
+            yield Static("Actions: / search | r refresh | q quit", id="context-hints")
             yield Footer()
 
-        def on_mount(self) -> None:
-            self._refresh_recent()
-            self._refresh_projects()
+        async def on_mount(self) -> None:
+            await self._refresh_recent_async()
+            await self._refresh_projects_async()
+            self._update_action_hints()
 
-        def action_refresh(self) -> None:
-            self._refresh_recent()
-            self._refresh_projects()
+        async def action_refresh(self) -> None:
+            await self._refresh_recent_async()
+            await self._refresh_projects_async()
+            self._update_action_hints()
 
         def action_focus_search(self) -> None:
             self.query_one("#search-input", Input).focus()
@@ -154,7 +159,7 @@ def run_tui(service: JotService) -> int:
                 self.notify(f"Editor failed: {exc}", severity="error")
                 return
             self.notify(f"Opened: {path}")
-            self._load_task(self.current_task_ref)
+            asyncio.create_task(self._load_task_async(self.current_task_ref))
 
         def action_add_to_selected_task(self) -> None:
             if not self.current_task_ref:
@@ -190,52 +195,7 @@ def run_tui(service: JotService) -> int:
         def _on_add_to_payload(self, kind: str, payload: dict[str, Any] | None) -> None:
             if not payload:
                 return
-            try:
-                if kind == "task":
-                    if not self.current_task_ref:
-                        self.notify("Select a task row in Recent first", severity="warning")
-                        return
-                    result = self.svc.add_to_task_heading(
-                        self.current_task_ref,
-                        heading=str(payload.get("heading") or ""),
-                        text=str(payload.get("entry") or ""),
-                        create_heading=bool(payload.get("create_heading")),
-                        exact=False,
-                    )
-                elif kind == "chain":
-                    if not self.current_task_ref:
-                        self.notify("Select a task row in Recent first", severity="warning")
-                        return
-                    result = self.svc.add_to_chain_heading(
-                        self.current_task_ref,
-                        heading=str(payload.get("heading") or ""),
-                        text=str(payload.get("entry") or ""),
-                        create_heading=bool(payload.get("create_heading")),
-                        exact=False,
-                    )
-                else:
-                    project = self.current_project_name or self.current_task_project
-                    if not project:
-                        self.notify("Select a project row or a task with a project", severity="warning")
-                        return
-                    result = self.svc.add_to_project_heading(
-                        project,
-                        heading=str(payload.get("heading") or ""),
-                        text=str(payload.get("entry") or ""),
-                        create_heading=bool(payload.get("create_heading")),
-                        exact=False,
-                    )
-            except Exception as exc:
-                self.notify(f"Add-to failed: {exc}", severity="error")
-                return
-            self.notify(
-                f"Added under {result.get('heading')} ({result.get('heading_match')})",
-                severity="information",
-            )
-            self._refresh_recent()
-            self._refresh_projects()
-            if self.current_task_ref:
-                self._load_task(self.current_task_ref)
+            asyncio.create_task(self._apply_add_to_async(kind, payload))
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
             if event.input.id != "search-input":
@@ -256,7 +216,8 @@ def run_tui(service: JotService) -> int:
                     return
                 self.current_task_ref = short_uuid
                 self.current_project_name = None
-                self._load_task(short_uuid)
+                asyncio.create_task(self._load_task_async(short_uuid))
+                self._update_action_hints()
                 return
             if event.data_table.id == "projects-table":
                 row_index = event.cursor_row
@@ -266,11 +227,12 @@ def run_tui(service: JotService) -> int:
                 self.current_project_name = str(projects[row_index].get("project") or "").strip() or None
                 if self.current_project_name:
                     self.notify(f"Project selected: {self.current_project_name}")
+                self._update_action_hints()
 
-        def _refresh_recent(self) -> None:
+        async def _refresh_recent_async(self) -> None:
             table = self.query_one("#recent-table", DataTable)
             table.clear()
-            self.recent_rows = self.svc.recent(limit=80)
+            self.recent_rows = await asyncio.to_thread(self.svc.recent, 80)
             for item in self.recent_rows:
                 ident = (
                     str(item.get("task_short_uuid") or "").strip()
@@ -289,18 +251,22 @@ def run_tui(service: JotService) -> int:
                     summary,
                 )
 
-        def _refresh_projects(self) -> None:
+        async def _refresh_projects_async(self) -> None:
             table = self.query_one("#projects-table", DataTable)
             table.clear()
-            for item in self.svc.projects():
+            items = await asyncio.to_thread(self.svc.projects)
+            for item in items:
                 table.add_row(str(item.get("project") or ""), str(item.get("updated") or ""))
 
         def _run_search(self, query: str) -> None:
+            asyncio.create_task(self._run_search_async(query))
+
+        async def _run_search_async(self, query: str) -> None:
             notes_table = self.query_one("#search-notes-table", DataTable)
             events_table = self.query_one("#search-events-table", DataTable)
             notes_table.clear()
             events_table.clear()
-            data = self.svc.search(query)
+            data = await asyncio.to_thread(self.svc.search, query)
             for item in data.get("notes", []):
                 notes_table.add_row(
                     str(item.get("kind") or ""),
@@ -314,10 +280,10 @@ def run_tui(service: JotService) -> int:
                     str(item.get("ts") or ""),
                 )
 
-        def _load_task(self, task_ref: str) -> None:
+        async def _load_task_async(self, task_ref: str) -> None:
             detail = self.query_one("#task-detail", Static)
             try:
-                data = self.svc.task_summary(task_ref)
+                data = await asyncio.to_thread(self.svc.task_summary, task_ref)
             except Exception as exc:
                 detail.update(f"Task load failed for {task_ref}\n\n{exc}")
                 return
@@ -348,6 +314,68 @@ def run_tui(service: JotService) -> int:
                 for item in events[:8]:
                     lines.append(f"  {item.get('entry') or ''} {item.get('description') or ''}".strip())
             detail.update("\n".join(lines))
+            self._update_action_hints()
+
+        async def _apply_add_to_async(self, kind: str, payload: dict[str, Any]) -> None:
+            try:
+                if kind == "task":
+                    if not self.current_task_ref:
+                        self.notify("Select a task row in Recent first", severity="warning")
+                        return
+                    result = await asyncio.to_thread(
+                        self.svc.add_to_task_heading,
+                        self.current_task_ref,
+                        heading=str(payload.get("heading") or ""),
+                        text=str(payload.get("entry") or ""),
+                        create_heading=bool(payload.get("create_heading")),
+                        exact=False,
+                    )
+                elif kind == "chain":
+                    if not self.current_task_ref:
+                        self.notify("Select a task row in Recent first", severity="warning")
+                        return
+                    result = await asyncio.to_thread(
+                        self.svc.add_to_chain_heading,
+                        self.current_task_ref,
+                        heading=str(payload.get("heading") or ""),
+                        text=str(payload.get("entry") or ""),
+                        create_heading=bool(payload.get("create_heading")),
+                        exact=False,
+                    )
+                else:
+                    project = self.current_project_name or self.current_task_project
+                    if not project:
+                        self.notify("Select a project row or a task with a project", severity="warning")
+                        return
+                    result = await asyncio.to_thread(
+                        self.svc.add_to_project_heading,
+                        project,
+                        heading=str(payload.get("heading") or ""),
+                        text=str(payload.get("entry") or ""),
+                        create_heading=bool(payload.get("create_heading")),
+                        exact=False,
+                    )
+            except Exception as exc:
+                self.notify(f"Add-to failed: {exc}", severity="error")
+                return
+            self.notify(
+                f"Added under {result.get('heading')} ({result.get('heading_match')})",
+                severity="information",
+            )
+            await self._refresh_recent_async()
+            await self._refresh_projects_async()
+            if self.current_task_ref:
+                await self._load_task_async(self.current_task_ref)
+
+        def _update_action_hints(self) -> None:
+            hints = ["Actions: / search", "r refresh", "q quit"]
+            if self.current_task_ref:
+                hints.extend(["e edit-task", "a add-task"])
+            if self.current_task_ref and self.current_task_chain_path:
+                hints.append("c add-chain")
+            if self.current_project_name or self.current_task_project:
+                hints.append("p add-project")
+            self.query_one("#context-hints", Static).update(" | ".join(hints))
 
     app = JotTUI(service)
     app.run()
