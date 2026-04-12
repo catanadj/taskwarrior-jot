@@ -94,9 +94,8 @@ TUI keybinds:
 
 TUI panes:
 
-- `Recent` activity stream
-- `Tasks` browser for pending tasks
-- `Projects` list from local project notes
+- `Browse` tab: `Tasks` browser for pending tasks and `Projects` list
+- `Latest Edits` tab: recent activity stream
 
 The CLI also supports:
 

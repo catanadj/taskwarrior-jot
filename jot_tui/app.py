@@ -12,6 +12,7 @@ def run_tui(service: JotService) -> int:
         from textual.containers import Horizontal, Vertical
         from textual.screen import ModalScreen
         from textual.widgets import Button, Checkbox, DataTable, Footer, Header, Input, Label, Static
+        from textual.widgets import TabbedContent, TabPane
     except Exception as exc:  # pragma: no cover
         raise RuntimeError(
             "textual is required for `jot tui` (install with: pip install textual)"
@@ -78,9 +79,10 @@ def run_tui(service: JotService) -> int:
     class JotTUI(App[None]):
         CSS = """
         Screen { layout: vertical; }
-        #top { height: 1fr; }
-        #left { width: 2fr; border: round $panel; }
-        #right { width: 3fr; border: round $panel; }
+        #browse-top { height: 1fr; }
+        #browse-left { width: 2fr; border: round $panel; }
+        #browse-right { width: 3fr; border: round $panel; }
+        #latest-pane { border: round $panel; }
         #search-input { margin: 0 1; }
         #task-detail { padding: 1; }
         #context-hints { padding: 0 1; color: $text-muted; }
@@ -102,6 +104,7 @@ def run_tui(service: JotService) -> int:
             self.svc = svc
             self.recent_rows: list[dict[str, Any]] = []
             self.task_rows: list[dict[str, Any]] = []
+            self.project_rows: list[dict[str, Any]] = []
             self.current_task_ref: str | None = None
             self.current_task_chain_path: str = ""
             self.current_task_project: str = ""
@@ -110,31 +113,35 @@ def run_tui(service: JotService) -> int:
         def compose(self) -> ComposeResult:
             yield Header(show_clock=True)
             yield Input(placeholder="Search notes/events and press Enter", id="search-input")
-            with Horizontal(id="top"):
-                with Vertical(id="left"):
-                    recent = DataTable(id="recent-table", cursor_type="row")
-                    recent.add_columns("ts", "kind", "id", "summary")
-                    yield Static("Recent", classes="title")
-                    yield recent
-                    tasks = DataTable(id="tasks-table", cursor_type="row")
-                    tasks.add_columns("id", "project", "description")
-                    yield Static("Tasks", classes="title")
-                    yield tasks
-                    projects = DataTable(id="projects-table", cursor_type="row")
-                    projects.add_columns("project", "updated")
-                    yield Static("Projects", classes="title")
-                    yield projects
-                with Vertical(id="right"):
-                    yield Static("Task Detail", classes="title")
-                    yield Static("Select a recent task row to load details.", id="task-detail")
-                    notes = DataTable(id="search-notes-table", cursor_type="row")
-                    notes.add_columns("kind", "path", "match")
-                    yield Static("Search Notes", classes="title")
-                    yield notes
-                    events = DataTable(id="search-events-table", cursor_type="row")
-                    events.add_columns("task", "annotation", "ts")
-                    yield Static("Search Events", classes="title")
-                    yield events
+            with TabbedContent(initial="browse-tab"):
+                with TabPane("Browse", id="browse-tab"):
+                    with Horizontal(id="browse-top"):
+                        with Vertical(id="browse-left"):
+                            tasks = DataTable(id="tasks-table", cursor_type="row")
+                            tasks.add_columns("id", "project", "description")
+                            yield Static("Tasks", classes="title")
+                            yield tasks
+                            projects = DataTable(id="projects-table", cursor_type="row")
+                            projects.add_columns("project", "updated")
+                            yield Static("Projects", classes="title")
+                            yield projects
+                        with Vertical(id="browse-right"):
+                            yield Static("Task Detail", classes="title")
+                            yield Static("Select a task row to load details.", id="task-detail")
+                            notes = DataTable(id="search-notes-table", cursor_type="row")
+                            notes.add_columns("kind", "path", "match")
+                            yield Static("Search Notes", classes="title")
+                            yield notes
+                            events = DataTable(id="search-events-table", cursor_type="row")
+                            events.add_columns("task", "annotation", "ts")
+                            yield Static("Search Events", classes="title")
+                            yield events
+                with TabPane("Latest Edits", id="latest-tab"):
+                    with Vertical(id="latest-pane"):
+                        recent = DataTable(id="recent-table", cursor_type="row")
+                        recent.add_columns("ts", "kind", "id", "summary")
+                        yield Static("Recent Activity", classes="title")
+                        yield recent
             yield Static("Actions: / search | r refresh | q quit", id="context-hints")
             yield Footer()
 
@@ -240,10 +247,9 @@ def run_tui(service: JotService) -> int:
                 return
             if event.data_table.id == "projects-table":
                 row_index = event.cursor_row
-                projects = self.svc.projects()
-                if row_index < 0 or row_index >= len(projects):
+                if row_index < 0 or row_index >= len(self.project_rows):
                     return
-                self.current_project_name = str(projects[row_index].get("project") or "").strip() or None
+                self.current_project_name = str(self.project_rows[row_index].get("project") or "").strip() or None
                 if self.current_project_name:
                     self.notify(f"Project selected: {self.current_project_name}")
                 self._update_action_hints()
@@ -284,8 +290,8 @@ def run_tui(service: JotService) -> int:
         async def _refresh_projects_async(self) -> None:
             table = self.query_one("#projects-table", DataTable)
             table.clear()
-            items = await asyncio.to_thread(self.svc.projects)
-            for item in items:
+            self.project_rows = await asyncio.to_thread(self.svc.projects)
+            for item in self.project_rows:
                 table.add_row(str(item.get("project") or ""), str(item.get("updated") or ""))
 
         def _run_search(self, query: str) -> None:
