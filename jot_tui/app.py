@@ -151,12 +151,17 @@ def run_tui(service: JotService) -> int:
             self.notify(f"Opened: {path}")
             self._load_task(self.current_task_ref)
 
-        async def action_add_to_selected_task(self) -> None:
+        def action_add_to_selected_task(self) -> None:
             if not self.current_task_ref:
                 self.notify("Select a task row in Recent first", severity="warning")
                 return
-            payload = await self.push_screen_wait(AddToHeadingModal())
+            self.push_screen(AddToHeadingModal(), self._on_add_to_payload)
+
+        def _on_add_to_payload(self, payload: dict[str, Any] | None) -> None:
             if not payload:
+                return
+            if not self.current_task_ref:
+                self.notify("Select a task row in Recent first", severity="warning")
                 return
             try:
                 result = self.svc.add_to_task_heading(
