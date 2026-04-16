@@ -87,15 +87,17 @@ TUI keybinds:
 - `q` quit
 - `r` refresh data
 - `/` focus search input
-- `e` open editor for selected task note (select a task row in Recent first)
+- `Enter` open the selected row into its task/project workspace
+- `e` open the active note in the current workspace
 - `a` add a timestamped entry under a heading for selected task
 - `c` add a timestamped entry under a heading for selected chain note (from selected task)
 - `p` add a timestamped entry under a heading for selected project (project row or selected task project)
 
 TUI panes:
 
-- `Browse` tab: `Tasks` browser for pending tasks and `Projects` list
+- `Browse` tab: `Tasks` browser with project/tag/notes filters and `Projects` list
 - `Latest Edits` tab: recent activity stream
+- `Search` tab: free-text search across notes and logged events
 
 The CLI also supports:
 

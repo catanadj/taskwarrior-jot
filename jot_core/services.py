@@ -41,7 +41,19 @@ class JotService:
         return str(note or project_note_path(self.config, project_name))
 
     def tasks(self, limit: int = 200) -> list[dict[str, Any]]:
-        return self.taskwarrior.list_tasks(limit=limit, status="pending")
+        items = self.taskwarrior.list_tasks(limit=limit, status="pending")
+        for item in items:
+            short_uuid = str(item.get("short_uuid") or "").strip()
+            project = str(item.get("project") or "").strip()
+            chain_id = str(item.get("chain_id") or "").strip()
+            has_task_note = bool(short_uuid and list(self.config.tasks_dir.glob(f"{short_uuid}--*.md")))
+            has_chain_note = bool(chain_id and list(self.config.chains_dir.glob(f"{chain_id}--*.md")))
+            has_project_note = bool(project and find_project_note(self.config, project))
+            item["has_task_note"] = has_task_note
+            item["has_chain_note"] = has_chain_note
+            item["has_project_note"] = has_project_note
+            item["has_notes"] = has_task_note or has_chain_note or has_project_note
+        return items
 
     def search(self, query: str) -> dict[str, list[dict[str, Any]]]:
         return search_all(self.config, query)

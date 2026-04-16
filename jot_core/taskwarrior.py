@@ -117,6 +117,8 @@ class TaskwarriorClient:
                     "short_uuid": uuid.split("-")[0],
                     "description": str(task.get("description") or "").strip(),
                     "project": str(task.get("project") or "").strip(),
+                    "tags": [str(tag) for tag in task.get("tags") or []] if isinstance(task.get("tags"), list) else [],
+                    "chain_id": str(task.get("chainID") or "").strip(),
                     "status": str(task.get("status") or "").strip(),
                     "due": str(task.get("due") or "").strip() or None,
                 }

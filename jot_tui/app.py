@@ -84,6 +84,11 @@ def run_tui(service: JotService) -> int:
         #browse-tasks, #browse-projects { width: 1fr; border: round $panel; }
         #task-workspace, #project-workspace { width: 1fr; border: round $panel; }
         #task-workspace-tabs, #project-workspace-tabs { height: 1fr; }
+        #task-filter-bar {
+            height: auto;
+            padding: 0 1;
+        }
+        #task-filter-project, #task-filter-tag { width: 1fr; margin: 0 1 0 0; }
         #task-summary, #task-note-preview, #chain-note-preview, #project-note-preview, #task-events-preview, #project-summary, #project-note-body {
             padding: 1;
             height: 1fr;
@@ -111,10 +116,14 @@ def run_tui(service: JotService) -> int:
             super().__init__()
             self.svc = svc
             self.recent_rows: list[dict[str, Any]] = []
+            self.task_all_rows: list[dict[str, Any]] = []
             self.task_rows: list[dict[str, Any]] = []
             self.project_rows: list[dict[str, Any]] = []
             self.search_note_rows: list[dict[str, Any]] = []
             self.search_event_rows: list[dict[str, Any]] = []
+            self.task_filter_project: str = ""
+            self.task_filter_tag: str = ""
+            self.task_filter_notes_only: bool = False
             self.current_task_ref: str | None = None
             self.current_task_chain_path: str = ""
             self.current_task_project: str = ""
@@ -129,9 +138,14 @@ def run_tui(service: JotService) -> int:
                             with TabPane("Tasks", id="task-browser-pane"):
                                 with Horizontal():
                                     with Vertical(id="browse-tasks"):
-                                        tasks = DataTable(id="tasks-table", cursor_type="row")
-                                        tasks.add_columns("id", "description", "project")
                                         yield Static("Tasks", classes="title")
+                                        with Horizontal(id="task-filter-bar"):
+                                            yield Input(placeholder="Project filter", id="task-filter-project")
+                                            yield Input(placeholder="Tag filter", id="task-filter-tag")
+                                            yield Checkbox("Notes only", id="task-filter-notes")
+                                            yield Button("Clear", id="task-filter-clear")
+                                        tasks = DataTable(id="tasks-table", cursor_type="row")
+                                        tasks.add_columns("id", "description", "project", "tags", "notes")
                                         yield tasks
                                     with Vertical(id="task-workspace"):
                                         yield Static("Task Workspace", classes="title")
@@ -321,6 +335,32 @@ def run_tui(service: JotService) -> int:
                 return
             self._run_search(query)
 
+        def on_input_changed(self, event: Input.Changed) -> None:
+            if event.input.id == "task-filter-project":
+                self.task_filter_project = event.value.strip()
+                self._render_tasks_table()
+                return
+            if event.input.id == "task-filter-tag":
+                self.task_filter_tag = event.value.strip()
+                self._render_tasks_table()
+
+        def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+            if event.checkbox.id != "task-filter-notes":
+                return
+            self.task_filter_notes_only = bool(event.value)
+            self._render_tasks_table()
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id != "task-filter-clear":
+                return
+            self.task_filter_project = ""
+            self.task_filter_tag = ""
+            self.task_filter_notes_only = False
+            self.query_one("#task-filter-project", Input).value = ""
+            self.query_one("#task-filter-tag", Input).value = ""
+            self.query_one("#task-filter-notes", Checkbox).value = False
+            self._render_tasks_table()
+
         def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
             if event.data_table.id == "recent-table":
                 row_index = event.cursor_row
@@ -372,15 +412,8 @@ def run_tui(service: JotService) -> int:
                 )
 
         async def _refresh_tasks_async(self) -> None:
-            table = self.query_one("#tasks-table", DataTable)
-            table.clear()
-            self.task_rows = await asyncio.to_thread(self.svc.tasks, 250)
-            for item in self.task_rows:
-                table.add_row(
-                    str(item.get("short_uuid") or ""),
-                    str(item.get("description") or ""),
-                    str(item.get("project") or ""),
-                )
+            self.task_all_rows = await asyncio.to_thread(self.svc.tasks, 250)
+            self._render_tasks_table()
 
         async def _refresh_projects_async(self) -> None:
             table = self.query_one("#projects-table", DataTable)
@@ -391,6 +424,43 @@ def run_tui(service: JotService) -> int:
 
         def _run_search(self, query: str) -> None:
             asyncio.create_task(self._run_search_async(query))
+
+        def _render_tasks_table(self) -> None:
+            table = self.query_one("#tasks-table", DataTable)
+            table.clear()
+            self.task_rows = [
+                item for item in self.task_all_rows if self._task_matches_filters(item)
+            ]
+            for item in self.task_rows:
+                notes = []
+                if item.get("has_task_note"):
+                    notes.append("task")
+                if item.get("has_chain_note"):
+                    notes.append("chain")
+                if item.get("has_project_note"):
+                    notes.append("project")
+                table.add_row(
+                    str(item.get("short_uuid") or ""),
+                    str(item.get("description") or ""),
+                    str(item.get("project") or ""),
+                    ",".join(str(tag) for tag in item.get("tags") or []),
+                    ",".join(notes) or "-",
+                )
+
+        def _task_matches_filters(self, item: dict[str, Any]) -> bool:
+            project_filter = self.task_filter_project.strip().lower()
+            if project_filter:
+                project = str(item.get("project") or "").strip().lower()
+                if project_filter not in project:
+                    return False
+            tag_filter = self.task_filter_tag.strip().lower()
+            if tag_filter:
+                tags = [str(tag).strip().lower() for tag in item.get("tags") or []]
+                if not any(tag_filter in tag for tag in tags):
+                    return False
+            if self.task_filter_notes_only and not bool(item.get("has_notes")):
+                return False
+            return True
 
         async def _run_search_async(self, query: str) -> None:
             notes_table = self.query_one("#search-notes-table", DataTable)
