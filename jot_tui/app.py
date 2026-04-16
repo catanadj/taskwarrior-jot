@@ -215,7 +215,7 @@ def run_tui(service: JotService) -> int:
                                 with Horizontal():
                                     with Vertical(id="browse-projects"):
                                         projects = DataTable(id="projects-table", cursor_type="row")
-                                        projects.add_columns("project", "updated")
+                                        projects.add_columns("project tree", "tasks", "note", "updated")
                                         yield Static("Projects", classes="title")
                                         yield projects
                                     with Vertical(id="project-workspace"):
@@ -302,7 +302,7 @@ def run_tui(service: JotService) -> int:
                 if row_index >= len(self.project_rows):
                     return
                 project_name = str(self.project_rows[row_index].get("project") or "").strip()
-                if project_name:
+                if project_name and bool(self.project_rows[row_index].get("selectable")):
                     self._open_project_workspace(project_name)
                 return
             if table_id == "search-events-table":
@@ -466,7 +466,10 @@ def run_tui(service: JotService) -> int:
                 row_index = event.cursor_row
                 if row_index < 0 or row_index >= len(self.project_rows):
                     return
-                self.current_project_name = str(self.project_rows[row_index].get("project") or "").strip() or None
+                project_name = str(self.project_rows[row_index].get("project") or "").strip()
+                if not project_name or not bool(self.project_rows[row_index].get("selectable")):
+                    return
+                self.current_project_name = project_name or None
                 if self.current_project_name:
                     self._open_project_workspace(self.current_project_name)
 
@@ -499,9 +502,14 @@ def run_tui(service: JotService) -> int:
         async def _refresh_projects_async(self) -> None:
             table = self.query_one("#projects-table", DataTable)
             table.clear()
-            self.project_rows = await asyncio.to_thread(self.svc.projects)
+            self.project_rows = await asyncio.to_thread(self.svc.project_tree_rows)
             for item in self.project_rows:
-                table.add_row(str(item.get("project") or ""), str(item.get("updated") or ""))
+                table.add_row(
+                    str(item.get("label") or item.get("project") or ""),
+                    str(item.get("count") or ""),
+                    str(item.get("note") or ""),
+                    str(item.get("updated") or ""),
+                )
 
         def _run_search(self, query: str) -> None:
             asyncio.create_task(self._run_search_async(query))

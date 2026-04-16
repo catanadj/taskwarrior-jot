@@ -99,7 +99,7 @@ TUI keybinds:
 
 TUI panes:
 
-- `Browse` tab: `Tasks` browser with project/tag/notes filters and `Projects` list
+- `Browse` tab: `Tasks` browser with project/tag/notes filters and hierarchical `Projects` tree
 - `Latest Edits` tab: recent activity stream with its own detail workspace
 - `Search` tab: free-text search across notes and logged events
 

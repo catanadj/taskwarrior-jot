@@ -42,6 +42,57 @@ class JotService:
     def projects(self) -> list[dict[str, Any]]:
         return list_project_notes(self.config)
 
+    def project_tree_rows(self, limit: int = 1000) -> list[dict[str, Any]]:
+        items = self.taskwarrior.list_tasks(limit=limit, status="pending")
+        counts: dict[str, int] = {}
+        for item in items:
+            project = str(item.get("project") or "").strip()
+            if not project:
+                continue
+            counts[project] = counts.get(project, 0) + 1
+
+        notes = {
+            str(item.get("project") or "").strip(): item
+            for item in list_project_notes(self.config)
+            if str(item.get("project") or "").strip()
+        }
+
+        nodes: dict[str, dict[str, Any]] = {}
+        for project, count in counts.items():
+            parts = [part for part in project.split(".") if part]
+            prefix = ""
+            for depth, part in enumerate(parts):
+                prefix = part if not prefix else f"{prefix}.{part}"
+                node = nodes.setdefault(
+                    prefix,
+                    {
+                        "project": prefix,
+                        "depth": depth,
+                        "count": 0,
+                        "is_exact": False,
+                        "has_note": False,
+                        "updated": None,
+                    },
+                )
+                node["count"] += count
+                node["is_exact"] = node["is_exact"] or prefix == project
+                note = notes.get(prefix)
+                if note:
+                    node["has_note"] = True
+                    node["updated"] = note.get("updated") or node["updated"]
+
+        rows = list(nodes.values())
+        rows.sort(key=lambda item: (str(item.get("project") or "").lower(), int(item.get("depth") or 0)))
+        for item in rows:
+            depth = int(item.get("depth") or 0)
+            project = str(item.get("project") or "")
+            label = project.split(".")[-1] if project else ""
+            item["label"] = f"{'  ' * depth}{label}"
+            item["selectable"] = bool(item.get("is_exact") or item.get("has_note"))
+            item["note"] = "yes" if item.get("has_note") else "-"
+            item["updated"] = str(item.get("updated") or "").strip()
+        return rows
+
     def project_note_path_for_name(self, project_name: str) -> str:
         note = find_project_note(self.config, project_name)
         return str(note or project_note_path(self.config, project_name))
