@@ -302,6 +302,8 @@ def run_tui(service: JotService) -> int:
                 if row_index >= len(self.project_rows):
                     return
                 project_name = str(self.project_rows[row_index].get("project") or "").strip()
+                if project_name:
+                    self.current_project_name = project_name
                 if project_name and bool(self.project_rows[row_index].get("selectable")):
                     self._open_project_workspace(project_name)
                 return
@@ -467,10 +469,10 @@ def run_tui(service: JotService) -> int:
                 if row_index < 0 or row_index >= len(self.project_rows):
                     return
                 project_name = str(self.project_rows[row_index].get("project") or "").strip()
-                if not project_name or not bool(self.project_rows[row_index].get("selectable")):
+                if not project_name:
                     return
                 self.current_project_name = project_name or None
-                if self.current_project_name:
+                if self.current_project_name and bool(self.project_rows[row_index].get("selectable")):
                     self._open_project_workspace(self.current_project_name)
 
         async def _refresh_recent_async(self) -> None:
@@ -913,7 +915,7 @@ def run_tui(service: JotService) -> int:
                             return self.svc.open_project_note_in_editor(project)
                         return self.svc.open_task_note_in_editor(self.current_task_ref)
                 if browse_tab == "project-browser-pane":
-                    project = self.current_project_name or self.current_task_project
+                    project = self.current_project_name
                     if not project:
                         raise RuntimeError("select a project first")
                     with self.suspend():
