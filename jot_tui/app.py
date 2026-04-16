@@ -88,7 +88,9 @@ def run_tui(service: JotService) -> int:
         #browse-search.hidden { display: none; }
         #browse-search-left, #browse-search-right { width: 1fr; border: round $panel; }
         #latest-pane { border: round $panel; }
-        #search-input { margin: 0 1; }
+        #search-bar { height: auto; }
+        #search-input { margin: 0 1 0 0; width: 1fr; }
+        #search-toggle { width: 16; }
         #task-detail, #project-detail { padding: 1; }
         #context-hints { padding: 0 1; color: $text-muted; }
         #recent-table, #tasks-table, #projects-table, #search-notes-table, #search-events-table { height: 1fr; }
@@ -114,11 +116,13 @@ def run_tui(service: JotService) -> int:
             self.current_task_chain_path: str = ""
             self.current_task_project: str = ""
             self.current_project_name: str | None = None
-            self.search_active = False
+            self.search_visible = False
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=True)
-            yield Input(placeholder="Search notes/events and press Enter", id="search-input")
+            with Horizontal(id="search-bar"):
+                yield Input(placeholder="Search notes/events and press Enter", id="search-input")
+                yield Button("Show Search", id="search-toggle")
             with TabbedContent(initial="browse-tab"):
                 with TabPane("Browse", id="browse-tab"):
                     with Horizontal(id="browse-top"):
@@ -233,9 +237,13 @@ def run_tui(service: JotService) -> int:
                 return
             query = event.value.strip()
             if not query:
-                self._clear_search()
                 return
             self._run_search(query)
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id != "search-toggle":
+                return
+            self._set_search_visibility(not self.search_visible)
 
         def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
             if event.data_table.id == "recent-table":
@@ -313,7 +321,6 @@ def run_tui(service: JotService) -> int:
                 table.add_row(str(item.get("project") or ""), str(item.get("updated") or ""))
 
         def _run_search(self, query: str) -> None:
-            self._set_search_visibility(True)
             asyncio.create_task(self._run_search_async(query))
 
         async def _run_search_async(self, query: str) -> None:
@@ -338,15 +345,17 @@ def run_tui(service: JotService) -> int:
         def _clear_search(self) -> None:
             self.query_one("#search-notes-table", DataTable).clear()
             self.query_one("#search-events-table", DataTable).clear()
-            self._set_search_visibility(False)
 
         def _set_search_visibility(self, visible: bool) -> None:
-            self.search_active = visible
+            self.search_visible = visible
             search = self.query_one("#browse-search", Horizontal)
+            toggle = self.query_one("#search-toggle", Button)
             if visible:
                 search.remove_class("hidden")
+                toggle.label = "Hide Search"
             else:
                 search.add_class("hidden")
+                toggle.label = "Show Search"
 
         async def _load_task_async(self, task_ref: str) -> None:
             detail = self.query_one("#task-detail", Static)
