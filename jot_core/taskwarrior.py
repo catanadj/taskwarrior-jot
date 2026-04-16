@@ -123,6 +123,29 @@ class TaskwarriorClient:
             )
         return items
 
+    def resolve_first_for_filter(self, filter_token: str) -> ResolvedTask:
+        token = str(filter_token or "").strip()
+        if not token:
+            raise RuntimeError("filter is empty")
+        tasks = self._run_export([token])
+        if not tasks:
+            raise RuntimeError(f"no task found for '{token}'")
+        task = tasks[0]
+        uuid = str(task.get("uuid") or "").strip()
+        if not uuid:
+            raise RuntimeError(f"task for '{token}' did not include a uuid")
+        tags = task.get("tags")
+        tag_list = [str(tag) for tag in tags] if isinstance(tags, list) else []
+        return ResolvedTask(
+            ref=TaskRef(raw=token),
+            task_uuid=uuid,
+            task_short_uuid=uuid.split("-")[0],
+            description=str(task.get("description") or ""),
+            project=str(task.get("project") or ""),
+            tags=tag_list,
+            task=task,
+        )
+
     def _export_for_ref(self, raw_ref: str) -> list[dict]:
         ref = raw_ref.strip()
         if not ref:

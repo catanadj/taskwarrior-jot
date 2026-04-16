@@ -8,6 +8,8 @@ from .frontmatter import read_document
 from .models import AppConfig
 from .nautical import nautical_summary
 from .notes import (
+    ensure_chain_note,
+    ensure_project_note,
     chain_note_path,
     ensure_task_note,
     find_chain_note,
@@ -121,6 +123,21 @@ class JotService:
         open_in_editor(note.note_path, self.config.editor_command)
         finalize_task_note_edit(self.config, task, note)
         return str(note.note_path)
+
+    def open_chain_note_in_editor(self, task_ref: str) -> str:
+        task = self.taskwarrior.resolve_task(task_ref)
+        note = ensure_chain_note(self.config, task)
+        open_in_editor(note.note_path, self.config.editor_command)
+        return str(note.note_path)
+
+    def open_project_note_in_editor(self, project_name: str) -> str:
+        note = ensure_project_note(self.config, project_name)
+        open_in_editor(note.note_path, self.config.editor_command)
+        return str(note.note_path)
+
+    def task_ref_for_chain_id(self, chain_id: str) -> str:
+        task = self.taskwarrior.resolve_first_for_filter(f"chainID:{chain_id}")
+        return task.task_short_uuid
 
     def add_to_task_heading(
         self,

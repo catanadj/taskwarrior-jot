@@ -251,22 +251,29 @@ def run_tui(service: JotService) -> int:
                     if short_uuid:
                         self._open_task_workspace(short_uuid)
                         return
+                if kind == "chain-note":
+                    chain_id = str(item.get("chain_id") or "").strip()
+                    if chain_id:
+                        try:
+                            short_uuid = self.svc.task_ref_for_chain_id(chain_id)
+                        except Exception as exc:
+                            self.notify(f"Chain open failed: {exc}", severity="error")
+                            return
+                        self._open_task_workspace(short_uuid)
+                        return
                 self.notify("This search result has no direct workspace target yet", severity="warning")
 
         def action_edit_selected_task_note(self) -> None:
-            if not self.current_task_ref:
-                self.notify("Select a task row in Recent first", severity="warning")
-                return
             try:
-                # Hand terminal control back to the editor process; otherwise
-                # the editor runs under Textual's terminal mode and feels broken.
-                with self.suspend():
-                    path = self.svc.open_task_note_in_editor(self.current_task_ref)
+                path = self._open_active_note_in_editor()
             except Exception as exc:
                 self.notify(f"Editor failed: {exc}", severity="error")
                 return
             self.notify(f"Opened: {path}")
-            asyncio.create_task(self._load_task_async(self.current_task_ref))
+            if self.current_task_ref:
+                asyncio.create_task(self._load_task_async(self.current_task_ref))
+            elif self.current_project_name:
+                asyncio.create_task(self._load_project_async(self.current_project_name))
 
         def action_add_to_selected_task(self) -> None:
             if not self.current_task_ref:
@@ -452,6 +459,7 @@ def run_tui(service: JotService) -> int:
             chain_note.update(self._render_note_panel("Chain Note", chain_note_data))
             project_note.update(self._render_note_panel("Project Note", project_note_data))
             events_view.update(self._render_events_panel(events))
+            self._focus_best_task_workspace_tab(task_note_data, chain_note_data, project_note_data, events)
             self._update_action_hints()
 
         async def _load_project_async(self, project_name: str) -> None:
@@ -472,6 +480,7 @@ def run_tui(service: JotService) -> int:
                 )
             )
             note_body.update(self._render_note_panel("Project Note", note))
+            self._focus_best_project_workspace_tab(note)
             self._update_action_hints()
 
         async def _apply_add_to_async(self, kind: str, payload: dict[str, Any]) -> None:
@@ -550,6 +559,58 @@ def run_tui(service: JotService) -> int:
             self.query_one("#browse-browser-tabs", TabbedContent).active = "project-browser-pane"
             asyncio.create_task(self._load_project_async(project_name))
             self._update_action_hints()
+
+        def _open_active_note_in_editor(self) -> str:
+            main_tab = self.query_one("#main-tabs", TabbedContent).active
+            if main_tab != "browse-tab":
+                raise RuntimeError("open a task or project workspace first")
+            browse_tab = self.query_one("#browse-browser-tabs", TabbedContent).active
+            if browse_tab == "task-browser-pane":
+                if not self.current_task_ref:
+                    raise RuntimeError("select a task first")
+                active = self.query_one("#task-workspace-tabs", TabbedContent).active
+                with self.suspend():
+                    if active == "chain-note-pane":
+                        return self.svc.open_chain_note_in_editor(self.current_task_ref)
+                    if active == "project-note-pane":
+                        project = self.current_task_project or self.current_project_name
+                        if not project:
+                            raise RuntimeError("selected task has no project note context")
+                        return self.svc.open_project_note_in_editor(project)
+                    return self.svc.open_task_note_in_editor(self.current_task_ref)
+            if browse_tab == "project-browser-pane":
+                project = self.current_project_name or self.current_task_project
+                if not project:
+                    raise RuntimeError("select a project first")
+                with self.suspend():
+                    return self.svc.open_project_note_in_editor(project)
+            raise RuntimeError("no openable workspace is active")
+
+        def _focus_best_task_workspace_tab(
+            self,
+            task_note: dict[str, Any],
+            chain_note: dict[str, Any],
+            project_note: dict[str, Any],
+            events: list[dict[str, Any]],
+        ) -> None:
+            tabs = self.query_one("#task-workspace-tabs", TabbedContent)
+            if str(task_note.get("body") or "").strip():
+                tabs.active = "task-note-pane"
+            elif str(chain_note.get("body") or "").strip():
+                tabs.active = "chain-note-pane"
+            elif str(project_note.get("body") or "").strip():
+                tabs.active = "project-note-pane"
+            elif events:
+                tabs.active = "task-events-pane"
+            else:
+                tabs.active = "task-summary-pane"
+
+        def _focus_best_project_workspace_tab(self, note: dict[str, Any]) -> None:
+            tabs = self.query_one("#project-workspace-tabs", TabbedContent)
+            if str(note.get("body") or "").strip():
+                tabs.active = "project-note-body-pane"
+            else:
+                tabs.active = "project-summary-pane"
 
         def _render_note_panel(self, title: str, note: dict[str, Any]) -> str:
             path = str(note.get("path") or "").strip()
