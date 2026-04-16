@@ -60,9 +60,12 @@ jot note <task-ref>
 jot chain <task-ref>
 jot task-cat <task-ref>
 jot chain-cat <task-ref>
+jot task-delete <task-ref>
+jot chain-delete <task-ref>
 jot project <project-name>
 jot project-show <project-name>
 jot project-cat <project-name>
+jot project-delete <project-name>
 jot note-append <task-ref> [text...]
 jot chain-append <task-ref> [text...]
 jot project-append <project-name> [text...]
@@ -89,6 +92,7 @@ TUI keybinds:
 - `/` focus search input
 - `Enter` open the selected row into its detail workspace
 - `e` open the active note in the current workspace
+- `d` move the active note to `.jot_trash/` after confirmation
 - `a` add a timestamped entry under a heading for selected task
 - `c` add a timestamped entry under a heading for selected chain note (from selected task)
 - `p` add a timestamped entry under a heading for selected project (project row or selected task project)
@@ -118,6 +122,7 @@ User data lives in `~/.task/jot/`:
 - `tasks/<task_short_uuid>--<slug>.md`
 - `chains/<chain_id>--<slug>.md`
 - `projects/<project path>/index.md`
+- `.jot_trash/<timestamp>/<original note path>`
 - `templates/task-note.md`
 - `templates/chain-note.md`
 - `templates/project-note.md`
@@ -131,6 +136,7 @@ Rules:
 - annotations are the visible event stream
 - `index.json` is rebuildable cache
 - `ops.jsonl` is append-only audit state
+- deleted notes are moved under `.jot_trash/`
 
 ## Templates
 

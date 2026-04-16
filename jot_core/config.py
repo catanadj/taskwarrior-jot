@@ -40,6 +40,7 @@ def load_config() -> AppConfig:
     nautical_cfg = data.get("nautical") if isinstance(data.get("nautical"), dict) else {}
 
     root_dir = _expand_path(paths_cfg.get("root"), DEFAULT_ROOT)
+    trash_dir = root_dir / ".jot_trash"
     tasks_dir = _expand_path(paths_cfg.get("tasks"), root_dir / "tasks")
     chains_dir = _expand_path(paths_cfg.get("chains"), root_dir / "chains")
     projects_dir = _expand_path(paths_cfg.get("projects"), root_dir / "projects")
@@ -53,6 +54,7 @@ def load_config() -> AppConfig:
     return AppConfig(
         config_path=config_path,
         root_dir=root_dir,
+        trash_dir=trash_dir,
         tasks_dir=tasks_dir,
         chains_dir=chains_dir,
         projects_dir=projects_dir,
@@ -67,6 +69,7 @@ def load_config() -> AppConfig:
 def ensure_app_dirs(config: AppConfig) -> None:
     for path in (
         config.root_dir,
+        config.trash_dir,
         config.tasks_dir,
         config.chains_dir,
         config.projects_dir,

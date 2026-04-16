@@ -158,6 +158,7 @@ class CliIntegrationTests(JotCliTestCase):
             "config",
             "storage",
             "root_dir",
+            "trash_dir",
             "tasks_dir",
             "chains_dir",
             "projects_dir",
@@ -184,6 +185,7 @@ class CliIntegrationTests(JotCliTestCase):
         payload = json.loads(result.stdout)
         self.assertTrue(payload["config_path"].endswith(".task/jot/config-jot.toml"))
         self.assertTrue(payload["root_dir"].endswith(".task/jot"))
+        self.assertTrue(payload["trash_dir"].endswith(".task/jot/.jot_trash"))
         self.assertTrue(payload["projects_dir"].endswith(".task/jot/projects"))
         self.assertTrue(payload["index_path"].endswith(".task/jot/index.json"))
         self.assertTrue(payload["ops_path"].endswith(".task/jot/ops.jsonl"))
@@ -357,6 +359,47 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("Note:", text_show.stdout)
         self.assertIn("path", text_show.stdout)
         self.assertIn("preview", text_show.stdout)
+
+    def test_delete_commands_move_notes_to_trash_and_update_index(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Fix billing discrepancy",
+            "project": "finance.audit",
+            "tags": ["ann"],
+            "chainID": "a4bf5egh",
+            "link": 3,
+            "anchor": "m:last-fri",
+            "anchor_mode": "skip",
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+
+        self.assertEqual(self.run_jot("note-append", "1", "task note body").returncode, 0)
+        self.assertEqual(self.run_jot("chain-append", "1", "chain note body").returncode, 0)
+        self.assertEqual(self.run_jot("project-append", "finance.audit", "project note body").returncode, 0)
+
+        task_delete = self.run_jot("task-delete", "1")
+        self.assertEqual(task_delete.returncode, 0, task_delete.stderr)
+        chain_delete = self.run_jot("chain-delete", "1")
+        self.assertEqual(chain_delete.returncode, 0, chain_delete.stderr)
+        project_delete = self.run_jot("project-delete", "finance.audit")
+        self.assertEqual(project_delete.returncode, 0, project_delete.stderr)
+
+        trash_root = self.home / ".task" / "jot" / ".jot_trash"
+        trashed_notes = sorted(trash_root.rglob("*.md"))
+        self.assertEqual(len(trashed_notes), 3)
+
+        original_task_note = self.home / ".task" / "jot" / "tasks" / "2d6d7d7d--fix-billing-discrepancy.md"
+        self.assertFalse(original_task_note.exists())
+        original_chain_note = self.home / ".task" / "jot" / "chains" / "a4bf5egh--fix-billing-discrepancy.md"
+        self.assertFalse(original_chain_note.exists())
+        original_project_note = self.home / ".task" / "jot" / "projects" / "finance" / "audit" / "index.md"
+        self.assertFalse(original_project_note.exists())
+
+        index_data = json.loads((self.home / ".task" / "jot" / "index.json").read_text(encoding="utf-8"))
+        self.assertNotIn("2d6d7d7d", index_data["tasks"])
+        self.assertNotIn("a4bf5egh", index_data["chains"])
+        self.assertNotIn("finance.audit", index_data["projects"])
 
     def test_task_and_chain_cat_contracts(self) -> None:
         task = {

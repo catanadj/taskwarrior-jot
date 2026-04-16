@@ -21,7 +21,13 @@ from .notes import (
 from .report import list_project_notes, recent_activity
 from .search import search_all
 from .storage import add_to_task_heading_storage, finalize_task_note_edit
-from .storage import add_to_chain_heading_storage, add_to_project_heading_storage
+from .storage import (
+    add_to_chain_heading_storage,
+    add_to_project_heading_storage,
+    delete_chain_note_storage,
+    delete_project_note_storage,
+    delete_task_note_storage,
+)
 from .taskwarrior import TaskwarriorClient
 
 
@@ -39,6 +45,17 @@ class JotService:
     def project_note_path_for_name(self, project_name: str) -> str:
         note = find_project_note(self.config, project_name)
         return str(note or project_note_path(self.config, project_name))
+
+    def task_note_path_for_task_ref(self, task_ref: str) -> str:
+        task = self.taskwarrior.resolve_task(task_ref)
+        note = find_task_note(self.config, task)
+        return str(note or task_note_path(self.config, task))
+
+    def chain_note_path_for_task_ref(self, task_ref: str) -> str:
+        task = self.taskwarrior.resolve_task(task_ref)
+        note = find_chain_note(self.config, task)
+        chain_path = chain_note_path(self.config, task.task.get("chainID") or "", task.description or "")
+        return str(note or chain_path)
 
     def tasks(self, limit: int = 200) -> list[dict[str, Any]]:
         items = self.taskwarrior.list_tasks(limit=limit, status="pending")
@@ -215,3 +232,14 @@ class JotService:
             exact=exact,
         )
         return result
+
+    def delete_task_note(self, task_ref: str) -> dict[str, Any]:
+        task = self.taskwarrior.resolve_task(task_ref)
+        return delete_task_note_storage(self.config, task)
+
+    def delete_chain_note(self, task_ref: str) -> dict[str, Any]:
+        task = self.taskwarrior.resolve_task(task_ref)
+        return delete_chain_note_storage(self.config, task)
+
+    def delete_project_note(self, project_name: str) -> dict[str, Any]:
+        return delete_project_note_storage(self.config, project_name)

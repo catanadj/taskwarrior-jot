@@ -24,6 +24,7 @@ def run_doctor(config: AppConfig, client: TaskwarriorClient) -> CommandResult:
 
     for name, path in (
         ("root_dir", config.root_dir),
+        ("trash_dir", config.trash_dir),
         ("tasks_dir", config.tasks_dir),
         ("chains_dir", config.chains_dir),
         ("projects_dir", config.projects_dir),

@@ -35,6 +35,9 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command in {"note", "chain", "project"}:
         _emit_note_like(command, payload)
         return
+    if command in {"task-delete", "chain-delete", "project-delete"}:
+        _emit_delete(command, payload)
+        return
     if command == "project-show":
         _emit_project_show(payload)
         return
@@ -78,6 +81,7 @@ def _emit_paths(payload: dict[str, Any]) -> None:
     for key in (
         "config_path",
         "root_dir",
+        "trash_dir",
         "tasks_dir",
         "chains_dir",
         "projects_dir",
@@ -185,6 +189,19 @@ def _emit_append_like(command: str, payload: dict[str, Any]) -> None:
     }[command]
     prefix = "Created and appended to" if created else "Appended to"
     sys.stdout.write(f"{prefix} {kind}: {payload['path']}\n")
+
+
+def _emit_delete(command: str, payload: dict[str, Any]) -> None:
+    kind = {
+        "task-delete": "task note",
+        "chain-delete": "chain note",
+        "project-delete": "project note",
+    }[command]
+    original = str(payload.get("path") or "")
+    trash = str(payload.get("trash_path") or "")
+    sys.stdout.write(f"Moved {kind} to trash\n")
+    _emit_field("from", original, indent=0)
+    _emit_field("to", trash, indent=0)
 
 
 def _emit_project_show(payload: dict[str, Any]) -> None:

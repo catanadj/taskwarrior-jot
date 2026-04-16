@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 from jot_core.services import JotService
+from jot_core.notes import preview_trash_path
 
 
 def run_tui(service: JotService) -> int:
@@ -76,6 +78,47 @@ def run_tui(service: JotService) -> int:
                 }
             )
 
+    class ConfirmDeleteModal(ModalScreen[bool]):
+        CSS = """
+        #dialog {
+            width: 76;
+            height: auto;
+            border: round $error;
+            padding: 1 2;
+            background: $surface;
+        }
+        #dialog Button { margin: 1 1 0 0; }
+        #details { margin: 1 0; color: $text-muted; }
+        """
+
+        BINDINGS = [("escape", "cancel", "Cancel")]
+
+        def __init__(self, *, label: str, path: str, trash_path: str) -> None:
+            super().__init__()
+            self.label = label
+            self.path = path
+            self.trash_path = trash_path
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id="dialog"):
+                yield Label(f"Delete {self.label}?")
+                yield Static(
+                    f"This will move the note to the trash folder.\n\nFrom: {self.path}\nTo:   {self.trash_path}",
+                    id="details",
+                )
+                with Horizontal(id="buttons"):
+                    yield Button("Cancel", id="cancel-btn")
+                    yield Button("Delete", id="delete-btn", variant="error")
+
+        def action_cancel(self) -> None:
+            self.dismiss(False)
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "delete-btn":
+                self.dismiss(True)
+                return
+            self.dismiss(False)
+
     class JotTUI(App[None]):
         CSS = """
         Screen { layout: vertical; }
@@ -113,6 +156,7 @@ def run_tui(service: JotService) -> int:
             ("enter", "open_selected", "Open"),
             ("slash", "focus_search", "Search"),
             ("e", "edit_selected_task_note", "Edit note"),
+            ("d", "delete_selected_note", "Delete note"),
             ("a", "add_to_selected_task", "Add-to task"),
             ("c", "add_to_selected_chain", "Add-to chain"),
             ("p", "add_to_project_context", "Add-to project"),
@@ -310,6 +354,20 @@ def run_tui(service: JotService) -> int:
             elif self.current_project_name:
                 asyncio.create_task(self._load_project_async(self.current_project_name))
 
+        def action_delete_selected_note(self) -> None:
+            target = self._active_note_target()
+            if target is None:
+                self.notify("Select a note tab first", severity="warning")
+                return
+            self.push_screen(
+                ConfirmDeleteModal(
+                    label=target["label"],
+                    path=target["path"],
+                    trash_path=target["trash_path"],
+                ),
+                lambda confirmed: self._on_delete_confirmed(target, confirmed),
+            )
+
         def action_add_to_selected_task(self) -> None:
             if not self.current_task_ref:
                 self.notify("Select a task row in Recent first", severity="warning")
@@ -345,6 +403,11 @@ def run_tui(service: JotService) -> int:
             if not payload:
                 return
             asyncio.create_task(self._apply_add_to_async(kind, payload))
+
+        def _on_delete_confirmed(self, target: dict[str, Any], confirmed: bool) -> None:
+            if not confirmed:
+                return
+            asyncio.create_task(self._apply_delete_async(target))
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
             if event.input.id != "search-input":
@@ -681,6 +744,8 @@ def run_tui(service: JotService) -> int:
 
         def _update_action_hints(self) -> None:
             hints = ["Actions: / search", "r refresh", "q quit"]
+            if self.current_task_ref or self.current_latest_task_ref or self.current_project_name:
+                hints.append("d delete-note")
             if self.current_task_ref:
                 hints.extend(["e edit-task", "a add-task"])
             if self.current_task_ref and self.current_task_chain_path:
@@ -688,6 +753,119 @@ def run_tui(service: JotService) -> int:
             if self.current_project_name or self.current_task_project:
                 hints.append("p add-project")
             self.query_one("#context-hints", Static).update(" | ".join(hints))
+
+        def _active_note_target(self) -> dict[str, Any] | None:
+            main_tab = self.query_one("#main-tabs", TabbedContent).active
+            if main_tab == "browse-tab":
+                browse_tab = self.query_one("#browse-browser-tabs", TabbedContent).active
+                if browse_tab == "task-browser-pane":
+                    if not self.current_task_ref:
+                        return None
+                    active = self.query_one("#task-workspace-tabs", TabbedContent).active
+                    if active == "chain-note-pane":
+                        note_path = self.svc.chain_note_path_for_task_ref(self.current_task_ref)
+                        return {
+                            "kind": "chain",
+                            "label": "chain note",
+                            "task_ref": self.current_task_ref,
+                            "path": note_path,
+                            "trash_path": str(preview_trash_path(self.svc.config, Path(note_path))),
+                        }
+                    if active == "project-note-pane":
+                        project = self.current_task_project or self.current_project_name
+                        if not project:
+                            return None
+                        note_path = self.svc.project_note_path_for_name(project)
+                        return {
+                            "kind": "project",
+                            "label": "project note",
+                            "project": project,
+                            "path": note_path,
+                            "trash_path": str(preview_trash_path(self.svc.config, Path(note_path))),
+                        }
+                    note_path = self.svc.task_note_path_for_task_ref(self.current_task_ref)
+                    return {
+                        "kind": "task",
+                        "label": "task note",
+                        "task_ref": self.current_task_ref,
+                        "path": note_path,
+                        "trash_path": str(preview_trash_path(self.svc.config, Path(note_path))),
+                    }
+                if browse_tab == "project-browser-pane":
+                    project = self.current_project_name or self.current_task_project
+                    if not project:
+                        return None
+                    note_path = self.svc.project_note_path_for_name(project)
+                    return {
+                        "kind": "project",
+                        "label": "project note",
+                        "project": project,
+                        "path": note_path,
+                        "trash_path": str(preview_trash_path(self.svc.config, Path(note_path))),
+                    }
+            if main_tab == "latest-tab":
+                if not self.current_latest_task_ref:
+                    return None
+                active = self.query_one("#latest-workspace-tabs", TabbedContent).active
+                if active == "latest-chain-note-pane":
+                    note_path = self.svc.chain_note_path_for_task_ref(self.current_latest_task_ref)
+                    return {
+                        "kind": "chain",
+                        "label": "chain note",
+                        "task_ref": self.current_latest_task_ref,
+                        "path": note_path,
+                        "trash_path": str(preview_trash_path(self.svc.config, Path(note_path))),
+                    }
+                if active == "latest-project-note-pane":
+                    project = self.current_task_project
+                    if not project:
+                        return None
+                    note_path = self.svc.project_note_path_for_name(project)
+                    return {
+                        "kind": "project",
+                        "label": "project note",
+                        "project": project,
+                        "path": note_path,
+                        "trash_path": str(preview_trash_path(self.svc.config, Path(note_path))),
+                    }
+                note_path = self.svc.task_note_path_for_task_ref(self.current_latest_task_ref)
+                return {
+                    "kind": "task",
+                    "label": "task note",
+                    "task_ref": self.current_latest_task_ref,
+                    "path": note_path,
+                    "trash_path": str(preview_trash_path(self.svc.config, Path(note_path))),
+                }
+            return None
+
+        async def _apply_delete_async(self, target: dict[str, Any]) -> None:
+            try:
+                kind = str(target.get("kind") or "")
+                if kind == "task":
+                    result = await asyncio.to_thread(self.svc.delete_task_note, str(target.get("task_ref") or ""))
+                elif kind == "chain":
+                    result = await asyncio.to_thread(self.svc.delete_chain_note, str(target.get("task_ref") or ""))
+                elif kind == "project":
+                    result = await asyncio.to_thread(self.svc.delete_project_note, str(target.get("project") or ""))
+                else:
+                    raise RuntimeError("unknown delete target")
+            except Exception as exc:
+                self.notify(f"Delete failed: {exc}", severity="error")
+                return
+            self.notify(
+                f"Moved to trash: {result.get('trash_path')}",
+                severity="information",
+            )
+            await self._refresh_recent_async()
+            await self._refresh_tasks_async()
+            await self._refresh_projects_async()
+            main_tab = self.query_one("#main-tabs", TabbedContent).active
+            if main_tab == "latest-tab" and self.current_latest_task_ref:
+                await self._load_latest_task_async(self.current_latest_task_ref)
+            elif self.current_task_ref:
+                await self._load_task_async(self.current_task_ref)
+            elif self.current_project_name:
+                await self._load_project_async(self.current_project_name)
 
         def _open_task_workspace(self, task_ref: str) -> None:
             self.current_task_ref = task_ref

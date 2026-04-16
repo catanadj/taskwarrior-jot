@@ -3,11 +3,13 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+from datetime import datetime, timezone
 from pathlib import Path
+import shutil
 import re
 
 from .frontmatter import read_document, update_metadata, write_document
-from .models import AppConfig, AppendResult, NotePaths, ResolvedTask
+from .models import AppConfig, AppendResult, DeleteResult, NotePaths, ResolvedTask
 from .nautical import chain_id_for_task
 from .ops import iso_now
 from .templates import apply_template
@@ -123,6 +125,37 @@ def append_to_project_note(config: AppConfig, project_name: str, text: str) -> A
     _append_text(note.note_path, text)
     touch_updated(note.note_path)
     return AppendResult(note_path=note.note_path, existed=note.existed, appended_text=text)
+
+
+def delete_task_note(config: AppConfig, task: ResolvedTask) -> DeleteResult:
+    note_path = find_task_note(config, task)
+    if note_path is None:
+        raise RuntimeError(f"task note does not exist for {task.task_short_uuid}")
+    trash_path = _trash_note_path(config, note_path)
+    _move_to_trash(note_path, trash_path)
+    return DeleteResult(note_path=note_path, trash_path=trash_path, existed=True)
+
+
+def delete_chain_note(config: AppConfig, task: ResolvedTask) -> DeleteResult:
+    note_path = find_chain_note(config, task)
+    if note_path is None:
+        raise RuntimeError(f"chain note does not exist for {task.task_short_uuid}")
+    trash_path = _trash_note_path(config, note_path)
+    _move_to_trash(note_path, trash_path)
+    return DeleteResult(note_path=note_path, trash_path=trash_path, existed=True)
+
+
+def delete_project_note(config: AppConfig, project_name: str) -> DeleteResult:
+    note_path = find_project_note(config, project_name)
+    if note_path is None:
+        raise RuntimeError(f"project note does not exist for {project_name}")
+    trash_path = _trash_note_path(config, note_path)
+    _move_to_trash(note_path, trash_path)
+    return DeleteResult(note_path=note_path, trash_path=trash_path, existed=True)
+
+
+def preview_trash_path(config: AppConfig, note_path: Path) -> Path:
+    return _trash_note_path(config, note_path)
 
 
 def add_to_task_heading(
@@ -361,6 +394,26 @@ def _append_text(path: Path, text: str) -> None:
         normalized += "\n\n"
     normalized += chunk
     write_document(path, metadata, normalized)
+
+
+def _trash_note_path(config: AppConfig, note_path: Path) -> Path:
+    stamp = datetime.now(timezone.utc).replace(microsecond=0).strftime("%Y%m%dT%H%M%SZ")
+    try:
+        rel_path = note_path.relative_to(config.root_dir)
+    except ValueError:
+        rel_path = Path(note_path.name)
+    trash_path = config.trash_dir / stamp / rel_path
+    candidate = trash_path
+    counter = 1
+    while candidate.exists():
+        candidate = trash_path.with_name(f"{trash_path.stem}-{counter}{trash_path.suffix}")
+        counter += 1
+    return candidate
+
+
+def _move_to_trash(note_path: Path, trash_path: Path) -> None:
+    trash_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(note_path), str(trash_path))
 
 
 def _append_under_heading(

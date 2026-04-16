@@ -7,10 +7,16 @@ from .index import (
     update_project_note_index,
     update_task_event_index,
     update_task_note_index,
+    remove_chain_note_index,
+    remove_project_note_index,
+    remove_task_note_index,
 )
 from .models import AppConfig, AppendResult, NotePaths, ResolvedTask
 from .nautical import chain_id_for_task
 from .notes import (
+    delete_chain_note,
+    delete_project_note,
+    delete_task_note,
     add_to_chain_heading,
     add_to_project_heading,
     add_to_task_heading,
@@ -101,6 +107,63 @@ def append_project_note_storage(config: AppConfig, project_name: str, text: str)
         path=str(result.note_path),
     )
     return result
+
+
+def delete_task_note_storage(config: AppConfig, task: ResolvedTask) -> dict[str, object]:
+    result = delete_task_note(config, task)
+    remove_task_note_index(config, task.task_short_uuid)
+    append_op(
+        config,
+        "task_note_delete",
+        task_short_uuid=task.task_short_uuid,
+        task_uuid=task.task_uuid,
+        path=str(result.note_path),
+        trash_path=str(result.trash_path),
+    )
+    return {
+        "note_path": result.note_path,
+        "trash_path": result.trash_path,
+        "task_short_uuid": task.task_short_uuid,
+    }
+
+
+def delete_chain_note_storage(config: AppConfig, task: ResolvedTask) -> dict[str, object]:
+    chain_id = chain_id_for_task(task.task)
+    result = delete_chain_note(config, task)
+    if chain_id:
+        remove_chain_note_index(config, chain_id)
+    append_op(
+        config,
+        "chain_note_delete",
+        task_short_uuid=task.task_short_uuid,
+        task_uuid=task.task_uuid,
+        chain_id=chain_id or None,
+        path=str(result.note_path),
+        trash_path=str(result.trash_path),
+    )
+    return {
+        "note_path": result.note_path,
+        "trash_path": result.trash_path,
+        "task_short_uuid": task.task_short_uuid,
+        "chain_id": chain_id,
+    }
+
+
+def delete_project_note_storage(config: AppConfig, project_name: str) -> dict[str, object]:
+    result = delete_project_note(config, project_name)
+    remove_project_note_index(config, project_name)
+    append_op(
+        config,
+        "project_note_delete",
+        project=project_name,
+        path=str(result.note_path),
+        trash_path=str(result.trash_path),
+    )
+    return {
+        "note_path": result.note_path,
+        "trash_path": result.trash_path,
+        "project": project_name,
+    }
 
 
 def add_to_task_heading_storage(

@@ -25,6 +25,7 @@ class ResolvedTask:
 class AppConfig:
     config_path: Path
     root_dir: Path
+    trash_dir: Path
     tasks_dir: Path
     chains_dir: Path
     projects_dir: Path
@@ -46,6 +47,13 @@ class AppendResult:
     note_path: Path
     existed: bool
     appended_text: str
+
+
+@dataclass(slots=True)
+class DeleteResult:
+    note_path: Path
+    trash_path: Path
+    existed: bool
 
 
 @dataclass(slots=True)

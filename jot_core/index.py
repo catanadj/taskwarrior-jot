@@ -181,6 +181,24 @@ def update_project_note_index(config: AppConfig, project_name: str, note_path: P
     save_index(config, data)
 
 
+def remove_task_note_index(config: AppConfig, short_uuid: str) -> None:
+    data = load_or_rebuild_index(config)
+    data["tasks"].pop(short_uuid, None)
+    save_index(config, data)
+
+
+def remove_chain_note_index(config: AppConfig, chain_id: str) -> None:
+    data = load_or_rebuild_index(config)
+    data["chains"].pop(chain_id, None)
+    save_index(config, data)
+
+
+def remove_project_note_index(config: AppConfig, project_name: str) -> None:
+    data = load_or_rebuild_index(config)
+    data["projects"].pop(str(project_name or "").strip(), None)
+    save_index(config, data)
+
+
 def _empty_index() -> dict[str, Any]:
     return {
         "version": 1,
@@ -214,6 +232,9 @@ def _merge_op(data: dict[str, Any], config: AppConfig, item: dict[str, Any]) -> 
             merged["last_note_at"] = ts or merged["last_note_at"]
             if path:
                 merged["note_path"] = _relative_note_path(config, Path(path))
+        elif op == "task_note_delete":
+            data["tasks"].pop(short_uuid, None)
+            return
         elif op == "event_add":
             merged["last_event_at"] = ts or merged["last_event_at"]
         data["tasks"][short_uuid] = merged
@@ -229,6 +250,9 @@ def _merge_op(data: dict[str, Any], config: AppConfig, item: dict[str, Any]) -> 
             merged_chain["last_note_at"] = ts or merged_chain["last_note_at"]
             if path:
                 merged_chain["note_path"] = _relative_note_path(config, Path(path))
+        elif op == "chain_note_delete":
+            data["chains"].pop(chain_id, None)
+            return
         data["chains"][chain_id] = merged_chain
 
     if project:
@@ -242,6 +266,9 @@ def _merge_op(data: dict[str, Any], config: AppConfig, item: dict[str, Any]) -> 
             merged_project["last_note_at"] = ts or merged_project.get("last_note_at")
             if path:
                 merged_project["note_path"] = _relative_note_path(config, Path(path))
+        elif op == "project_note_delete":
+            data["projects"].pop(project, None)
+            return
         data["projects"][project] = merged_project
 
 

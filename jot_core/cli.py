@@ -33,6 +33,9 @@ from .storage import (
     add_to_chain_heading_storage,
     add_to_project_heading_storage,
     add_to_task_heading_storage,
+    delete_chain_note_storage,
+    delete_project_note_storage,
+    delete_task_note_storage,
     append_chain_note_storage,
     append_project_note_storage,
     append_task_note_storage,
@@ -137,6 +140,8 @@ def build_parser() -> argparse.ArgumentParser:
         "export": "export task summary and events",
         "task-cat": "print the full task note without opening an editor",
         "chain-cat": "print the full chain note without opening an editor",
+        "task-delete": "move the task note to trash",
+        "chain-delete": "move the chain note to trash",
     }
     for name, help_text in task_commands.items():
         sub = subparsers.add_parser(name, help=help_text, description=help_text[:1].upper() + help_text[1:] + ".")
@@ -171,6 +176,16 @@ def build_parser() -> argparse.ArgumentParser:
         description="Print the full project note content for an exact Taskwarrior project name.",
     )
     project_cat.add_argument(
+        "project_name",
+        help="exact Taskwarrior project name, for example Finances.Expense",
+    )
+
+    project_delete = subparsers.add_parser(
+        "project-delete",
+        help="move the project note to trash",
+        description="Move the project note to the jot trash directory without deleting the file permanently.",
+    )
+    project_delete.add_argument(
         "project_name",
         help="exact Taskwarrior project name, for example Finances.Expense",
     )
@@ -329,12 +344,18 @@ def main(argv: list[str] | None = None) -> int:
             result = _run_task_cat(ctx, args.task_ref)
         elif args.command == "chain-cat":
             result = _run_chain_cat(ctx, args.task_ref)
+        elif args.command == "task-delete":
+            result = _run_task_delete(ctx, args.task_ref)
+        elif args.command == "chain-delete":
+            result = _run_chain_delete(ctx, args.task_ref)
         elif args.command == "project":
             result = _run_project(ctx, args.project_name)
         elif args.command == "project-show":
             result = _run_project_show(ctx, args.project_name)
         elif args.command == "project-cat":
             result = _run_project_cat(ctx, args.project_name)
+        elif args.command == "project-delete":
+            result = _run_project_delete(ctx, args.project_name)
         elif args.command == "add":
             result = _run_add(ctx, args.task_ref, args.text, args.event_type)
         elif args.command == "note-append":
@@ -401,6 +422,7 @@ def _run_paths(ctx) -> CommandResult:
         payload={
             "config_path": str(config.config_path),
             "root_dir": str(config.root_dir),
+            "trash_dir": str(config.trash_dir),
             "tasks_dir": str(config.tasks_dir),
             "chains_dir": str(config.chains_dir),
             "projects_dir": str(config.projects_dir),
@@ -571,6 +593,33 @@ def _run_chain_cat(ctx, task_ref: str) -> CommandResult:
     )
 
 
+def _run_task_delete(ctx, task_ref: str) -> CommandResult:
+    task = ctx.taskwarrior.resolve_task(task_ref)
+    result = delete_task_note_storage(ctx.config, task)
+    return CommandResult(
+        command="task-delete",
+        payload={
+            "task_short_uuid": task.task_short_uuid,
+            "path": str(result["note_path"]),
+            "trash_path": str(result["trash_path"]),
+        },
+    )
+
+
+def _run_chain_delete(ctx, task_ref: str) -> CommandResult:
+    task = ctx.taskwarrior.resolve_task(task_ref)
+    result = delete_chain_note_storage(ctx.config, task)
+    return CommandResult(
+        command="chain-delete",
+        payload={
+            "task_short_uuid": task.task_short_uuid,
+            "chain_id": result.get("chain_id"),
+            "path": str(result["note_path"]),
+            "trash_path": str(result["trash_path"]),
+        },
+    )
+
+
 def _run_show(ctx, task_ref: str) -> CommandResult:
     task = ctx.taskwarrior.resolve_task(task_ref)
     payload = _task_summary_payload(ctx, task)
@@ -669,6 +718,18 @@ def _run_project_append(ctx, project_name: str, text: str) -> CommandResult:
             "path": str(result.note_path),
             "opened": result.existed,
             "project": project_name,
+        },
+    )
+
+
+def _run_project_delete(ctx, project_name: str) -> CommandResult:
+    result = delete_project_note_storage(ctx.config, project_name)
+    return CommandResult(
+        command="project-delete",
+        payload={
+            "project": project_name,
+            "path": str(result["note_path"]),
+            "trash_path": str(result["trash_path"]),
         },
     )
 
