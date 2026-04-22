@@ -147,10 +147,11 @@ class CliIntegrationTests(JotCliTestCase):
     def test_no_arguments_prints_command_overview(self) -> None:
         result = self.run_jot()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Commands:", result.stdout)
-        self.assertIn("note", result.stdout)
-        self.assertIn("report recent", result.stdout)
-        self.assertIn("tui", result.stdout)
+        self.assertIn("usage: jot", result.stdout)
+        self.assertIn("Note-first companion for Taskwarrior and Taskwarrior-Nautical", result.stdout)
+        self.assertIn("jot add-to task 42 --heading \"Next steps\" --text \"Call vendor Monday\"", result.stdout)
+        self.assertIn("jot report recent --limit 10", result.stdout)
+        self.assertIn("jot tui", result.stdout)
 
     def test_version_flag(self) -> None:
         result = self.run_jot("--version")
