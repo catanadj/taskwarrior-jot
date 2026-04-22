@@ -144,6 +144,14 @@ class FrontMatterTests(unittest.TestCase):
 
 
 class CliIntegrationTests(JotCliTestCase):
+    def test_no_arguments_prints_command_overview(self) -> None:
+        result = self.run_jot()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Commands:", result.stdout)
+        self.assertIn("note", result.stdout)
+        self.assertIn("report recent", result.stdout)
+        self.assertIn("tui", result.stdout)
+
     def test_version_flag(self) -> None:
         result = self.run_jot("--version")
         self.assertEqual(result.returncode, 0, result.stderr)

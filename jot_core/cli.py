@@ -308,6 +308,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    if not argv:
+        _emit_command_overview()
+        return 0
+
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -389,6 +395,45 @@ def main(argv: list[str] | None = None) -> int:
 
     emit_result(result, json_mode=args.json)
     return 0
+
+
+def _emit_command_overview() -> None:
+    sys.stdout.write(
+        "jot - note-first companion for Taskwarrior and Taskwarrior-Nautical\n\n"
+    )
+    sys.stdout.write("Usage:\n")
+    sys.stdout.write("  jot <command> [args]\n")
+    sys.stdout.write("  jot <command> --help\n\n")
+    sys.stdout.write("Commands:\n")
+    for name, desc in (
+        ("doctor", "check configuration, storage paths, and Taskwarrior availability"),
+        ("paths", "show the resolved jot config and storage paths"),
+        ("rebuild-index", "rebuild index.json from note files and ops log"),
+        ("stats", "show local note, ops, and index statistics"),
+        ("tui", "launch the terminal user interface"),
+        ("project-list", "list known project notes"),
+        ("report recent", "show recent note and event activity"),
+        ("note", "open or create the task note in your editor"),
+        ("chain", "open or create the Nautical chain note in your editor"),
+        ("project", "open or create a project note in your editor"),
+        ("show", "show note paths and Nautical summary for a task"),
+        ("list", "show task summary plus the current annotation event stream"),
+        ("export", "export task summary and events"),
+        ("search", "search note files and logged events"),
+        ("add", "add a short event to the task annotation stream"),
+        ("add-to", "add a timestamped entry under a note heading"),
+        ("note-append", "append plain text to a task note"),
+        ("chain-append", "append plain text to a chain note"),
+        ("project-append", "append plain text to a project note"),
+        ("task-cat", "print the full task note without opening an editor"),
+        ("chain-cat", "print the full chain note without opening an editor"),
+        ("project-cat", "print the full project note without opening an editor"),
+        ("task-delete", "move the task note to trash"),
+        ("chain-delete", "move the chain note to trash"),
+        ("project-delete", "move the project note to trash"),
+    ):
+        sys.stdout.write(f"  {name:<16} {desc}\n")
+    sys.stdout.write("\nRun `jot --help` for full usage details.\n")
 
 
 def _run_tui(ctx) -> int:
