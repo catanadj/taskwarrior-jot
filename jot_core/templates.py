@@ -8,7 +8,7 @@ from typing import Any
 from .frontmatter import FrontMatter, read_document
 
 
-TOKEN_RE = re.compile(r"{{\s*([a-zA-Z0-9_]+)\s*}}")
+TOKEN_RE = re.compile(r"{{\s*([a-zA-Z0-9_]+)\s*}}|{\s*([a-zA-Z0-9_]+)\s*}")
 
 
 def apply_template(
@@ -21,12 +21,12 @@ def apply_template(
 ) -> tuple[OrderedDict[str, object], str]:
     template_path = templates_dir / f"{kind}.md"
     if not template_path.exists():
-        return default_metadata, default_body
+        return default_metadata, _render_text(default_body, context)
 
     try:
         template_metadata, template_body = read_document(template_path)
     except Exception:
-        return default_metadata, default_body
+        return default_metadata, _render_text(default_body, context)
 
     metadata = _render_metadata(template_metadata, context)
     # Keep template-defined keys but always enforce jot identity/timestamps.
@@ -35,7 +35,7 @@ def apply_template(
 
     body = _render_text(template_body, context).rstrip()
     if not body:
-        body = default_body
+        body = _render_text(default_body, context)
     return metadata, body
 
 
@@ -53,7 +53,7 @@ def _render_metadata(metadata: FrontMatter, context: dict[str, str]) -> OrderedD
 
 def _render_text(text: str, context: dict[str, str]) -> str:
     def replace(match: re.Match[str]) -> str:
-        key = match.group(1)
+        key = match.group(1) or match.group(2)
         return str(context.get(key, ""))
 
     return TOKEN_RE.sub(replace, str(text or ""))

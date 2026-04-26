@@ -239,6 +239,16 @@ def find_project_note(config: AppConfig, project_name: str) -> Path | None:
 
 def _build_task_note_document(config: AppConfig, task: ResolvedTask) -> tuple[OrderedDict[str, object], str]:
     created = iso_now()
+    template_context = _template_context(
+        created,
+        task_short_uuid=task.task_short_uuid,
+        task_uuid=task.task_uuid,
+        description=task.description or "",
+        project=task.project or "",
+        chain_id=chain_id_for_task(task.task) or "",
+        link=str(task.task.get("link") or "").strip(),
+        project_path=task.project or "",
+    )
     chain_id = chain_id_for_task(task.task)
     link_value = str(task.task.get("link") or "").strip()
     metadata: OrderedDict[str, object] = OrderedDict(
@@ -260,6 +270,8 @@ def _build_task_note_document(config: AppConfig, task: ResolvedTask) -> tuple[Or
         [
             f"# {task.description or task.task_short_uuid}",
             "",
+            "Created: {date} {time}",
+            "",
             "## Context",
             "",
             "## Notes",
@@ -269,21 +281,10 @@ def _build_task_note_document(config: AppConfig, task: ResolvedTask) -> tuple[Or
             "## Next steps",
         ]
     )
-    context = {
-        "task_short_uuid": task.task_short_uuid,
-        "task_uuid": task.task_uuid,
-        "description": task.description or "",
-        "project": task.project or "",
-        "chain_id": chain_id or "",
-        "link": link_value,
-        "created": created,
-        "updated": created,
-        "project_path": task.project or "",
-    }
     return apply_template(
         config.templates_dir,
         kind="task-note",
-        context=context,
+        context=template_context,
         default_metadata=metadata,
         default_body=default_body,
     )
@@ -292,6 +293,16 @@ def _build_task_note_document(config: AppConfig, task: ResolvedTask) -> tuple[Or
 def _build_chain_note_document(config: AppConfig, task: ResolvedTask) -> tuple[OrderedDict[str, object], str]:
     created = iso_now()
     chain_id = chain_id_for_task(task.task)
+    template_context = _template_context(
+        created,
+        task_short_uuid=task.task_short_uuid,
+        task_uuid=task.task_uuid,
+        description=task.description or "",
+        project=task.project or "",
+        chain_id=chain_id or "",
+        link=str(task.task.get("link") or "").strip(),
+        project_path=task.project or "",
+    )
     metadata: OrderedDict[str, object] = OrderedDict(
         [
             ("kind", "chain-note"),
@@ -308,6 +319,8 @@ def _build_chain_note_document(config: AppConfig, task: ResolvedTask) -> tuple[O
         [
             f"# {task.description or chain_id}",
             "",
+            "Created: {date} {time}",
+            "",
             "## Purpose",
             "",
             "## Operating notes",
@@ -317,21 +330,10 @@ def _build_chain_note_document(config: AppConfig, task: ResolvedTask) -> tuple[O
             "## References",
         ]
     )
-    context = {
-        "task_short_uuid": task.task_short_uuid,
-        "task_uuid": task.task_uuid,
-        "description": task.description or "",
-        "project": task.project or "",
-        "chain_id": chain_id or "",
-        "link": str(task.task.get("link") or "").strip(),
-        "created": created,
-        "updated": created,
-        "project_path": task.project or "",
-    }
     return apply_template(
         config.templates_dir,
         kind="chain-note",
-        context=context,
+        context=template_context,
         default_metadata=metadata,
         default_body=default_body,
     )
@@ -340,6 +342,16 @@ def _build_chain_note_document(config: AppConfig, task: ResolvedTask) -> tuple[O
 def _build_project_note_document(config: AppConfig, project_name: str) -> tuple[OrderedDict[str, object], str]:
     created = iso_now()
     project_path = [part.strip() for part in project_name.split(".") if part.strip()]
+    template_context = _template_context(
+        created,
+        task_short_uuid="",
+        task_uuid="",
+        description=project_name,
+        project=project_name,
+        chain_id="",
+        link="",
+        project_path=".".join(project_path),
+    )
     metadata: OrderedDict[str, object] = OrderedDict(
         [
             ("kind", "project-note"),
@@ -353,6 +365,8 @@ def _build_project_note_document(config: AppConfig, project_name: str) -> tuple[
         [
             f"# {project_name}",
             "",
+            "Created: {date} {time}",
+            "",
             "## Purpose",
             "",
             "## Context",
@@ -364,24 +378,26 @@ def _build_project_note_document(config: AppConfig, project_name: str) -> tuple[
             "## Active concerns",
         ]
     )
-    context = {
-        "task_short_uuid": "",
-        "task_uuid": "",
-        "description": project_name,
-        "project": project_name,
-        "chain_id": "",
-        "link": "",
-        "created": created,
-        "updated": created,
-        "project_path": ".".join(project_path),
-    }
     return apply_template(
         config.templates_dir,
         kind="project-note",
-        context=context,
+        context=template_context,
         default_metadata=metadata,
         default_body=default_body,
     )
+
+
+def _template_context(created: str, **values: str) -> dict[str, str]:
+    dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+    context: dict[str, str] = {
+        "created": created,
+        "updated": created,
+        "date": dt.strftime("%Y-%m-%d"),
+        "time": dt.strftime("%H:%M:%SZ"),
+        "datetime": created,
+    }
+    context.update({key: str(value or "") for key, value in values.items()})
+    return context
 
 
 def _append_text(path: Path, text: str) -> None:

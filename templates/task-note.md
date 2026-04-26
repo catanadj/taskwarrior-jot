@@ -9,6 +9,8 @@ updated: "{{updated}}"
 
 # {{description}}
 
+Created: {date} {time}
+
 ## Context
 
 ## Notes

@@ -151,15 +151,18 @@ If a template file is missing, empty, or cannot be parsed, `jot` falls back to t
 
 Supported tokens in templates:
 
-- `{{task_short_uuid}}`
-- `{{task_uuid}}`
-- `{{description}}`
-- `{{project}}`
-- `{{chain_id}}`
-- `{{link}}`
-- `{{created}}`
-- `{{updated}}`
-- `{{project_path}}`
+- `{task_short_uuid}` or `{{task_short_uuid}}`
+- `{task_uuid}` or `{{task_uuid}}`
+- `{description}` or `{{description}}`
+- `{project}` or `{{project}}`
+- `{chain_id}` or `{{chain_id}}`
+- `{link}` or `{{link}}`
+- `{date}` or `{{date}}`
+- `{time}` or `{{time}}`
+- `{datetime}` or `{{datetime}}`
+- `{created}` or `{{created}}`
+- `{updated}` or `{{updated}}`
+- `{project_path}` or `{{project_path}}`
 
 `add-to` behavior:
 

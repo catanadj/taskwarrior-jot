@@ -8,6 +8,8 @@ updated: "{{updated}}"
 
 # {{description}}
 
+Created: {date} {time}
+
 ## Purpose
 
 ## Operating notes

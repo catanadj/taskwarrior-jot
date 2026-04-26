@@ -255,6 +255,7 @@ class CliIntegrationTests(JotCliTestCase):
                 ---
 
                 # TASK {{task_short_uuid}}
+                Created on {date} at {time}
                 """
             ),
             encoding="utf-8",
@@ -282,6 +283,7 @@ class CliIntegrationTests(JotCliTestCase):
 
         task_note = list((self.home / ".task" / "jot" / "tasks").glob("*.md"))[0].read_text(encoding="utf-8")
         self.assertIn("# TASK 2d6d7d7d", task_note)
+        self.assertRegex(task_note, r"Created on \d{4}-\d{2}-\d{2} at \d{2}:\d{2}:\d{2}Z")
         self.assertIn("kind: task-note", task_note)
         self.assertIn('custom: "2d6d7d7d"', task_note)
         self.assertNotIn("kind: bad-kind", task_note)
@@ -313,6 +315,7 @@ class CliIntegrationTests(JotCliTestCase):
         task_note = list((self.home / ".task" / "jot" / "tasks").glob("*.md"))[0].read_text(encoding="utf-8")
         self.assertIn("## Context", task_note)
         self.assertIn("## Notes", task_note)
+        self.assertIn("Created:", task_note)
 
     def test_project_note_append_uses_project_hierarchy_and_updates_index(self) -> None:
         result = self.run_jot("project-append", "Finances.Expense", "reimbursement", "policy")

@@ -7,6 +7,8 @@ updated: "{{updated}}"
 
 # {{project}}
 
+Created: {date} {time}
+
 ## Purpose
 
 ## Context
