@@ -90,6 +90,7 @@ TUI keybinds:
 - `q` quit
 - `r` refresh data
 - `u` refresh the current workspace
+- `ctrl+p` command palette
 - `/` focus search input
 - `Enter` open the selected row into its detail workspace
 - `e` open the active note in the current workspace

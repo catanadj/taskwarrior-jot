@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 from jot_core.frontmatter import parse_document, render_document
+from jot_tui.palette import PaletteEntry, filter_palette_entries
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -141,6 +142,17 @@ class FrontMatterTests(unittest.TestCase):
         reparsed, rebody = parse_document(rendered)
         self.assertEqual(metadata, reparsed)
         self.assertEqual(body, rebody)
+
+
+class PaletteTests(unittest.TestCase):
+    def test_filter_palette_entries_prefers_relevant_matches(self) -> None:
+        entries = [
+            PaletteEntry("refresh-all", "Refresh all", "Reload everything"),
+            PaletteEntry("browse-projects", "Browse projects", "Open the project browser"),
+            PaletteEntry("edit-note", "Edit active note", "Open the active note", enabled=False),
+        ]
+        filtered = filter_palette_entries(entries, "project")
+        self.assertEqual([item.id for item in filtered], ["browse-projects"])
 
 
 class CliIntegrationTests(JotCliTestCase):

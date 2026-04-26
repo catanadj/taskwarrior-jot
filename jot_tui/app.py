@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from jot_core.services import JotService
 from jot_core.notes import preview_trash_path
+from jot_tui.palette import PaletteEntry, filter_palette_entries
 
 
 def run_tui(service: JotService) -> int:
@@ -119,6 +121,86 @@ def run_tui(service: JotService) -> int:
                 return
             self.dismiss(False)
 
+    class CommandPaletteModal(ModalScreen[dict[str, Any] | None]):
+        CSS = """
+        #dialog {
+            width: 88;
+            height: 30;
+            border: round $panel;
+            padding: 1 2;
+            background: $surface;
+        }
+        #palette-input { margin: 1 0; }
+        #palette-table { height: 1fr; }
+        #palette-buttons { height: auto; }
+        """
+
+        BINDINGS = [("escape", "cancel", "Cancel")]
+
+        def __init__(self, entries: list[PaletteEntry]) -> None:
+            super().__init__()
+            self.entries = entries
+            self.filtered_entries = list(entries)
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id="dialog"):
+                yield Label("Command palette")
+                yield Input(placeholder="Type to filter commands", id="palette-input")
+                table = DataTable(id="palette-table", cursor_type="row")
+                table.add_columns("key", "command", "description")
+                yield table
+                with Horizontal(id="palette-buttons"):
+                    yield Button("Cancel", id="cancel-btn")
+                    yield Button("Open", id="open-btn", variant="primary")
+
+        def on_mount(self) -> None:
+            self._render()
+            self.query_one("#palette-input", Input).focus()
+
+        def action_cancel(self) -> None:
+            self.dismiss(None)
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "open-btn":
+                self._open_selected()
+                return
+            self.dismiss(None)
+
+        def on_input_changed(self, event: Input.Changed) -> None:
+            if event.input.id != "palette-input":
+                return
+            self.filtered_entries = filter_palette_entries(self.entries, event.value)
+            self._render()
+
+        def on_input_submitted(self, event: Input.Submitted) -> None:
+            if event.input.id != "palette-input":
+                return
+            self._open_selected()
+
+        def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+            if event.data_table.id != "palette-table":
+                return
+            self._open_row(event.cursor_row)
+
+        def _render(self) -> None:
+            table = self.query_one("#palette-table", DataTable)
+            table.clear()
+            for entry in self.filtered_entries[:20]:
+                table.add_row(entry.id, entry.label, entry.detail)
+
+        def _open_selected(self) -> None:
+            table = self.query_one("#palette-table", DataTable)
+            row = table.cursor_row
+            if row < 0:
+                row = 0
+            self._open_row(row)
+
+        def _open_row(self, row: int) -> None:
+            if row < 0 or row >= len(self.filtered_entries):
+                self.dismiss(None)
+                return
+            self.dismiss(asdict(self.filtered_entries[row]))
+
     class JotTUI(App[None]):
         CSS = """
         Screen { layout: vertical; }
@@ -154,6 +236,7 @@ def run_tui(service: JotService) -> int:
             ("q", "quit", "Quit"),
             ("r", "refresh", "Refresh"),
             ("u", "refresh_current", "Update"),
+            ("ctrl+p", "command_palette", "Palette"),
             ("enter", "open_selected", "Open"),
             ("slash", "focus_search", "Search"),
             ("e", "edit_selected_task_note", "Edit note"),
@@ -277,6 +360,12 @@ def run_tui(service: JotService) -> int:
         async def action_refresh_current(self) -> None:
             await self._refresh_current_context_async()
             self._update_action_hints()
+
+        def action_command_palette(self) -> None:
+            self.push_screen(
+                CommandPaletteModal(self._palette_entries()),
+                lambda payload: self._on_palette_selected(payload),
+            )
 
         def action_focus_search(self) -> None:
             self.query_one("#main-tabs", TabbedContent).active = "search-tab"
@@ -403,6 +492,11 @@ def run_tui(service: JotService) -> int:
                 self.notify("Select a project row or a task with a project", severity="warning")
                 return
             self._open_project_workspace(project)
+
+        def _on_palette_selected(self, payload: dict[str, Any] | None) -> None:
+            if not payload:
+                return
+            asyncio.create_task(self._execute_palette_command_async(str(payload.get("id") or "")))
 
         def _on_add_to_payload(self, kind: str, payload: dict[str, Any] | None) -> None:
             if not payload:
@@ -608,6 +702,56 @@ def run_tui(service: JotService) -> int:
             await self._refresh_tasks_async()
             await self._refresh_projects_async()
 
+        async def _execute_palette_command_async(self, command_id: str) -> None:
+            if command_id == "browse-tasks":
+                self.query_one("#main-tabs", TabbedContent).active = "browse-tab"
+                self.query_one("#browse-browser-tabs", TabbedContent).active = "task-browser-pane"
+                if self.current_task_ref:
+                    await self._load_task_async(self.current_task_ref)
+                self._update_action_hints()
+                return
+            if command_id == "browse-projects":
+                self.query_one("#main-tabs", TabbedContent).active = "browse-tab"
+                self.query_one("#browse-browser-tabs", TabbedContent).active = "project-browser-pane"
+                if self.current_project_name:
+                    await self._load_project_async(self.current_project_name)
+                self._update_action_hints()
+                return
+            if command_id == "latest-edits":
+                self.query_one("#main-tabs", TabbedContent).active = "latest-tab"
+                if self.current_latest_task_ref:
+                    await self._load_latest_task_async(self.current_latest_task_ref)
+                self._update_action_hints()
+                return
+            if command_id == "search":
+                self.action_focus_search()
+                return
+            if command_id == "refresh-current":
+                await self.action_refresh_current()
+                return
+            if command_id == "refresh-all":
+                await self.action_refresh()
+                return
+            if command_id == "open-selected":
+                self.action_open_selected()
+                return
+            if command_id == "edit-note":
+                self.action_edit_selected_task_note()
+                return
+            if command_id == "delete-note":
+                self.action_delete_selected_note()
+                return
+            if command_id == "add-task":
+                self.action_add_to_selected_task()
+                return
+            if command_id == "add-chain":
+                self.action_add_to_selected_chain()
+                return
+            if command_id == "open-project":
+                self.action_open_project_context()
+                return
+            self.notify(f"Unknown palette command: {command_id}", severity="warning")
+
         async def _load_task_async(self, task_ref: str) -> None:
             summary = self.query_one("#task-summary", Static)
             task_note = self.query_one("#task-note-preview", Static)
@@ -784,7 +928,7 @@ def run_tui(service: JotService) -> int:
                 await self._load_task_async(self.current_task_ref)
 
         def _update_action_hints(self) -> None:
-            hints = ["Actions: / search", "r refresh", "q quit"]
+            hints = ["Actions: ctrl+p palette", "/ search", "r refresh", "u update", "q quit"]
             if self.current_task_ref or self.current_latest_task_ref or self.current_project_name:
                 hints.append("d delete-note")
             if self.current_task_ref:
@@ -794,6 +938,23 @@ def run_tui(service: JotService) -> int:
             if self.current_project_name or self.current_task_project:
                 hints.append("p open-project")
             self.query_one("#context-hints", Static).update(" | ".join(hints))
+
+        def _palette_entries(self) -> list[PaletteEntry]:
+            entries = [
+                PaletteEntry("browse-tasks", "Browse tasks", "Open the task browser workspace"),
+                PaletteEntry("browse-projects", "Browse projects", "Open the project browser workspace"),
+                PaletteEntry("latest-edits", "Latest edits", "Open the recent activity workspace"),
+                PaletteEntry("search", "Search", "Focus the search tab and input"),
+                PaletteEntry("refresh-current", "Refresh current", "Reload the active workspace"),
+                PaletteEntry("refresh-all", "Refresh all", "Reload tasks, projects, and recent activity"),
+                PaletteEntry("open-selected", "Open selected row", "Jump into the selected task, project, or recent item"),
+                PaletteEntry("edit-note", "Edit active note", "Open the active note in your editor", bool(self._active_note_target())),
+                PaletteEntry("delete-note", "Delete active note", "Move the active note to trash", bool(self._active_note_target())),
+                PaletteEntry("add-task", "Add to task heading", "Add a timestamped entry under the selected task note", bool(self.current_task_ref)),
+                PaletteEntry("add-chain", "Add to chain heading", "Add a timestamped entry under the selected chain note", bool(self.current_task_ref and self.current_task_chain_path)),
+                PaletteEntry("open-project", "Open project workspace", "Open the selected or current project note", bool(self.current_project_name or self.current_task_project)),
+            ]
+            return entries
 
         def _active_note_target(self) -> dict[str, Any] | None:
             main_tab = self.query_one("#main-tabs", TabbedContent).active
