@@ -172,6 +172,40 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "jot 0.3.0")
 
+    def test_task_ref_shorthand_opens_task_note_without_chain(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Plain task",
+            "project": "finance.audit",
+            "tags": ["ann"],
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+
+        result = self.run_jot("1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("task note", result.stdout)
+        self.assertEqual(len(list((self.home / ".task" / "jot" / "tasks").glob("*.md"))), 1)
+        self.assertEqual(len(list((self.home / ".task" / "jot" / "chains").glob("*.md"))), 0)
+
+    def test_task_ref_shorthand_opens_chain_note_when_chain_exists(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Recurring task",
+            "project": "finance.audit",
+            "tags": ["ann"],
+            "chainID": "a4bf5egh",
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+
+        result = self.run_jot("--json", "1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["path"].endswith("chains/a4bf5egh--recurring-task.md"))
+        self.assertEqual(len(list((self.home / ".task" / "jot" / "tasks").glob("*.md"))), 0)
+        self.assertEqual(len(list((self.home / ".task" / "jot" / "chains").glob("*.md"))), 1)
+
     def test_doctor_reports_hardened_checks(self) -> None:
         result = self.run_jot("--json", "doctor")
         self.assertEqual(result.returncode, 0, result.stderr)

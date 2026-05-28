@@ -59,6 +59,7 @@ jot tui
 Keep the task’s context in one place:
 
 ```bash
+jot 42
 jot note 42
 jot note-append 42 Followed up with the vendor
 jot add-to task 42 --heading "Next steps" --text "Call vendor Monday"
@@ -184,6 +185,9 @@ jot export <task-ref>
 ```
 
 All commands support `--json`.
+
+`jot <task-ref>` is a shortcut: it opens the task note when the task is not
+part of a Nautical chain, and the chain note when `chainID` is present.
 
 ## Templates
 

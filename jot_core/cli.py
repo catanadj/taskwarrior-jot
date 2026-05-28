@@ -46,6 +46,7 @@ from .storage import (
     finalize_task_note_edit,
     record_event_add,
 )
+from .taskwarrior import INTEGER_RE, SHORT_UUID_RE, UUID_RE
 from .trash import list_trash, restore_trash_item
 
 
@@ -59,6 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Examples:\n"
+            "  jot 42\n"
             "  jot note 42\n"
             "  jot chain 42\n"
             "  jot project Finances.Expense\n"
@@ -381,6 +383,20 @@ def main(argv: list[str] | None = None) -> int:
     if not argv:
         build_parser().print_help()
         return 0
+    shorthand_ref, shorthand_json = _parse_task_shorthand(argv)
+    if shorthand_ref:
+        try:
+            ctx = build_app_context()
+            ensure_app_dirs(ctx.config)
+            result = _run_auto_note(ctx, shorthand_ref)
+        except RuntimeError as exc:
+            warn(str(exc))
+            return 1
+        except Exception as exc:
+            warn(str(exc))
+            return 1
+        emit_result(result, json_mode=shorthand_json)
+        return 0
 
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -475,6 +491,20 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _parse_task_shorthand(argv: list[str]) -> tuple[str | None, bool]:
+    json_mode = False
+    args = list(argv)
+    if args and args[0] == "--json":
+        json_mode = True
+        args = args[1:]
+    if len(args) != 1:
+        return None, json_mode
+    ref = str(args[0] or "").strip()
+    if INTEGER_RE.fullmatch(ref) or SHORT_UUID_RE.fullmatch(ref) or UUID_RE.fullmatch(ref):
+        return ref, json_mode
+    return None, json_mode
+
+
 def _run_tui(ctx) -> int:
     try:
         from jot_tui.app import run_tui
@@ -490,6 +520,33 @@ def _run_trash_list(ctx) -> CommandResult:
 
 def _run_trash_restore(ctx, trash_id: int) -> CommandResult:
     return CommandResult(command="trash-restore", payload=restore_trash_item(ctx.config, trash_id))
+
+
+def _run_auto_note(ctx, task_ref: str) -> CommandResult:
+    task = ctx.taskwarrior.resolve_task(task_ref)
+    if chain_id_for_task(task.task):
+        note = ensure_chain_note(ctx.config, task)
+        open_in_editor(note.note_path, ctx.config.editor_command)
+        finalize_chain_note_edit(ctx.config, task, note)
+        return CommandResult(
+            command="chain",
+            payload={
+                "path": str(note.note_path),
+                "opened": note.existed,
+                "task_short_uuid": task.task_short_uuid,
+            },
+        )
+    note = ensure_task_note(ctx.config, task)
+    open_in_editor(note.note_path, ctx.config.editor_command)
+    finalize_task_note_edit(ctx.config, task, note)
+    return CommandResult(
+        command="note",
+        payload={
+            "path": str(note.note_path),
+            "opened": note.existed,
+            "task_short_uuid": task.task_short_uuid,
+        },
+    )
 
 
 def _run_note(ctx, task_ref: str) -> CommandResult:
