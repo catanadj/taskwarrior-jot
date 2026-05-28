@@ -5,6 +5,7 @@ from typing import Any
 
 from .frontmatter import read_document
 from .models import AppConfig
+from .notes import find_project_note
 from .ops import read_ops
 from .search import ALLOWED_KINDS
 
@@ -48,6 +49,159 @@ def recent_activity(
         items.extend(_recent_events(config))
     items.sort(key=lambda item: str(item.get("ts") or ""), reverse=True)
     return items[:limit]
+
+
+def project_rollup(
+    config: AppConfig,
+    tasks: list[dict[str, Any]],
+    project_name: str,
+    *,
+    limit: int = 20,
+) -> dict[str, Any]:
+    if limit <= 0:
+        raise RuntimeError("limit must be greater than zero")
+    project = str(project_name or "").strip()
+    if not project:
+        raise RuntimeError("project name is empty")
+
+    exact_tasks = [
+        _project_task_payload(config, item)
+        for item in tasks
+        if str(item.get("project") or "").strip() == project
+    ]
+    recent = _project_recent_activity(config, project, exact_tasks, limit=limit)
+    chains = _project_chains(config, exact_tasks)
+    return {
+        "project": project,
+        "note": _project_note_payload(config, project),
+        "tasks": exact_tasks,
+        "recent": recent,
+        "chains": chains,
+    }
+
+
+def _project_note_payload(config: AppConfig, project: str) -> dict[str, Any]:
+    note_path = find_project_note(config, project)
+    if note_path is None:
+        return {
+            "exists": False,
+            "path": "",
+            "updated": None,
+            "preview": "",
+            "headings": [],
+        }
+    metadata, body = read_document(note_path)
+    return {
+        "exists": True,
+        "path": str(note_path),
+        "updated": str(metadata.get("updated") or "").strip() or None,
+        "preview": _body_preview(body),
+        "headings": _body_headings(body),
+    }
+
+
+def _project_task_payload(config: AppConfig, item: dict[str, Any]) -> dict[str, Any]:
+    short_uuid = str(item.get("short_uuid") or "").strip()
+    chain_id = str(item.get("chain_id") or "").strip()
+    project = str(item.get("project") or "").strip()
+    has_task_note = bool(short_uuid and list(config.tasks_dir.glob(f"{short_uuid}--*.md")))
+    has_chain_note = bool(chain_id and list(config.chains_dir.glob(f"{chain_id}--*.md")))
+    has_project_note = bool(project and find_project_note(config, project))
+    return {
+        "uuid": str(item.get("uuid") or "").strip(),
+        "short_uuid": short_uuid,
+        "description": str(item.get("description") or "").strip(),
+        "project": project,
+        "tags": list(item.get("tags") or []),
+        "due": item.get("due"),
+        "chain_id": chain_id or None,
+        "notes": {
+            "task": has_task_note,
+            "chain": has_chain_note,
+            "project": has_project_note,
+        },
+    }
+
+
+def _project_recent_activity(
+    config: AppConfig,
+    project: str,
+    tasks: list[dict[str, Any]],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    short_uuids = {str(item.get("short_uuid") or "") for item in tasks if item.get("short_uuid")}
+    chain_ids = {str(item.get("chain_id") or "") for item in tasks if item.get("chain_id")}
+    items: list[dict[str, Any]] = []
+    for item in recent_activity(config, limit=1000):
+        kind = str(item.get("kind") or "")
+        if kind == "project-note" and str(item.get("project") or "") == project:
+            items.append(item)
+        elif kind == "task-note" and str(item.get("task_short_uuid") or "") in short_uuids:
+            items.append(item)
+        elif kind == "chain-note" and str(item.get("chain_id") or "") in chain_ids:
+            items.append(item)
+        elif kind == "event" and _event_matches_project(item, project, short_uuids, chain_ids):
+            items.append(item)
+    items.sort(key=lambda entry: str(entry.get("ts") or ""), reverse=True)
+    return items[:limit]
+
+
+def _event_matches_project(
+    item: dict[str, Any],
+    project: str,
+    short_uuids: set[str],
+    chain_ids: set[str],
+) -> bool:
+    return (
+        str(item.get("project") or "") == project
+        or str(item.get("task_short_uuid") or "") in short_uuids
+        or str(item.get("chain_id") or "") in chain_ids
+    )
+
+
+def _project_chains(config: AppConfig, tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    chains: dict[str, dict[str, Any]] = {}
+    for task in tasks:
+        chain_id = str(task.get("chain_id") or "").strip()
+        if not chain_id:
+            continue
+        note_files = list(config.chains_dir.glob(f"{chain_id}--*.md"))
+        updated = None
+        path = ""
+        if note_files:
+            metadata, _body = read_document(note_files[0])
+            updated = str(metadata.get("updated") or "").strip() or None
+            path = str(note_files[0])
+        row = chains.setdefault(
+            chain_id,
+            {
+                "chain_id": chain_id,
+                "task_count": 0,
+                "note": bool(note_files),
+                "path": path,
+                "updated": updated,
+            },
+        )
+        row["task_count"] = int(row.get("task_count") or 0) + 1
+    return sorted(chains.values(), key=lambda item: str(item.get("chain_id") or ""))
+
+
+def _body_preview(body: str, *, max_lines: int = 4) -> str:
+    lines = [line.strip() for line in str(body or "").splitlines() if line.strip()]
+    return "\n".join(lines[:max_lines])
+
+
+def _body_headings(body: str) -> list[str]:
+    headings: list[str] = []
+    for line in str(body or "").splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("#"):
+            continue
+        title = stripped.lstrip("#").strip()
+        if title:
+            headings.append(title)
+    return headings
 
 
 def _recent_task_notes(config: AppConfig) -> list[dict[str, Any]]:
@@ -122,6 +276,8 @@ def _recent_events(config: AppConfig) -> list[dict[str, Any]]:
                 "ts": ts,
                 "kind": "event",
                 "task_short_uuid": str(item.get("task_short_uuid") or "").strip() or None,
+                "project": str(item.get("project") or "").strip() or None,
+                "chain_id": str(item.get("chain_id") or "").strip() or None,
                 "annotation": str(item.get("annotation") or "").strip(),
             }
         )

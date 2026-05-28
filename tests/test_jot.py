@@ -53,6 +53,8 @@ def _write_fake_task_script(bin_dir: Path, state_path: Path) -> None:
                 if arg.isdigit():
                     export_key = arg
                     break
+                if arg.startswith('status:') or arg.startswith('limit:'):
+                    export_key = 'tasks'
             print(json.dumps(state.get(export_key, state.get('single', []))))
             raise SystemExit(0)
 
@@ -383,6 +385,52 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("Note:", text_show.stdout)
         self.assertIn("path", text_show.stdout)
         self.assertIn("preview", text_show.stdout)
+
+    def test_project_report_rolls_up_notes_tasks_recent_and_chains(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Fix billing discrepancy",
+            "project": "finance.audit",
+            "tags": ["ann"],
+            "chainID": "a4bf5egh",
+            "annotations": [],
+        }
+        other_task = {
+            "uuid": "3d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Other work",
+            "project": "finance.other",
+            "tags": [],
+            "annotations": [],
+        }
+        self.write_state(
+            {
+                "version": "2.6.2",
+                "single": [task],
+                "1": [task],
+                "tasks": [task, other_task],
+                "annotate_key": "1",
+            }
+        )
+
+        self.assertEqual(self.run_jot("project-append", "finance.audit", "project baseline").returncode, 0)
+        self.assertEqual(self.run_jot("note-append", "1", "task baseline").returncode, 0)
+        self.assertEqual(self.run_jot("chain-append", "1", "chain baseline").returncode, 0)
+        self.assertEqual(self.run_jot("add", "--type", "status", "1", "waiting").returncode, 0)
+
+        result = self.run_jot("--json", "project-report", "finance.audit", "--limit", "10")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["project"], "finance.audit")
+        self.assertTrue(payload["note"]["exists"])
+        self.assertEqual([item["short_uuid"] for item in payload["tasks"]], ["2d6d7d7d"])
+        self.assertEqual(payload["chains"][0]["chain_id"], "a4bf5egh")
+        self.assertTrue(any(item["kind"] == "event" for item in payload["recent"]))
+
+        text_result = self.run_jot("project-report", "finance.audit", "--limit", "5")
+        self.assertEqual(text_result.returncode, 0, text_result.stderr)
+        self.assertIn("Project finance.audit", text_result.stdout)
+        self.assertIn("Tasks:", text_result.stdout)
+        self.assertIn("Chains:", text_result.stdout)
 
     def test_delete_commands_move_notes_to_trash_and_update_index(self) -> None:
         task = {

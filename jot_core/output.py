@@ -47,6 +47,9 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "project-show":
         _emit_project_show(payload)
         return
+    if command == "project-report":
+        _emit_project_report(payload)
+        return
     if command in {"project-cat", "task-cat", "chain-cat"}:
         _emit_cat(payload)
         return
@@ -264,6 +267,63 @@ def _emit_project_show(payload: dict[str, Any]) -> None:
     preview = str(note.get("preview") or "").strip()
     if preview:
         _emit_field("preview", preview, indent=2)
+
+
+def _emit_project_report(payload: dict[str, Any]) -> None:
+    sys.stdout.write(f"Project {payload.get('project')}\n\n")
+    note = payload.get("note") or {}
+    sys.stdout.write("Project note:\n")
+    if not note.get("exists"):
+        sys.stdout.write("  (none)\n")
+    else:
+        _emit_field("path", note.get("path"), indent=2)
+        _emit_field("updated", note.get("updated"), indent=2)
+        preview = str(note.get("preview") or "").strip()
+        if preview:
+            _emit_field("preview", preview, indent=2)
+        headings = note.get("headings") or []
+        if headings:
+            _emit_field("headings", ", ".join(str(item) for item in headings), indent=2)
+
+    sys.stdout.write("\nTasks:\n")
+    tasks = payload.get("tasks") or []
+    if not tasks:
+        sys.stdout.write("  (none)\n")
+    for task in tasks:
+        notes = task.get("notes") or {}
+        note_labels = [name for name in ("task", "chain", "project") if notes.get(name)]
+        line = f"  {task.get('short_uuid')}  {task.get('description') or ''}"
+        due = task.get("due")
+        if due:
+            line += f"  due: {due}"
+        if note_labels:
+            line += f"  notes: {','.join(note_labels)}"
+        sys.stdout.write(line + "\n")
+
+    sys.stdout.write("\nRecent:\n")
+    recent = payload.get("recent") or []
+    if not recent:
+        sys.stdout.write("  (none)\n")
+    for item in recent:
+        summary = _recent_summary(item)
+        ident = _recent_identity(item)
+        line = f"  {item.get('ts')}  {item.get('kind')}"
+        if ident:
+            line += f"  {ident}"
+        if summary:
+            line += f"  {summary}"
+        sys.stdout.write(line + "\n")
+
+    sys.stdout.write("\nChains:\n")
+    chains = payload.get("chains") or []
+    if not chains:
+        sys.stdout.write("  (none)\n")
+    for chain in chains:
+        note = "yes" if chain.get("note") else "no"
+        line = f"  {chain.get('chain_id')}  tasks: {chain.get('task_count')}  note: {note}"
+        if chain.get("updated"):
+            line += f"  updated: {chain.get('updated')}"
+        sys.stdout.write(line + "\n")
 
 
 def _emit_cat(payload: dict[str, Any]) -> None:

@@ -28,7 +28,7 @@ from .notes import (
 )
 from .ops import iso_now, read_ops
 from .output import emit_result, warn
-from .report import list_project_notes, recent_activity
+from .report import list_project_notes, project_rollup, recent_activity
 from .search import normalize_chain_id, normalize_kinds, normalize_project, search_all
 from .services import JotService
 from .storage import (
@@ -69,6 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  jot add-to task 42 --heading \"Next steps\" --text \"Call vendor Monday\"\n"
             "  jot project-append Finances.Expense \"baseline updated\"\n"
             "  jot project-show Finances.Expense\n"
+            "  jot project-report Finances.Expense\n"
             "  jot task-cat 42\n"
             "  jot chain-cat 42\n"
             "  jot search --kind project-note vendor\n"
@@ -207,6 +208,22 @@ def build_parser() -> argparse.ArgumentParser:
     project_cat.add_argument(
         "project_name",
         help="exact Taskwarrior project name, for example Finances.Expense",
+    )
+
+    project_report = subparsers.add_parser(
+        "project-report",
+        help="show project note, active tasks, recent activity, and chains",
+        description="Show a read-only rollup for one exact Taskwarrior project.",
+    )
+    project_report.add_argument(
+        "project_name",
+        help="exact Taskwarrior project name, for example Finances.Expense",
+    )
+    project_report.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="maximum number of recent activity items to show",
     )
 
     project_delete = subparsers.add_parser(
@@ -415,6 +432,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _run_project_show(ctx, args.project_name)
         elif args.command == "project-cat":
             result = _run_project_cat(ctx, args.project_name)
+        elif args.command == "project-report":
+            result = _run_project_report(ctx, args.project_name, args.limit)
         elif args.command == "project-delete":
             result = _run_project_delete(ctx, args.project_name)
         elif args.command == "add":
@@ -640,6 +659,14 @@ def _run_project_cat(ctx, project_name: str) -> CommandResult:
     if note_path is None:
         raise RuntimeError(f"project note does not exist for {project_name}")
     return _cat_result("project-cat", note_path, project=project_name)
+
+
+def _run_project_report(ctx, project_name: str, limit: int) -> CommandResult:
+    tasks = ctx.taskwarrior.list_tasks(limit=1000, status="pending")
+    return CommandResult(
+        command="project-report",
+        payload=project_rollup(ctx.config, tasks, project_name, limit=limit),
+    )
 
 
 def _run_task_cat(ctx, task_ref: str) -> CommandResult:

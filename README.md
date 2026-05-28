@@ -88,6 +88,7 @@ jot project Finances.Expense
 jot project-append Finances.Expense Waiting on reimbursement policy update
 jot add-to project Finances.Expense --heading "Risks" --text "Vendor delay"
 jot section project Finances.Expense Risks
+jot project-report Finances.Expense
 jot project-show Finances.Expense
 ```
 
@@ -154,6 +155,7 @@ Project notes:
 jot project <project-name>
 jot project-append <project-name> [text...]
 jot project-show <project-name>
+jot project-report <project-name>
 jot project-cat <project-name>
 jot project-delete <project-name>
 ```
