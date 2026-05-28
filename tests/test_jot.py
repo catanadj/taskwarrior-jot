@@ -425,6 +425,22 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertNotIn("a4bf5egh", index_data["chains"])
         self.assertNotIn("finance.audit", index_data["projects"])
 
+        trash_list = self.run_jot("--json", "trash-list")
+        self.assertEqual(trash_list.returncode, 0, trash_list.stderr)
+        trash_payload = json.loads(trash_list.stdout)
+        self.assertEqual(len(trash_payload["items"]), 3)
+
+        restore = self.run_jot("--json", "trash-restore", "1")
+        self.assertEqual(restore.returncode, 0, restore.stderr)
+        restored_payload = json.loads(restore.stdout)
+        self.assertTrue(Path(restored_payload["path"]).exists())
+        self.assertFalse(Path(restored_payload["trash_path"]).exists())
+
+        after_restore = self.run_jot("--json", "trash-list")
+        self.assertEqual(after_restore.returncode, 0, after_restore.stderr)
+        after_payload = json.loads(after_restore.stdout)
+        self.assertEqual(len(after_payload["items"]), 2)
+
     def test_task_and_chain_cat_contracts(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
@@ -537,6 +553,37 @@ class CliIntegrationTests(JotCliTestCase):
         note_text = note_path.read_text(encoding="utf-8")
         self.assertIn("## Risks", note_text)
         self.assertRegex(note_text, r"- \[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\] vendor dependency")
+
+    def test_headings_and_section_commands_read_note_structure(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Fix billing discrepancy",
+            "project": "finance.audit",
+            "tags": ["ann"],
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+
+        self.assertEqual(self.run_jot("note-append", "1", "baseline").returncode, 0)
+        add_result = self.run_jot(
+            "add-to",
+            "task",
+            "1",
+            "--heading",
+            "Next steps",
+            "--text",
+            "call vendor monday",
+        )
+        self.assertEqual(add_result.returncode, 0, add_result.stderr)
+
+        headings = self.run_jot("--json", "headings", "task", "1")
+        self.assertEqual(headings.returncode, 0, headings.stderr)
+        headings_payload = json.loads(headings.stdout)
+        self.assertIn("Next steps", [item["title"] for item in headings_payload["headings"]])
+
+        section = self.run_jot("section", "task", "1", "next stps")
+        self.assertEqual(section.returncode, 0, section.stderr)
+        self.assertIn("call vendor monday", section.stdout)
 
     def test_add_and_list_events(self) -> None:
         task = {

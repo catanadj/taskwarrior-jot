@@ -21,7 +21,9 @@ from .notes import (
     find_chain_note,
     find_project_note,
     find_task_note,
+    list_note_headings,
     project_note_path,
+    read_note_section,
     task_note_path,
 )
 from .ops import iso_now, read_ops
@@ -44,6 +46,7 @@ from .storage import (
     finalize_task_note_edit,
     record_event_add,
 )
+from .trash import list_trash, restore_trash_item
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -70,6 +73,10 @@ def build_parser() -> argparse.ArgumentParser:
             "  jot chain-cat 42\n"
             "  jot search --kind project-note vendor\n"
             "  jot report recent --limit 10\n"
+            "  jot headings task 42\n"
+            "  jot section task 42 \"Next steps\"\n"
+            "  jot trash-list\n"
+            "  jot trash-restore 1\n"
             "  jot stats\n"
             "  jot paths\n"
             "  jot tui"
@@ -119,6 +126,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="list known project notes",
         description="List known project notes discovered from the local jot projects directory.",
     )
+    subparsers.add_parser(
+        "trash-list",
+        help="list notes currently in jot trash",
+        description="List notes moved to the jot trash directory by task-delete, chain-delete, or project-delete.",
+    )
+    trash_restore = subparsers.add_parser(
+        "trash-restore",
+        help="restore a note from jot trash",
+        description="Restore a trashed note by the ID shown by trash-list.",
+    )
+    trash_restore.add_argument("trash_id", type=int, help="ID shown by trash-list")
     report = subparsers.add_parser(
         "report",
         help="show read-only reports from local jot state",
@@ -269,6 +287,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="entry text; if omitted, read stdin",
     )
 
+    headings = subparsers.add_parser(
+        "headings",
+        help="list headings in a task, chain, or project note",
+        description="List Markdown headings in a task, chain, or project note.",
+    )
+    headings.add_argument("note_kind", choices=("task", "chain", "project"), help="target note kind")
+    headings.add_argument("note_ref", help="task ref for task/chain or project name for project")
+
+    section = subparsers.add_parser(
+        "section",
+        help="print one note section by heading",
+        description="Print one section from a task, chain, or project note. Heading matching is fuzzy by default.",
+    )
+    section.add_argument("note_kind", choices=("task", "chain", "project"), help="target note kind")
+    section.add_argument("note_ref", help="task ref for task/chain or project name for project")
+    section.add_argument("heading", help="heading title to print")
+    section.add_argument(
+        "--heading-exact",
+        action="store_true",
+        help="disable fuzzy matching and require an exact heading match",
+    )
+
     add = subparsers.add_parser(
         "add",
         help="add a short event to the task annotation stream",
@@ -351,6 +391,10 @@ def main(argv: list[str] | None = None) -> int:
             return _run_tui(ctx)
         elif args.command == "project-list":
             result = _run_project_list(ctx)
+        elif args.command == "trash-list":
+            result = _run_trash_list(ctx)
+        elif args.command == "trash-restore":
+            result = _run_trash_restore(ctx, args.trash_id)
         elif args.command == "report":
             result = _run_report(ctx, args)
         elif args.command == "note":
@@ -383,6 +427,10 @@ def main(argv: list[str] | None = None) -> int:
             result = _run_project_append(ctx, args.project_name, _text_from_args(args.text))
         elif args.command == "add-to":
             result = _run_add_to(ctx, args)
+        elif args.command == "headings":
+            result = _run_headings(ctx, args)
+        elif args.command == "section":
+            result = _run_section(ctx, args)
         elif args.command == "list":
             result = _run_list(ctx, args.task_ref)
         elif args.command == "show":
@@ -415,6 +463,14 @@ def _run_tui(ctx) -> int:
         raise RuntimeError(f"failed to load TUI: {exc}") from exc
     service = JotService(config=ctx.config, taskwarrior=ctx.taskwarrior)
     return run_tui(service)
+
+
+def _run_trash_list(ctx) -> CommandResult:
+    return CommandResult(command="trash-list", payload={"items": list_trash(ctx.config)})
+
+
+def _run_trash_restore(ctx, trash_id: int) -> CommandResult:
+    return CommandResult(command="trash-restore", payload=restore_trash_item(ctx.config, trash_id))
 
 
 def _run_note(ctx, task_ref: str) -> CommandResult:
@@ -608,6 +664,59 @@ def _run_chain_cat(ctx, task_ref: str) -> CommandResult:
         note_path,
         task_short_uuid=task.task_short_uuid,
     )
+
+
+def _run_headings(ctx, args) -> CommandResult:
+    note_path, identity = _existing_note_path_for_kind(ctx, args.note_kind, args.note_ref)
+    result = list_note_headings(note_path)
+    return CommandResult(
+        command="headings",
+        payload={
+            "note_kind": args.note_kind,
+            **identity,
+            "path": str(result.note_path),
+            "headings": result.headings,
+        },
+    )
+
+
+def _run_section(ctx, args) -> CommandResult:
+    note_path, identity = _existing_note_path_for_kind(ctx, args.note_kind, args.note_ref)
+    result = read_note_section(note_path, args.heading, exact=bool(args.heading_exact))
+    return CommandResult(
+        command="section",
+        payload={
+            "note_kind": args.note_kind,
+            **identity,
+            "path": str(result.note_path),
+            "heading": result.heading,
+            "heading_match": result.match,
+            "content": result.content,
+        },
+    )
+
+
+def _existing_note_path_for_kind(ctx, note_kind: str, note_ref: str):
+    if note_kind == "task":
+        task = ctx.taskwarrior.resolve_task(note_ref)
+        note_path = find_task_note(ctx.config, task)
+        if note_path is None:
+            raise RuntimeError(f"task note does not exist for {task.task_short_uuid}")
+        return note_path, {"task_short_uuid": task.task_short_uuid}
+    if note_kind == "chain":
+        task = ctx.taskwarrior.resolve_task(note_ref)
+        note_path = find_chain_note(ctx.config, task)
+        if note_path is None:
+            raise RuntimeError(f"chain note does not exist for {task.task_short_uuid}")
+        return note_path, {
+            "task_short_uuid": task.task_short_uuid,
+            "chain_id": chain_id_for_task(task.task) or None,
+        }
+    project_name = str(note_ref).strip()
+    note_path = find_project_note(ctx.config, project_name)
+    if note_path is None:
+        raise RuntimeError(f"project note does not exist for {project_name}")
+    return note_path, {"project": project_name}
 
 
 def _run_task_delete(ctx, task_ref: str) -> CommandResult:

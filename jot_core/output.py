@@ -29,6 +29,12 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "project-list":
         _emit_project_list(payload)
         return
+    if command == "trash-list":
+        _emit_trash_list(payload)
+        return
+    if command == "trash-restore":
+        _emit_trash_restore(payload)
+        return
     if command == "report-recent":
         _emit_report_recent(payload)
         return
@@ -49,6 +55,12 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
         return
     if command == "add-to":
         _emit_add_to(payload)
+        return
+    if command == "headings":
+        _emit_headings(payload)
+        return
+    if command == "section":
+        _emit_section(payload)
         return
     if command in {"note-append", "chain-append", "project-append"}:
         _emit_append_like(command, payload)
@@ -144,6 +156,33 @@ def _emit_project_list(payload: dict[str, Any]) -> None:
         _emit_field("updated", updated, indent=2)
         _emit_field("path", path, indent=2)
         sys.stdout.write("\n")
+
+
+def _emit_trash_list(payload: dict[str, Any]) -> None:
+    items = payload.get("items") or []
+    sys.stdout.write("Trash\n\n")
+    if not items:
+        sys.stdout.write("(empty)\n")
+        return
+    for item in items:
+        ident = (
+            str(item.get("task_short_uuid") or "").strip()
+            or str(item.get("chain_id") or "").strip()
+            or str(item.get("project") or "").strip()
+        )
+        sys.stdout.write(
+            f"{item.get('id')}. {item.get('kind')} {ident}  {item.get('deleted_at') or ''}\n"
+        )
+        _emit_field("from", item.get("path"), indent=2)
+        _emit_field("trash", item.get("trash_path"), indent=2)
+        sys.stdout.write("\n")
+
+
+def _emit_trash_restore(payload: dict[str, Any]) -> None:
+    sys.stdout.write("Restored note from trash\n")
+    _emit_field("kind", payload.get("kind"), indent=0)
+    _emit_field("to", payload.get("path"), indent=0)
+    _emit_field("from", payload.get("trash_path"), indent=0)
 
 
 def _emit_report_recent(payload: dict[str, Any]) -> None:
@@ -252,6 +291,30 @@ def _emit_add_to(payload: dict[str, Any]) -> None:
     _emit_field("match", match, indent=0)
     _emit_field("path", path, indent=0)
     _emit_field("entry", entry, indent=0)
+
+
+def _emit_headings(payload: dict[str, Any]) -> None:
+    sys.stdout.write(f"Headings in {payload.get('note_kind')} note\n")
+    _emit_field("path", payload.get("path"), indent=0)
+    headings = payload.get("headings") or []
+    if not headings:
+        sys.stdout.write("\n(none)\n")
+        return
+    sys.stdout.write("\n")
+    for item in headings:
+        level = int(item.get("level") or 1)
+        title = str(item.get("title") or "")
+        line = item.get("line")
+        sys.stdout.write(f"{'#' * level} {title}")
+        if line:
+            sys.stdout.write(f"  (line {line})")
+        sys.stdout.write("\n")
+
+
+def _emit_section(payload: dict[str, Any]) -> None:
+    content = str(payload.get("content") or "").strip()
+    if content:
+        sys.stdout.write(content + "\n")
 
 
 def _emit_list(payload: dict[str, Any]) -> None:

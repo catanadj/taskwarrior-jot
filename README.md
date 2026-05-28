@@ -62,6 +62,8 @@ Keep the task’s context in one place:
 jot note 42
 jot note-append 42 Followed up with the vendor
 jot add-to task 42 --heading "Next steps" --text "Call vendor Monday"
+jot headings task 42
+jot section task 42 "Next steps"
 jot task-cat 42
 ```
 
@@ -73,6 +75,7 @@ Keep a note for the whole recurrence chain:
 jot chain 42
 jot chain-append 42 Skip holidays
 jot add-to chain 42 --heading "Operating notes" --text "Use the fallback path"
+jot headings chain 42
 jot chain-cat 42
 ```
 
@@ -84,6 +87,7 @@ Keep shared notes for a project namespace:
 jot project Finances.Expense
 jot project-append Finances.Expense Waiting on reimbursement policy update
 jot add-to project Finances.Expense --heading "Risks" --text "Vendor delay"
+jot section project Finances.Expense Risks
 jot project-show Finances.Expense
 ```
 
@@ -131,6 +135,8 @@ jot note <task-ref>
 jot note-append <task-ref> [text...]
 jot task-cat <task-ref>
 jot task-delete <task-ref>
+jot trash-list
+jot trash-restore <id>
 ```
 
 Chain notes:
@@ -168,6 +174,8 @@ Reference and event capture:
 ```bash
 jot add [--type TYPE] <task-ref> [text...]
 jot add-to {task|chain|project} <ref> --heading <title> [--text "..."]
+jot headings {task|chain|project} <ref>
+jot section {task|chain|project} <ref> <heading>
 jot list <task-ref>
 jot show <task-ref>
 jot export <task-ref>

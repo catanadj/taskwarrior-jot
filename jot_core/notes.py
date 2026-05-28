@@ -30,6 +30,20 @@ class HeadingInsertResult:
     entry: str
 
 
+@dataclass(slots=True)
+class HeadingReadResult:
+    note_path: Path
+    headings: list[dict[str, object]]
+
+
+@dataclass(slots=True)
+class SectionReadResult:
+    note_path: Path
+    heading: str
+    match: str
+    content: str
+
+
 def slugify(text: str, fallback: str = "task", max_len: int = 40) -> str:
     slug = SLUG_RE.sub("-", text.lower()).strip("-")
     slug = re.sub(r"-{2,}", "-", slug)
@@ -219,6 +233,36 @@ def add_to_project_heading(
     )
     touch_updated(note.note_path)
     return HeadingInsertResult(note_path=note.note_path, existed=note.existed, **result)
+
+
+def list_note_headings(note_path: Path) -> HeadingReadResult:
+    _metadata, body = read_document(note_path)
+    headings = [
+        {
+            "level": int(item["level"]),
+            "title": str(item["title"]),
+            "line": int(item["index"]) + 1,
+        }
+        for item in _collect_headings(body.splitlines())
+    ]
+    return HeadingReadResult(note_path=note_path, headings=headings)
+
+
+def read_note_section(note_path: Path, heading: str, *, exact: bool = False) -> SectionReadResult:
+    _metadata, body = read_document(note_path)
+    lines = body.splitlines()
+    headings = _collect_headings(lines)
+    selected = _resolve_heading(headings, heading, exact=exact)
+    if selected is None:
+        available = ", ".join(item["title"] for item in headings) or "(none)"
+        raise RuntimeError(f"heading not found for '{heading}'. available headings: {available}")
+    content = _section_content(lines, selected)
+    return SectionReadResult(
+        note_path=note_path,
+        heading=str(selected["title"]),
+        match=str(selected.get("match") or "unknown"),
+        content=content,
+    )
 
 
 def find_chain_note(config: AppConfig, task: ResolvedTask) -> Path | None:
@@ -589,3 +633,18 @@ def _insert_entry(lines: list[str], heading: dict[str, object], entry: str) -> l
         section.extend(["", entry])
     new_lines = list(lines[: heading_index + 1]) + section + list(lines[next_index:])
     return new_lines
+
+
+def _section_content(lines: list[str], heading: dict[str, object]) -> str:
+    heading_index = int(heading["index"])
+    heading_level = int(heading["level"])
+    next_index = len(lines)
+    for idx in range(heading_index + 1, len(lines)):
+        match = HEADING_RE.match(lines[idx].strip())
+        if not match:
+            continue
+        level = len(match.group(1))
+        if level <= heading_level:
+            next_index = idx
+            break
+    return "\n".join(lines[heading_index + 1 : next_index]).strip()

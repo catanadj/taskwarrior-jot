@@ -218,6 +218,19 @@ def _merge_op(data: dict[str, Any], config: AppConfig, item: dict[str, Any]) -> 
     project = str(item.get("project") or "").strip() or None
     path = str(item.get("path") or "").strip() or None
 
+    if op == "task_note_delete" and short_uuid:
+        data["tasks"].pop(short_uuid, None)
+        return
+    if op == "chain_note_delete" and chain_id:
+        data["chains"].pop(chain_id, None)
+        return
+    if op == "project_note_delete" and project:
+        data["projects"].pop(project, None)
+        return
+    if op == "trash_restore" and path:
+        _merge_restore_op(data, config, item, path, ts)
+        return
+
     if short_uuid:
         existing = data["tasks"].get(short_uuid, {})
         merged = {
@@ -232,9 +245,6 @@ def _merge_op(data: dict[str, Any], config: AppConfig, item: dict[str, Any]) -> 
             merged["last_note_at"] = ts or merged["last_note_at"]
             if path:
                 merged["note_path"] = _relative_note_path(config, Path(path))
-        elif op == "task_note_delete":
-            data["tasks"].pop(short_uuid, None)
-            return
         elif op == "event_add":
             merged["last_event_at"] = ts or merged["last_event_at"]
         data["tasks"][short_uuid] = merged
@@ -250,9 +260,6 @@ def _merge_op(data: dict[str, Any], config: AppConfig, item: dict[str, Any]) -> 
             merged_chain["last_note_at"] = ts or merged_chain["last_note_at"]
             if path:
                 merged_chain["note_path"] = _relative_note_path(config, Path(path))
-        elif op == "chain_note_delete":
-            data["chains"].pop(chain_id, None)
-            return
         data["chains"][chain_id] = merged_chain
 
     if project:
@@ -266,10 +273,44 @@ def _merge_op(data: dict[str, Any], config: AppConfig, item: dict[str, Any]) -> 
             merged_project["last_note_at"] = ts or merged_project.get("last_note_at")
             if path:
                 merged_project["note_path"] = _relative_note_path(config, Path(path))
-        elif op == "project_note_delete":
-            data["projects"].pop(project, None)
-            return
         data["projects"][project] = merged_project
+
+
+def _merge_restore_op(
+    data: dict[str, Any],
+    config: AppConfig,
+    item: dict[str, Any],
+    path: str,
+    ts: str | None,
+) -> None:
+    kind = str(item.get("kind") or "").strip()
+    short_uuid = str(item.get("task_short_uuid") or "").strip()
+    task_uuid = str(item.get("task_uuid") or "").strip() or None
+    chain_id = str(item.get("chain_id") or "").strip()
+    project = str(item.get("project") or "").strip()
+    rel_path = _relative_note_path(config, Path(path))
+    if kind == "task-note" and short_uuid:
+        existing = data["tasks"].get(short_uuid, {})
+        data["tasks"][short_uuid] = {
+            "task_short_uuid": short_uuid,
+            "task_uuid": task_uuid or existing.get("task_uuid"),
+            "note_path": rel_path,
+            "chain_id": chain_id or existing.get("chain_id"),
+            "last_note_at": ts or existing.get("last_note_at"),
+            "last_event_at": existing.get("last_event_at"),
+        }
+    elif kind == "chain-note" and chain_id:
+        data["chains"][chain_id] = {
+            "chain_id": chain_id,
+            "note_path": rel_path,
+            "last_note_at": ts,
+        }
+    elif kind == "project-note" and project:
+        data["projects"][project] = {
+            "project": project,
+            "note_path": rel_path,
+            "last_note_at": ts,
+        }
 
 
 def _relative_note_path(config: AppConfig, path: Path) -> str:
