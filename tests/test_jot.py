@@ -247,6 +247,28 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertTrue(payload["index_path"].endswith(".task/jot/index.json"))
         self.assertTrue(payload["ops_path"].endswith(".task/jot/ops.jsonl"))
 
+    def test_paths_default_to_taskdata_when_set(self) -> None:
+        taskdata = self.root / "custom-taskdata"
+        result = self.run_jot_with_env("--json", "paths", extra_env={"TASKDATA": str(taskdata)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["root_dir"], str(taskdata / "jot"))
+        self.assertEqual(payload["config_path"], str(taskdata / "jot" / "config-jot.toml"))
+
+    def test_paths_default_to_taskrc_data_location(self) -> None:
+        taskdata = self.root / "taskrc-taskdata"
+        taskrc = self.root / "custom.taskrc"
+        taskrc.write_text(f"data.location = {taskdata}\n", encoding="utf-8")
+        result = self.run_jot_with_env(
+            "--json",
+            "paths",
+            extra_env={"TASKRC": str(taskrc)},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["root_dir"], str(taskdata / "jot"))
+        self.assertEqual(payload["config_path"], str(taskdata / "jot" / "config-jot.toml"))
+
     def test_note_append_updates_index_and_ops(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",

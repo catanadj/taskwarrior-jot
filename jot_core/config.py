@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 
 try:
     import tomllib
@@ -11,8 +12,9 @@ except ModuleNotFoundError:  # pragma: no cover
 from .models import AppConfig
 
 
-DEFAULT_ROOT = Path("~/.task/jot").expanduser()
+DEFAULT_TASKDATA = Path("~/.task").expanduser()
 DEFAULT_CONFIG_NAME = "config-jot.toml"
+TASKRC_DATA_RE = re.compile(r"^\s*(?:rc\.)?data\.location\s*=\s*(.*?)\s*$")
 
 
 def _expand_path(raw: str | None, fallback: Path) -> Path:
@@ -30,8 +32,32 @@ def _read_config_file(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _taskdata_root() -> Path:
+    taskdata = str(os.environ.get("TASKDATA") or "").strip()
+    if taskdata:
+        return Path(taskdata).expanduser().resolve()
+
+    taskrc = Path(str(os.environ.get("TASKRC") or "~/.taskrc")).expanduser()
+    if taskrc.exists():
+        try:
+            for line in taskrc.read_text(encoding="utf-8").splitlines():
+                text = line.split("#", 1)[0].strip()
+                if not text:
+                    continue
+                match = TASKRC_DATA_RE.match(text)
+                if match:
+                    raw = match.group(1).strip().strip('"').strip("'")
+                    if raw:
+                        return Path(raw).expanduser().resolve()
+        except OSError:
+            pass
+
+    return DEFAULT_TASKDATA.resolve()
+
+
 def load_config() -> AppConfig:
-    config_path = _expand_path(os.environ.get("JOT_CONFIG"), DEFAULT_ROOT / DEFAULT_CONFIG_NAME)
+    default_root = _taskdata_root() / "jot"
+    config_path = _expand_path(os.environ.get("JOT_CONFIG"), default_root / DEFAULT_CONFIG_NAME)
     data = _read_config_file(config_path)
 
     paths_cfg = data.get("paths") if isinstance(data.get("paths"), dict) else {}
@@ -39,7 +65,7 @@ def load_config() -> AppConfig:
     display_cfg = data.get("display") if isinstance(data.get("display"), dict) else {}
     nautical_cfg = data.get("nautical") if isinstance(data.get("nautical"), dict) else {}
 
-    root_dir = _expand_path(paths_cfg.get("root"), DEFAULT_ROOT)
+    root_dir = _expand_path(paths_cfg.get("root"), default_root)
     trash_dir = root_dir / ".jot_trash"
     tasks_dir = _expand_path(paths_cfg.get("tasks"), root_dir / "tasks")
     chains_dir = _expand_path(paths_cfg.get("chains"), root_dir / "chains")

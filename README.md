@@ -32,6 +32,14 @@ If `~/.local/bin` is not on your `PATH`, add:
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
+The installer places `jot` data under your Taskwarrior data directory:
+
+- `TASKDATA` when set
+- otherwise `data.location` from `TASKRC` or `~/.taskrc`
+- otherwise `~/.task`
+
+Set `JOT_HOME` if you want to override only the `jot` data directory.
+
 ## Start Here
 
 If you just want to see what `jot` can do:

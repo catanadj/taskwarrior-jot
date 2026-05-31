@@ -5,11 +5,48 @@ set -euo pipefail
 PREFIX="${PREFIX:-$HOME/.local}"
 BIN_DIR="$PREFIX/bin"
 LIB_DIR="$PREFIX/lib/jot"
-CONFIG_DIR="${JOT_HOME:-$HOME/.task/jot}"
-CONFIG_PATH="$CONFIG_DIR/config-jot.toml"
-TEMPLATES_DIR="$CONFIG_DIR/templates"
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+resolve_taskdata_dir() {
+  if [[ -n "${TASKDATA:-}" ]]; then
+    printf '%s\n' "$TASKDATA"
+    return
+  fi
+
+  local taskrc="${TASKRC:-$HOME/.taskrc}"
+  if [[ -f "$taskrc" ]]; then
+    local line value
+    while IFS= read -r line; do
+      line="${line%%#*}"
+      line="${line#"${line%%[![:space:]]*}"}"
+      line="${line%"${line##*[![:space:]]}"}"
+      case "$line" in
+        data.location=*|data.location\ =*|rc.data.location=*|rc.data.location\ =*)
+          value="${line#*=}"
+          value="${value#"${value%%[![:space:]]*}"}"
+          value="${value%"${value##*[![:space:]]}"}"
+          value="${value%\"}"
+          value="${value#\"}"
+          value="${value%\'}"
+          value="${value#\'}"
+          if [[ -n "$value" ]]; then
+            printf '%s\n' "$value"
+            return
+          fi
+          ;;
+      esac
+    done < "$taskrc"
+  fi
+
+  printf '%s\n' "$HOME/.task"
+}
+
+TASKDATA_DIR="$(resolve_taskdata_dir)"
+TASKDATA_DIR="${TASKDATA_DIR/#\~/$HOME}"
+CONFIG_DIR="${JOT_HOME:-$TASKDATA_DIR/jot}"
+CONFIG_PATH="$CONFIG_DIR/config-jot.toml"
+TEMPLATES_DIR="$CONFIG_DIR/templates"
 
 usage() {
   cat <<'EOF'
@@ -22,11 +59,14 @@ and creating:
   <prefix>/bin/jot -> <prefix>/lib/jot/jot
 
 Also installs a default config at:
-  ~/.task/jot/config-jot.toml
+  <task-data-dir>/jot/config-jot.toml
 if that file does not already exist.
 
 Default prefix:
   ~/.local
+
+Task data directory is resolved from TASKDATA, then TASKRC/~/.taskrc
+data.location, then ~/.task. Set JOT_HOME to override the jot data directory.
 EOF
 }
 
@@ -78,7 +118,24 @@ cp -R "$SCRIPT_DIR/templates/." "$LIB_DIR/templates/"
 ln -sfn "$LIB_DIR/jot" "$BIN_DIR/jot"
 
 if [[ ! -e "$CONFIG_PATH" ]]; then
-  install -m 644 "$SCRIPT_DIR/config-jot.toml" "$CONFIG_PATH"
+  cat > "$CONFIG_PATH" <<EOF
+[paths]
+root = "$CONFIG_DIR"
+tasks = "$CONFIG_DIR/tasks"
+chains = "$CONFIG_DIR/chains"
+projects = "$CONFIG_DIR/projects"
+templates = "$CONFIG_DIR/templates"
+
+[editor]
+command = ""
+
+[display]
+color = "auto"
+default_format = "text"
+
+[nautical]
+enabled = true
+EOF
   CONFIG_NOTE="Installed default config: $CONFIG_PATH"
 else
   CONFIG_NOTE="Kept existing config: $CONFIG_PATH"
