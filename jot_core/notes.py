@@ -12,6 +12,7 @@ from .frontmatter import read_document, update_metadata, write_document
 from .models import AppConfig, AppendResult, DeleteResult, NotePaths, ResolvedTask
 from .nautical import chain_id_for_task
 from .ops import iso_now
+from .resources import format_resource_line, parse_resource_bullets
 from .templates import apply_template
 
 
@@ -42,6 +43,19 @@ class SectionReadResult:
     heading: str
     match: str
     content: str
+
+
+@dataclass(slots=True)
+class ResourceListResult:
+    note_path: Path
+    resources: list[dict[str, object]]
+
+
+@dataclass(slots=True)
+class ResourceMutationResult:
+    note_path: Path
+    resource: dict[str, object]
+    resources: list[dict[str, object]]
 
 
 def slugify(text: str, fallback: str = "task", max_len: int = 40) -> str:
@@ -262,6 +276,51 @@ def read_note_section(note_path: Path, heading: str, *, exact: bool = False) -> 
         heading=str(selected["title"]),
         match=str(selected.get("match") or "unknown"),
         content=content,
+    )
+
+
+def list_note_resources(note_path: Path) -> ResourceListResult:
+    _metadata, body = read_document(note_path)
+    resources = _note_resources(body.splitlines())
+    return ResourceListResult(note_path=note_path, resources=resources)
+
+
+def attach_note_resource(note_path: Path, target: str, label: str | None = None) -> ResourceMutationResult:
+    metadata, body = read_document(note_path)
+    line = format_resource_line(target, label)
+    lines = body.splitlines()
+    headings = _collect_headings(lines)
+    selected = _resolve_resource_heading(headings)
+    if selected is None:
+        lines = _append_new_heading(lines, "Resources")
+        headings = _collect_headings(lines)
+        selected = _resolve_resource_heading(headings)
+    if selected is None:
+        raise RuntimeError("failed to create Resources heading")
+    lines = _insert_entry(lines, selected, line)
+    write_document(note_path, metadata, "\n".join(lines))
+    touch_updated(note_path)
+    resources = _note_resources(lines)
+    resource = resources[-1] if resources else {}
+    return ResourceMutationResult(note_path=note_path, resource=resource, resources=resources)
+
+
+def detach_note_resource(note_path: Path, resource_id: int) -> ResourceMutationResult:
+    metadata, body = read_document(note_path)
+    lines = body.splitlines()
+    section_lines = _resource_section_lines(lines)
+    resources = parse_resource_bullets(section_lines)
+    selected = next((item for item in resources if item.id == resource_id), None)
+    if selected is None:
+        raise RuntimeError(f"resource {resource_id} not found")
+    del lines[selected.line - 1]
+    write_document(note_path, metadata, "\n".join(lines))
+    touch_updated(note_path)
+    updated_resources = _note_resources(lines)
+    return ResourceMutationResult(
+        note_path=note_path,
+        resource=selected.to_dict(),
+        resources=updated_resources,
     )
 
 
@@ -648,3 +707,31 @@ def _section_content(lines: list[str], heading: dict[str, object]) -> str:
             next_index = idx
             break
     return "\n".join(lines[heading_index + 1 : next_index]).strip()
+
+
+def _note_resources(lines: list[str]) -> list[dict[str, object]]:
+    return [item.to_dict() for item in parse_resource_bullets(_resource_section_lines(lines))]
+
+
+def _resolve_resource_heading(headings: list[dict[str, object]]) -> dict[str, object] | None:
+    for title in ("Resources", "References"):
+        selected = _resolve_heading(headings, title, exact=True)
+        if selected is not None:
+            return selected
+    return None
+
+
+def _resource_section_lines(lines: list[str]) -> list[tuple[int, str]]:
+    headings = _collect_headings(lines)
+    selected = _resolve_resource_heading(headings)
+    if selected is None:
+        return []
+    heading_index = int(selected["index"])
+    heading_level = int(selected["level"])
+    next_index = len(lines)
+    for idx in range(heading_index + 1, len(lines)):
+        match = HEADING_RE.match(lines[idx].strip())
+        if match and len(match.group(1)) <= heading_level:
+            next_index = idx
+            break
+    return list(enumerate(lines[heading_index + 1 : next_index], start=heading_index + 1))

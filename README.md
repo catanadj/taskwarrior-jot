@@ -71,6 +71,8 @@ jot 42
 jot note 42
 jot note-append 42 Followed up with the vendor
 jot add-to task 42 --heading "Next steps" --text "Call vendor Monday"
+jot attach task 42 ~/invoices/vendor.pdf --label vendor-invoice
+jot resources task 42
 jot headings task 42
 jot section task 42 "Next steps"
 jot task-cat 42
@@ -84,6 +86,7 @@ Keep a note for the whole recurrence chain:
 jot chain 42
 jot chain-append 42 Skip holidays
 jot add-to chain 42 --heading "Operating notes" --text "Use the fallback path"
+jot attach chain 42 https://example.com/runbook --label runbook
 jot headings chain 42
 jot chain-cat 42
 ```
@@ -96,6 +99,7 @@ Keep shared notes for a project namespace:
 jot project Finances.Expense
 jot project-append Finances.Expense Waiting on reimbursement policy update
 jot add-to project Finances.Expense --heading "Risks" --text "Vendor delay"
+jot attach project Finances.Expense ~/docs/reimbursement-policy.pdf
 jot section project Finances.Expense Risks
 jot project-report Finances.Expense
 jot project-show Finances.Expense
@@ -185,6 +189,10 @@ Reference and event capture:
 ```bash
 jot add [--type TYPE] <task-ref> [text...]
 jot add-to {task|chain|project} <ref> --heading <title> [--text "..."]
+jot attach {task|chain|project} <ref> <path-or-url> [--label LABEL]
+jot resources {task|chain|project} <ref>
+jot open-resource {task|chain|project} <ref> <id>
+jot detach-resource {task|chain|project} <ref> <id>
 jot headings {task|chain|project} <ref>
 jot section {task|chain|project} <ref> <heading>
 jot list <task-ref>
@@ -193,6 +201,9 @@ jot export <task-ref>
 ```
 
 All commands support `--json`.
+
+Resource commands use an existing `Resources` or `References` heading in the
+note. If neither exists, `jot attach` creates `Resources`.
 
 `jot <task-ref>` is a shortcut: it opens the task note when the task is not
 part of a Nautical chain, and the chain note when `chainID` is present.

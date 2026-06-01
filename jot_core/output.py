@@ -65,6 +65,18 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "section":
         _emit_section(payload)
         return
+    if command == "resources":
+        _emit_resources(payload)
+        return
+    if command == "attach":
+        _emit_attach(payload)
+        return
+    if command == "open-resource":
+        _emit_open_resource(payload)
+        return
+    if command == "detach-resource":
+        _emit_detach_resource(payload)
+        return
     if command in {"note-append", "chain-append", "project-append"}:
         _emit_append_like(command, payload)
         return
@@ -375,6 +387,53 @@ def _emit_section(payload: dict[str, Any]) -> None:
     content = str(payload.get("content") or "").strip()
     if content:
         sys.stdout.write(content + "\n")
+
+
+def _emit_resources(payload: dict[str, Any]) -> None:
+    kind = str(payload.get("note_kind") or "note")
+    sys.stdout.write(f"Resources in {kind} note\n")
+    _emit_field("path", payload.get("path"), indent=0)
+    resources = payload.get("resources") or []
+    if not resources:
+        sys.stdout.write("\n(none)\n")
+        return
+    sys.stdout.write("\n")
+    for item in resources:
+        label = str(item.get("label") or "").strip()
+        target = str(item.get("target") or "").strip()
+        kind = str(item.get("kind") or "resource")
+        prefix = f"{item.get('id')}. "
+        if label and label != target:
+            sys.stdout.write(f"{prefix}{label}  [{kind}]\n")
+            _emit_field("target", target, indent=3)
+        else:
+            sys.stdout.write(f"{prefix}{target}  [{kind}]\n")
+
+
+def _emit_attach(payload: dict[str, Any]) -> None:
+    resource = payload.get("resource") or {}
+    sys.stdout.write(f"Attached resource to {payload.get('note_kind')} note\n")
+    _emit_field("path", payload.get("path"), indent=0)
+    _emit_field("id", resource.get("id"), indent=0)
+    _emit_field("label", resource.get("label"), indent=0)
+    _emit_field("target", resource.get("target"), indent=0)
+
+
+def _emit_open_resource(payload: dict[str, Any]) -> None:
+    resource = payload.get("resource") or {}
+    sys.stdout.write("Opened resource\n")
+    _emit_field("target", resource.get("target"), indent=0)
+    opener = payload.get("opener") or []
+    if opener:
+        _emit_field("opener", " ".join(str(part) for part in opener), indent=0)
+
+
+def _emit_detach_resource(payload: dict[str, Any]) -> None:
+    resource = payload.get("resource") or {}
+    sys.stdout.write(f"Detached resource from {payload.get('note_kind')} note\n")
+    _emit_field("path", payload.get("path"), indent=0)
+    _emit_field("id", resource.get("id"), indent=0)
+    _emit_field("target", resource.get("target"), indent=0)
 
 
 def _emit_list(payload: dict[str, Any]) -> None:

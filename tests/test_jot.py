@@ -689,6 +689,55 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(section.returncode, 0, section.stderr)
         self.assertIn("call vendor monday", section.stdout)
 
+    def test_task_resources_attach_list_open_and_detach(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Fix billing discrepancy",
+            "project": "finance.audit",
+            "tags": ["ann"],
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+
+        attach = self.run_jot("attach", "task", "1", "https://example.com/invoice", "--label", "invoice")
+        self.assertEqual(attach.returncode, 0, attach.stderr)
+        note_text = list((self.home / ".task" / "jot" / "tasks").glob("*.md"))[0].read_text(encoding="utf-8")
+        self.assertIn("## References", note_text)
+        self.assertIn("- [invoice](https://example.com/invoice)", note_text)
+
+        listed = self.run_jot("--json", "resources", "task", "1")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        payload = json.loads(listed.stdout)
+        self.assertEqual(payload["resources"][0]["label"], "invoice")
+        self.assertEqual(payload["resources"][0]["target"], "https://example.com/invoice")
+        self.assertEqual(payload["resources"][0]["kind"], "url")
+
+        opened = self.run_jot_with_env(
+            "open-resource",
+            "task",
+            "1",
+            "1",
+            extra_env={"JOT_OPENER": "true"},
+        )
+        self.assertEqual(opened.returncode, 0, opened.stderr)
+
+        detached = self.run_jot("--json", "detach-resource", "task", "1", "1")
+        self.assertEqual(detached.returncode, 0, detached.stderr)
+        detached_payload = json.loads(detached.stdout)
+        self.assertEqual(detached_payload["resource"]["target"], "https://example.com/invoice")
+        self.assertEqual(detached_payload["resources"], [])
+
+    def test_project_resources_store_paths_in_project_note(self) -> None:
+        attach = self.run_jot("attach", "project", "finance.audit", "~/docs/audit-plan.md")
+        self.assertEqual(attach.returncode, 0, attach.stderr)
+
+        listed = self.run_jot("--json", "resources", "project", "finance.audit")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        payload = json.loads(listed.stdout)
+        self.assertEqual(payload["project"], "finance.audit")
+        self.assertEqual(payload["resources"][0]["target"], "~/docs/audit-plan.md")
+        self.assertEqual(payload["resources"][0]["label"], "audit-plan.md")
+
     def test_add_and_list_events(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",

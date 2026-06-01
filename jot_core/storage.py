@@ -14,9 +14,11 @@ from .index import (
 from .models import AppConfig, AppendResult, NotePaths, ResolvedTask
 from .nautical import chain_id_for_task
 from .notes import (
+    attach_note_resource,
     delete_chain_note,
     delete_project_note,
     delete_task_note,
+    detach_note_resource,
     add_to_chain_heading,
     add_to_project_heading,
     add_to_task_heading,
@@ -278,6 +280,153 @@ def add_to_project_heading_storage(
         "timestamp": result.timestamp,
         "entry": result.entry,
     }
+
+
+def attach_task_resource_storage(
+    config: AppConfig,
+    task: ResolvedTask,
+    *,
+    target: str,
+    label: str | None,
+) -> dict[str, object]:
+    note = ensure_task_note(config, task)
+    result = attach_note_resource(note.note_path, target, label)
+    update_task_note_index(config, task, result.note_path)
+    append_op(
+        config,
+        "task_resource_attach",
+        task_short_uuid=task.task_short_uuid,
+        task_uuid=task.task_uuid,
+        target=result.resource.get("target"),
+        label=result.resource.get("label"),
+        path=str(result.note_path),
+    )
+    return {
+        "note_path": result.note_path,
+        "opened": note.existed,
+        "resource": result.resource,
+        "resources": result.resources,
+    }
+
+
+def attach_chain_resource_storage(
+    config: AppConfig,
+    task: ResolvedTask,
+    *,
+    target: str,
+    label: str | None,
+) -> dict[str, object]:
+    note = ensure_chain_note(config, task)
+    result = attach_note_resource(note.note_path, target, label)
+    update_chain_note_index(config, task, result.note_path)
+    append_op(
+        config,
+        "chain_resource_attach",
+        task_short_uuid=task.task_short_uuid,
+        task_uuid=task.task_uuid,
+        chain_id=chain_id_for_task(task.task) or None,
+        target=result.resource.get("target"),
+        label=result.resource.get("label"),
+        path=str(result.note_path),
+    )
+    return {
+        "note_path": result.note_path,
+        "opened": note.existed,
+        "resource": result.resource,
+        "resources": result.resources,
+    }
+
+
+def attach_project_resource_storage(
+    config: AppConfig,
+    project_name: str,
+    *,
+    target: str,
+    label: str | None,
+) -> dict[str, object]:
+    note = ensure_project_note(config, project_name)
+    result = attach_note_resource(note.note_path, target, label)
+    update_project_note_index(config, project_name, result.note_path)
+    append_op(
+        config,
+        "project_resource_attach",
+        project=project_name,
+        target=result.resource.get("target"),
+        label=result.resource.get("label"),
+        path=str(result.note_path),
+    )
+    return {
+        "note_path": result.note_path,
+        "opened": note.existed,
+        "resource": result.resource,
+        "resources": result.resources,
+    }
+
+
+def detach_task_resource_storage(
+    config: AppConfig,
+    task: ResolvedTask,
+    *,
+    note_path: Path,
+    resource_id: int,
+) -> dict[str, object]:
+    result = detach_note_resource(note_path, resource_id)
+    update_task_note_index(config, task, result.note_path)
+    append_op(
+        config,
+        "task_resource_detach",
+        task_short_uuid=task.task_short_uuid,
+        task_uuid=task.task_uuid,
+        resource_id=resource_id,
+        target=result.resource.get("target"),
+        label=result.resource.get("label"),
+        path=str(result.note_path),
+    )
+    return {"note_path": result.note_path, "resource": result.resource, "resources": result.resources}
+
+
+def detach_chain_resource_storage(
+    config: AppConfig,
+    task: ResolvedTask,
+    *,
+    note_path: Path,
+    resource_id: int,
+) -> dict[str, object]:
+    result = detach_note_resource(note_path, resource_id)
+    update_chain_note_index(config, task, result.note_path)
+    append_op(
+        config,
+        "chain_resource_detach",
+        task_short_uuid=task.task_short_uuid,
+        task_uuid=task.task_uuid,
+        chain_id=chain_id_for_task(task.task) or None,
+        resource_id=resource_id,
+        target=result.resource.get("target"),
+        label=result.resource.get("label"),
+        path=str(result.note_path),
+    )
+    return {"note_path": result.note_path, "resource": result.resource, "resources": result.resources}
+
+
+def detach_project_resource_storage(
+    config: AppConfig,
+    project_name: str,
+    *,
+    note_path: Path,
+    resource_id: int,
+) -> dict[str, object]:
+    result = detach_note_resource(note_path, resource_id)
+    update_project_note_index(config, project_name, result.note_path)
+    append_op(
+        config,
+        "project_resource_detach",
+        project=project_name,
+        resource_id=resource_id,
+        target=result.resource.get("target"),
+        label=result.resource.get("label"),
+        path=str(result.note_path),
+    )
+    return {"note_path": result.note_path, "resource": result.resource, "resources": result.resources}
 
 
 def record_event_add(

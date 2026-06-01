@@ -22,6 +22,7 @@ from .notes import (
     find_project_note,
     find_task_note,
     list_note_headings,
+    list_note_resources,
     project_note_path,
     read_note_section,
     task_note_path,
@@ -29,15 +30,22 @@ from .notes import (
 from .ops import iso_now, read_ops
 from .output import emit_result, warn
 from .report import list_project_notes, project_rollup, recent_activity
+from .resources import open_resource_target
 from .search import normalize_chain_id, normalize_kinds, normalize_project, search_all
 from .services import JotService
 from .storage import (
     add_to_chain_heading_storage,
     add_to_project_heading_storage,
     add_to_task_heading_storage,
+    attach_chain_resource_storage,
+    attach_project_resource_storage,
+    attach_task_resource_storage,
     delete_chain_note_storage,
     delete_project_note_storage,
     delete_task_note_storage,
+    detach_chain_resource_storage,
+    detach_project_resource_storage,
+    detach_task_resource_storage,
     append_chain_note_storage,
     append_project_note_storage,
     append_task_note_storage,
@@ -69,6 +77,9 @@ def build_parser() -> argparse.ArgumentParser:
             "  jot export 42 --json\n"
             "  jot add --type status 42 waiting on vendor\n"
             "  jot add-to task 42 --heading \"Next steps\" --text \"Call vendor Monday\"\n"
+            "  jot attach task 42 ~/invoice.pdf --label invoice\n"
+            "  jot resources task 42\n"
+            "  jot open-resource task 42 1\n"
             "  jot project-append Finances.Expense \"baseline updated\"\n"
             "  jot project-show Finances.Expense\n"
             "  jot project-report Finances.Expense\n"
@@ -328,6 +339,45 @@ def build_parser() -> argparse.ArgumentParser:
         help="disable fuzzy matching and require an exact heading match",
     )
 
+    attach = subparsers.add_parser(
+        "attach",
+        help="add a file or URL resource to a note",
+        description=(
+            "Add a file path or URL under the Resources or References heading "
+            "in a task, chain, or project note."
+        ),
+    )
+    attach.add_argument("note_kind", choices=("task", "chain", "project"), help="target note kind")
+    attach.add_argument("note_ref", help="task ref for task/chain or project name for project")
+    attach.add_argument("target", help="file path, URL, or external target to store")
+    attach.add_argument("--label", help="optional display label")
+
+    resources = subparsers.add_parser(
+        "resources",
+        help="list resources stored in a note",
+        description="List file paths and URLs from the Resources or References heading in a task, chain, or project note.",
+    )
+    resources.add_argument("note_kind", choices=("task", "chain", "project"), help="target note kind")
+    resources.add_argument("note_ref", help="task ref for task/chain or project name for project")
+
+    open_resource = subparsers.add_parser(
+        "open-resource",
+        help="open a note resource by ID",
+        description="Open a resource listed by the resources command. Set JOT_OPENER to override the opener.",
+    )
+    open_resource.add_argument("note_kind", choices=("task", "chain", "project"), help="target note kind")
+    open_resource.add_argument("note_ref", help="task ref for task/chain or project name for project")
+    open_resource.add_argument("resource_id", type=int, help="resource ID shown by resources")
+
+    detach_resource = subparsers.add_parser(
+        "detach-resource",
+        help="remove a resource from a note",
+        description="Remove a resource bullet from the Resources or References heading in a task, chain, or project note.",
+    )
+    detach_resource.add_argument("note_kind", choices=("task", "chain", "project"), help="target note kind")
+    detach_resource.add_argument("note_ref", help="task ref for task/chain or project name for project")
+    detach_resource.add_argument("resource_id", type=int, help="resource ID shown by resources")
+
     add = subparsers.add_parser(
         "add",
         help="add a short event to the task annotation stream",
@@ -466,6 +516,14 @@ def main(argv: list[str] | None = None) -> int:
             result = _run_headings(ctx, args)
         elif args.command == "section":
             result = _run_section(ctx, args)
+        elif args.command == "attach":
+            result = _run_attach(ctx, args)
+        elif args.command == "resources":
+            result = _run_resources(ctx, args)
+        elif args.command == "open-resource":
+            result = _run_open_resource(ctx, args)
+        elif args.command == "detach-resource":
+            result = _run_detach_resource(ctx, args)
         elif args.command == "list":
             result = _run_list(ctx, args.task_ref)
         elif args.command == "show":
@@ -801,6 +859,93 @@ def _existing_note_path_for_kind(ctx, note_kind: str, note_ref: str):
     if note_path is None:
         raise RuntimeError(f"project note does not exist for {project_name}")
     return note_path, {"project": project_name}
+
+
+def _run_resources(ctx, args) -> CommandResult:
+    note_path, identity = _existing_note_path_for_kind(ctx, args.note_kind, args.note_ref)
+    result = list_note_resources(note_path)
+    return CommandResult(
+        command="resources",
+        payload={
+            "note_kind": args.note_kind,
+            **identity,
+            "path": str(result.note_path),
+            "resources": result.resources,
+        },
+    )
+
+
+def _run_attach(ctx, args) -> CommandResult:
+    if args.note_kind == "task":
+        task = ctx.taskwarrior.resolve_task(args.note_ref)
+        result = attach_task_resource_storage(ctx.config, task, target=args.target, label=args.label)
+        identity = {"task_short_uuid": task.task_short_uuid}
+    elif args.note_kind == "chain":
+        task = ctx.taskwarrior.resolve_task(args.note_ref)
+        result = attach_chain_resource_storage(ctx.config, task, target=args.target, label=args.label)
+        identity = {"task_short_uuid": task.task_short_uuid, "chain_id": chain_id_for_task(task.task) or None}
+    else:
+        project_name = str(args.note_ref).strip()
+        result = attach_project_resource_storage(ctx.config, project_name, target=args.target, label=args.label)
+        identity = {"project": project_name}
+    return CommandResult(
+        command="attach",
+        payload={
+            "note_kind": args.note_kind,
+            **identity,
+            "path": str(result["note_path"]),
+            "opened": bool(result["opened"]),
+            "resource": result["resource"],
+            "resources": result["resources"],
+        },
+    )
+
+
+def _run_open_resource(ctx, args) -> CommandResult:
+    note_path, identity = _existing_note_path_for_kind(ctx, args.note_kind, args.note_ref)
+    resources = list_note_resources(note_path).resources
+    resource = next((item for item in resources if int(item.get("id") or 0) == args.resource_id), None)
+    if resource is None:
+        raise RuntimeError(f"resource {args.resource_id} not found")
+    command = open_resource_target(str(resource.get("target") or ""))
+    return CommandResult(
+        command="open-resource",
+        payload={
+            "note_kind": args.note_kind,
+            **identity,
+            "path": str(note_path),
+            "resource": resource,
+            "opener": command,
+        },
+    )
+
+
+def _run_detach_resource(ctx, args) -> CommandResult:
+    note_path, identity = _existing_note_path_for_kind(ctx, args.note_kind, args.note_ref)
+    if args.note_kind == "task":
+        task = ctx.taskwarrior.resolve_task(args.note_ref)
+        result = detach_task_resource_storage(ctx.config, task, note_path=note_path, resource_id=args.resource_id)
+    elif args.note_kind == "chain":
+        task = ctx.taskwarrior.resolve_task(args.note_ref)
+        result = detach_chain_resource_storage(ctx.config, task, note_path=note_path, resource_id=args.resource_id)
+    else:
+        project_name = str(args.note_ref).strip()
+        result = detach_project_resource_storage(
+            ctx.config,
+            project_name,
+            note_path=note_path,
+            resource_id=args.resource_id,
+        )
+    return CommandResult(
+        command="detach-resource",
+        payload={
+            "note_kind": args.note_kind,
+            **identity,
+            "path": str(result["note_path"]),
+            "resource": result["resource"],
+            "resources": result["resources"],
+        },
+    )
 
 
 def _run_task_delete(ctx, task_ref: str) -> CommandResult:
