@@ -19,6 +19,7 @@ class ResourceItem:
     label: str
     target: str
     kind: str
+    status: str
     line: int
     raw: str
 
@@ -28,6 +29,7 @@ class ResourceItem:
             "label": self.label,
             "target": self.target,
             "kind": self.kind,
+            "status": self.status,
             "line": self.line,
             "raw": self.raw,
         }
@@ -66,6 +68,7 @@ def parse_resource_bullets(lines: list[tuple[int, str]]) -> list[ResourceItem]:
                 label=label,
                 target=target,
                 kind=_resource_kind(target),
+                status=_resource_status(target),
                 line=line_index + 1,
                 raw=raw,
             )
@@ -116,6 +119,18 @@ def _resource_kind(target: str) -> str:
     if SCHEME_RE.match(value):
         return "external"
     return "file"
+
+
+def _resource_status(target: str) -> str:
+    value = str(target or "").strip()
+    if not value:
+        return "missing"
+    kind = _resource_kind(value)
+    if kind != "file":
+        return "unchecked"
+    path_text = value[7:] if value.lower().startswith("file://") else value
+    path = Path(path_text).expanduser()
+    return "exists" if path.exists() else "missing"
 
 
 def _default_opener() -> str:

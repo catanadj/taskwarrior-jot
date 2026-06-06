@@ -711,6 +711,7 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(payload["resources"][0]["label"], "invoice")
         self.assertEqual(payload["resources"][0]["target"], "https://example.com/invoice")
         self.assertEqual(payload["resources"][0]["kind"], "url")
+        self.assertEqual(payload["resources"][0]["status"], "unchecked")
 
         opened = self.run_jot_with_env(
             "open-resource",
@@ -728,15 +729,28 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(detached_payload["resources"], [])
 
     def test_project_resources_store_paths_in_project_note(self) -> None:
-        attach = self.run_jot("attach", "project", "finance.audit", "~/docs/audit-plan.md")
+        existing = self.root / "audit-plan.md"
+        existing.write_text("plan\n", encoding="utf-8")
+
+        attach = self.run_jot("attach", "project", "finance.audit", str(existing))
         self.assertEqual(attach.returncode, 0, attach.stderr)
+        missing = self.run_jot("attach", "project", "finance.audit", "~/docs/missing-audit-plan.md")
+        self.assertEqual(missing.returncode, 0, missing.stderr)
 
         listed = self.run_jot("--json", "resources", "project", "finance.audit")
         self.assertEqual(listed.returncode, 0, listed.stderr)
         payload = json.loads(listed.stdout)
         self.assertEqual(payload["project"], "finance.audit")
-        self.assertEqual(payload["resources"][0]["target"], "~/docs/audit-plan.md")
+        self.assertEqual(payload["resources"][0]["target"], str(existing))
         self.assertEqual(payload["resources"][0]["label"], "audit-plan.md")
+        self.assertEqual(payload["resources"][0]["status"], "exists")
+        self.assertEqual(payload["resources"][1]["target"], "~/docs/missing-audit-plan.md")
+        self.assertEqual(payload["resources"][1]["status"], "missing")
+
+        text_listed = self.run_jot("resources", "project", "finance.audit")
+        self.assertEqual(text_listed.returncode, 0, text_listed.stderr)
+        self.assertIn("[file] exists", text_listed.stdout)
+        self.assertIn("[file] missing", text_listed.stdout)
 
     def test_add_and_list_events(self) -> None:
         task = {

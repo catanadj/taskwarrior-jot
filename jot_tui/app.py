@@ -1479,8 +1479,12 @@ def run_tui(service: JotService) -> int:
                 for item in resources:
                     name = str(item.get("label") or item.get("target") or "").strip()
                     kind = str(item.get("kind") or "resource").strip()
+                    status = str(item.get("status") or "").strip()
                     target = str(item.get("target") or "").strip()
-                    lines.append(f"  {item.get('id')}. {name} [{kind}]")
+                    suffix = f"[{kind}]"
+                    if status and status != "unchecked":
+                        suffix += f" {status}"
+                    lines.append(f"  {item.get('id')}. {name} {suffix}")
                     if target and target != name:
                         lines.append(f"     {target}")
                 lines.append("")

@@ -402,12 +402,16 @@ def _emit_resources(payload: dict[str, Any]) -> None:
         label = str(item.get("label") or "").strip()
         target = str(item.get("target") or "").strip()
         kind = str(item.get("kind") or "resource")
+        status = str(item.get("status") or "").strip()
+        suffix = f"[{kind}]"
+        if status and status != "unchecked":
+            suffix += f" {status}"
         prefix = f"{item.get('id')}. "
         if label and label != target:
-            sys.stdout.write(f"{prefix}{label}  [{kind}]\n")
+            sys.stdout.write(f"{prefix}{label}  {suffix}\n")
             _emit_field("target", target, indent=3)
         else:
-            sys.stdout.write(f"{prefix}{target}  [{kind}]\n")
+            sys.stdout.write(f"{prefix}{target}  {suffix}\n")
 
 
 def _emit_attach(payload: dict[str, Any]) -> None:
