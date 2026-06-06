@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from .editor import open_in_editor
@@ -15,18 +16,26 @@ from .notes import (
     find_chain_note,
     find_project_note,
     find_task_note,
+    list_note_resources,
     project_note_path,
     task_note_path,
 )
 from .report import list_project_notes, recent_activity
+from .resources import open_resource_target
 from .search import search_all
 from .storage import add_to_task_heading_storage, finalize_task_note_edit
 from .storage import (
     add_to_chain_heading_storage,
     add_to_project_heading_storage,
+    attach_chain_resource_storage,
+    attach_project_resource_storage,
+    attach_task_resource_storage,
     delete_chain_note_storage,
     delete_project_note_storage,
     delete_task_note_storage,
+    detach_chain_resource_storage,
+    detach_project_resource_storage,
+    detach_task_resource_storage,
 )
 from .taskwarrior import TaskwarriorClient
 
@@ -158,12 +167,16 @@ class JotService:
         chain_note = find_chain_note(self.config, task)
         project_note = find_project_note(self.config, task.project)
 
-        def _note_payload(path) -> dict[str, str]:
+        def _note_payload(path) -> dict[str, Any]:
             resolved = str(path or "")
-            if not path:
-                return {"path": "", "body": ""}
+            if not path or not Path(path).exists():
+                return {"path": resolved, "body": "", "resources": []}
             _metadata, body = read_document(path)
-            return {"path": resolved, "body": body.strip()}
+            return {
+                "path": resolved,
+                "body": body.strip(),
+                "resources": list_note_resources(path).resources,
+            }
 
         return {
             "task": {
@@ -186,11 +199,16 @@ class JotService:
         note = find_project_note(self.config, project_name)
         if note:
             _metadata, body = read_document(note)
-            note_data = {"path": str(note), "body": body.strip()}
+            note_data = {
+                "path": str(note),
+                "body": body.strip(),
+                "resources": list_note_resources(note).resources,
+            }
         else:
             note_data = {
                 "path": str(project_note_path(self.config, project_name)),
                 "body": "",
+                "resources": [],
             }
         return {
             "project": project_name,
@@ -294,3 +312,56 @@ class JotService:
 
     def delete_project_note(self, project_name: str) -> dict[str, Any]:
         return delete_project_note_storage(self.config, project_name)
+
+    def attach_resource(
+        self,
+        kind: str,
+        *,
+        task_ref: str = "",
+        project_name: str = "",
+        target: str,
+        label: str | None = None,
+    ) -> dict[str, Any]:
+        if kind == "task":
+            task = self.taskwarrior.resolve_task(task_ref)
+            return attach_task_resource_storage(self.config, task, target=target, label=label)
+        if kind == "chain":
+            task = self.taskwarrior.resolve_task(task_ref)
+            return attach_chain_resource_storage(self.config, task, target=target, label=label)
+        if kind == "project":
+            return attach_project_resource_storage(self.config, project_name, target=target, label=label)
+        raise RuntimeError(f"unknown resource target kind: {kind}")
+
+    def detach_resource(
+        self,
+        kind: str,
+        *,
+        task_ref: str = "",
+        project_name: str = "",
+        note_path: str,
+        resource_id: int,
+    ) -> dict[str, Any]:
+        path = Path(note_path)
+        if kind == "task":
+            task = self.taskwarrior.resolve_task(task_ref)
+            return detach_task_resource_storage(self.config, task, note_path=path, resource_id=resource_id)
+        if kind == "chain":
+            task = self.taskwarrior.resolve_task(task_ref)
+            return detach_chain_resource_storage(self.config, task, note_path=path, resource_id=resource_id)
+        if kind == "project":
+            return detach_project_resource_storage(
+                self.config,
+                project_name,
+                note_path=path,
+                resource_id=resource_id,
+            )
+        raise RuntimeError(f"unknown resource target kind: {kind}")
+
+    def open_resource(self, target: str) -> list[str]:
+        return open_resource_target(target)
+
+    def note_resources(self, note_path: str) -> list[dict[str, Any]]:
+        path = Path(note_path)
+        if not path.exists():
+            return []
+        return list_note_resources(path).resources

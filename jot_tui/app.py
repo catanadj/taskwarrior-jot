@@ -121,6 +121,119 @@ def run_tui(service: JotService) -> int:
                 return
             self.dismiss(False)
 
+    class AttachResourceModal(ModalScreen[dict[str, str] | None]):
+        CSS = """
+        #dialog {
+            width: 78;
+            height: auto;
+            border: round $panel;
+            padding: 1 2;
+            background: $surface;
+        }
+        #dialog Input { margin: 1 0; }
+        #buttons { height: auto; }
+        """
+
+        BINDINGS = [("escape", "cancel", "Cancel")]
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id="dialog"):
+                yield Label("Attach resource to active note")
+                yield Input(placeholder="Path or URL", id="resource-target")
+                yield Input(placeholder="Optional label", id="resource-label")
+                with Horizontal(id="buttons"):
+                    yield Button("Cancel", id="cancel-btn")
+                    yield Button("Attach", id="attach-btn", variant="primary")
+
+        def action_cancel(self) -> None:
+            self.dismiss(None)
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "cancel-btn":
+                self.dismiss(None)
+                return
+            self._submit()
+
+        def on_input_submitted(self, event: Input.Submitted) -> None:
+            if event.input.id == "resource-target":
+                self.query_one("#resource-label", Input).focus()
+                return
+            self._submit()
+
+        def _submit(self) -> None:
+            target = self.query_one("#resource-target", Input).value.strip()
+            label = self.query_one("#resource-label", Input).value.strip()
+            if not target:
+                self.app.notify("Resource path or URL is required", severity="warning")
+                return
+            self.dismiss({"target": target, "label": label})
+
+    class ResourcePickerModal(ModalScreen[dict[str, Any] | None]):
+        CSS = """
+        #dialog {
+            width: 96;
+            height: 28;
+            border: round $panel;
+            padding: 1 2;
+            background: $surface;
+        }
+        #resource-table { height: 1fr; }
+        #buttons { height: auto; }
+        """
+
+        BINDINGS = [("escape", "cancel", "Cancel")]
+
+        def __init__(self, *, title: str, resources: list[dict[str, Any]], action_label: str) -> None:
+            super().__init__()
+            self.title_text = title
+            self.resources = resources
+            self.action_label = action_label
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id="dialog"):
+                yield Label(self.title_text)
+                table = DataTable(id="resource-table", cursor_type="row")
+                table.add_columns("id", "label", "kind", "target")
+                yield table
+                with Horizontal(id="buttons"):
+                    yield Button("Cancel", id="cancel-btn")
+                    yield Button(self.action_label, id="action-btn", variant="primary")
+
+        def on_mount(self) -> None:
+            table = self.query_one("#resource-table", DataTable)
+            for item in self.resources:
+                table.add_row(
+                    str(item.get("id") or ""),
+                    str(item.get("label") or ""),
+                    str(item.get("kind") or ""),
+                    str(item.get("target") or ""),
+                )
+            table.focus()
+
+        def action_cancel(self) -> None:
+            self.dismiss(None)
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "action-btn":
+                self._submit_selected()
+                return
+            self.dismiss(None)
+
+        def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+            if event.data_table.id != "resource-table":
+                return
+            self._submit_row(event.cursor_row)
+
+        def _submit_selected(self) -> None:
+            table = self.query_one("#resource-table", DataTable)
+            self._submit_row(table.cursor_row)
+
+        def _submit_row(self, row: int) -> None:
+            if row < 0 or row >= len(self.resources):
+                self.dismiss(None)
+                return
+            self.dismiss(dict(self.resources[row]))
+
     class CommandPaletteModal(ModalScreen[dict[str, Any] | None]):
         CSS = """
         #dialog {
@@ -214,14 +327,14 @@ def run_tui(service: JotService) -> int:
             padding: 0 1;
         }
         #task-filter-project, #task-filter-tag { width: 1fr; margin: 0 1 0 0; }
-        #task-summary, #task-note-preview, #chain-note-preview, #project-note-preview, #task-events-preview, #project-summary, #project-note-body {
+        #task-summary, #task-note-preview, #chain-note-preview, #project-note-preview, #task-events-preview, #task-resources-preview, #project-summary, #project-note-body, #project-resources-preview {
             padding: 1;
             height: 1fr;
             overflow: auto;
         }
         #latest-pane { border: round $panel; }
         #latest-workspace-tabs { height: 1fr; }
-        #latest-summary, #latest-task-note-preview, #latest-chain-note-preview, #latest-project-note-preview, #latest-events-preview {
+        #latest-summary, #latest-task-note-preview, #latest-chain-note-preview, #latest-project-note-preview, #latest-events-preview, #latest-resources-preview {
             padding: 1;
             height: 1fr;
             overflow: auto;
@@ -241,6 +354,9 @@ def run_tui(service: JotService) -> int:
             ("slash", "focus_search", "Search"),
             ("e", "edit_selected_task_note", "Edit note"),
             ("d", "delete_selected_note", "Delete note"),
+            ("f", "attach_resource", "Attach resource"),
+            ("o", "open_resource", "Open resource"),
+            ("x", "detach_resource", "Detach resource"),
             ("a", "add_to_selected_task", "Add-to task"),
             ("c", "add_to_selected_chain", "Add-to chain"),
             ("p", "open_project_context", "Open project"),
@@ -296,6 +412,8 @@ def run_tui(service: JotService) -> int:
                                                 yield Static("No project note loaded.", id="project-note-preview")
                                             with TabPane("Events", id="task-events-pane"):
                                                 yield Static("No events loaded.", id="task-events-preview")
+                                            with TabPane("Resources", id="task-resources-pane"):
+                                                yield Static("No resources loaded.", id="task-resources-preview")
                             with TabPane("Projects", id="project-browser-pane"):
                                 with Horizontal():
                                     with Vertical(id="browse-projects"):
@@ -310,6 +428,8 @@ def run_tui(service: JotService) -> int:
                                                 yield Static("Select a project row to load details.", id="project-summary")
                                             with TabPane("Project Note", id="project-note-body-pane"):
                                                 yield Static("No project note loaded.", id="project-note-body")
+                                            with TabPane("Resources", id="project-resources-pane"):
+                                                yield Static("No resources loaded.", id="project-resources-preview")
                 with TabPane("Search", id="search-tab"):
                     with Vertical():
                         with Horizontal(id="search-bar"):
@@ -342,6 +462,8 @@ def run_tui(service: JotService) -> int:
                                 yield Static("No project note loaded.", id="latest-project-note-preview")
                             with TabPane("Events", id="latest-events-pane"):
                                 yield Static("No events loaded.", id="latest-events-preview")
+                            with TabPane("Resources", id="latest-resources-pane"):
+                                yield Static("No resources loaded.", id="latest-resources-preview")
             yield Static("Actions: / search | r refresh | q quit", id="context-hints")
             yield Footer()
 
@@ -465,6 +587,30 @@ def run_tui(service: JotService) -> int:
                 lambda confirmed: self._on_delete_confirmed(target, confirmed),
             )
 
+        def action_attach_resource(self) -> None:
+            target = self._active_note_target()
+            if target is None:
+                self.notify("Select a note context first", severity="warning")
+                return
+            self.push_screen(
+                AttachResourceModal(),
+                lambda payload: self._on_attach_resource_payload(target, payload),
+            )
+
+        def action_open_resource(self) -> None:
+            target = self._active_note_target()
+            if target is None:
+                self.notify("Select a note context first", severity="warning")
+                return
+            asyncio.create_task(self._choose_resource_async(target, mode="open"))
+
+        def action_detach_resource(self) -> None:
+            target = self._active_note_target()
+            if target is None:
+                self.notify("Select a note context first", severity="warning")
+                return
+            asyncio.create_task(self._choose_resource_async(target, mode="detach"))
+
         def action_add_to_selected_task(self) -> None:
             if not self.current_task_ref:
                 self.notify("Select a task row in Recent first", severity="warning")
@@ -507,6 +653,20 @@ def run_tui(service: JotService) -> int:
             if not confirmed:
                 return
             asyncio.create_task(self._apply_delete_async(target))
+
+        def _on_attach_resource_payload(self, target: dict[str, Any], payload: dict[str, str] | None) -> None:
+            if not payload:
+                return
+            asyncio.create_task(self._apply_attach_resource_async(target, payload))
+
+        def _on_resource_selected(self, target: dict[str, Any], mode: str, resource: dict[str, Any] | None) -> None:
+            if not resource:
+                return
+            if mode == "open":
+                asyncio.create_task(self._apply_open_resource_async(resource))
+                return
+            asyncio.create_task(self._apply_detach_resource_async(target, resource))
+
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
             if event.input.id != "search-input":
@@ -741,6 +901,15 @@ def run_tui(service: JotService) -> int:
             if command_id == "delete-note":
                 self.action_delete_selected_note()
                 return
+            if command_id == "attach-resource":
+                self.action_attach_resource()
+                return
+            if command_id == "open-resource":
+                self.action_open_resource()
+                return
+            if command_id == "detach-resource":
+                self.action_detach_resource()
+                return
             if command_id == "add-task":
                 self.action_add_to_selected_task()
                 return
@@ -758,6 +927,7 @@ def run_tui(service: JotService) -> int:
             chain_note = self.query_one("#chain-note-preview", Static)
             project_note = self.query_one("#project-note-preview", Static)
             events_view = self.query_one("#task-events-preview", Static)
+            resources_view = self.query_one("#task-resources-preview", Static)
             try:
                 data = await asyncio.to_thread(self.svc.task_workspace, task_ref)
             except Exception as exc:
@@ -798,6 +968,15 @@ def run_tui(service: JotService) -> int:
             chain_note.update(self._render_note_panel("Chain Note", chain_note_data))
             project_note.update(self._render_note_panel("Project Note", project_note_data))
             events_view.update(self._render_events_panel(events))
+            resources_view.update(
+                self._render_workspace_resources(
+                    [
+                        ("task", task_note_data),
+                        ("chain", chain_note_data),
+                        ("project", project_note_data),
+                    ]
+                )
+            )
             self._focus_best_task_workspace_tab(task_note_data, chain_note_data, project_note_data, events)
             self._update_action_hints()
 
@@ -807,6 +986,7 @@ def run_tui(service: JotService) -> int:
             chain_note = self.query_one("#latest-chain-note-preview", Static)
             project_note = self.query_one("#latest-project-note-preview", Static)
             events_view = self.query_one("#latest-events-preview", Static)
+            resources_view = self.query_one("#latest-resources-preview", Static)
             try:
                 data = await asyncio.to_thread(self.svc.task_workspace, task_ref)
             except Exception as exc:
@@ -848,12 +1028,22 @@ def run_tui(service: JotService) -> int:
             chain_note.update(self._render_note_panel("Chain Note", chain_note_data))
             project_note.update(self._render_note_panel("Project Note", project_note_data))
             events_view.update(self._render_events_panel(events))
+            resources_view.update(
+                self._render_workspace_resources(
+                    [
+                        ("task", task_note_data),
+                        ("chain", chain_note_data),
+                        ("project", project_note_data),
+                    ]
+                )
+            )
             self._focus_best_latest_workspace_tab(task_note_data, chain_note_data, project_note_data, events)
             self._update_action_hints()
 
         async def _load_project_async(self, project_name: str) -> None:
             summary = self.query_one("#project-summary", Static)
             note_body = self.query_one("#project-note-body", Static)
+            resources_view = self.query_one("#project-resources-preview", Static)
             data = await asyncio.to_thread(self.svc.project_workspace, project_name)
             note = data.get("note") or {}
             body = str(note.get("body") or "").strip()
@@ -869,6 +1059,7 @@ def run_tui(service: JotService) -> int:
                 )
             )
             note_body.update(self._render_note_panel("Project Note", note))
+            resources_view.update(self._render_workspace_resources([("project", note)]))
             self._focus_best_project_workspace_tab(note)
             self._update_action_hints()
 
@@ -927,10 +1118,82 @@ def run_tui(service: JotService) -> int:
             elif self.current_task_ref:
                 await self._load_task_async(self.current_task_ref)
 
+        async def _choose_resource_async(self, target: dict[str, Any], *, mode: str) -> None:
+            resources = await asyncio.to_thread(self.svc.note_resources, str(target.get("path") or ""))
+            if not resources:
+                self.notify("Active note has no resources", severity="warning")
+                return
+            title = "Open resource" if mode == "open" else "Detach resource"
+            action_label = "Open" if mode == "open" else "Detach"
+            self.push_screen(
+                ResourcePickerModal(title=title, resources=resources, action_label=action_label),
+                lambda resource: self._on_resource_selected(target, mode, resource),
+            )
+
+        async def _apply_attach_resource_async(self, target: dict[str, Any], payload: dict[str, str]) -> None:
+            try:
+                result = await asyncio.to_thread(
+                    self.svc.attach_resource,
+                    str(target.get("kind") or ""),
+                    task_ref=str(target.get("task_ref") or ""),
+                    project_name=str(target.get("project") or ""),
+                    target=str(payload.get("target") or ""),
+                    label=str(payload.get("label") or "") or None,
+                )
+            except Exception as exc:
+                self.notify(f"Attach failed: {exc}", severity="error")
+                return
+            resource = result.get("resource") or {}
+            self.notify(f"Attached: {resource.get('label') or resource.get('target')}", severity="information")
+            await self._refresh_after_resource_change_async()
+
+        async def _apply_open_resource_async(self, resource: dict[str, Any]) -> None:
+            target = str(resource.get("target") or "").strip()
+            if not target:
+                self.notify("Resource has no target", severity="warning")
+                return
+            try:
+                with self.suspend():
+                    await asyncio.to_thread(self.svc.open_resource, target)
+            except Exception as exc:
+                self.notify(f"Open resource failed: {exc}", severity="error")
+                return
+            self.notify(f"Opened resource: {target}", severity="information")
+
+        async def _apply_detach_resource_async(self, target: dict[str, Any], resource: dict[str, Any]) -> None:
+            try:
+                result = await asyncio.to_thread(
+                    self.svc.detach_resource,
+                    str(target.get("kind") or ""),
+                    task_ref=str(target.get("task_ref") or ""),
+                    project_name=str(target.get("project") or ""),
+                    note_path=str(target.get("path") or ""),
+                    resource_id=int(resource.get("id") or 0),
+                )
+            except Exception as exc:
+                self.notify(f"Detach failed: {exc}", severity="error")
+                return
+            removed = result.get("resource") or {}
+            self.notify(f"Detached: {removed.get('label') or removed.get('target')}", severity="information")
+            await self._refresh_after_resource_change_async()
+
+        async def _refresh_after_resource_change_async(self) -> None:
+            await self._refresh_recent_async()
+            await self._refresh_tasks_async()
+            await self._refresh_projects_async()
+            main_tab = self.query_one("#main-tabs", TabbedContent).active
+            if main_tab == "latest-tab" and self.current_latest_task_ref:
+                await self._load_latest_task_async(self.current_latest_task_ref)
+            elif self.current_project_name and self.query_one("#browse-browser-tabs", TabbedContent).active == "project-browser-pane":
+                await self._load_project_async(self.current_project_name)
+            elif self.current_task_ref:
+                await self._load_task_async(self.current_task_ref)
+
         def _update_action_hints(self) -> None:
             hints = ["Actions: ctrl+p palette", "/ search", "r refresh", "u update", "q quit"]
             if self.current_task_ref or self.current_latest_task_ref or self.current_project_name:
                 hints.append("d delete-note")
+                hints.extend(["f attach-resource", "o open-resource", "x detach-resource"])
             if self.current_task_ref:
                 hints.extend(["e edit-task", "a add-task"])
             if self.current_task_ref and self.current_task_chain_path:
@@ -950,6 +1213,9 @@ def run_tui(service: JotService) -> int:
                 PaletteEntry("open-selected", "Open selected row", "Jump into the selected task, project, or recent item"),
                 PaletteEntry("edit-note", "Edit active note", "Open the active note in your editor", bool(self._active_note_target())),
                 PaletteEntry("delete-note", "Delete active note", "Move the active note to trash", bool(self._active_note_target())),
+                PaletteEntry("attach-resource", "Attach resource", "Attach a file path or URL to the active note", bool(self._active_note_target())),
+                PaletteEntry("open-resource", "Open note resource", "Open a resource from the active note", bool(self._active_note_target())),
+                PaletteEntry("detach-resource", "Detach note resource", "Remove a resource from the active note", bool(self._active_note_target())),
                 PaletteEntry("add-task", "Add to task heading", "Add a timestamped entry under the selected task note", bool(self.current_task_ref)),
                 PaletteEntry("add-chain", "Add to chain heading", "Add a timestamped entry under the selected chain note", bool(self.current_task_ref and self.current_task_chain_path)),
                 PaletteEntry("open-project", "Open project workspace", "Open the selected or current project note", bool(self.current_project_name or self.current_task_project)),
@@ -1193,6 +1459,35 @@ def run_tui(service: JotService) -> int:
                 desc = str(item.get("description") or "").strip()
                 lines.append(f"{entry}  {desc}".strip())
             return "\n".join(lines)
+
+        def _render_workspace_resources(self, note_items: list[tuple[str, dict[str, Any]]]) -> str:
+            lines = ["Resources", ""]
+            found = False
+            for label, note in note_items:
+                path = str(note.get("path") or "").strip()
+                resources = note.get("resources") or []
+                if not path and not resources:
+                    continue
+                lines.append(f"{label.capitalize()} note")
+                if path:
+                    lines.append(f"Path: {path}")
+                if not resources:
+                    lines.append("  (none)")
+                    lines.append("")
+                    continue
+                found = True
+                for item in resources:
+                    name = str(item.get("label") or item.get("target") or "").strip()
+                    kind = str(item.get("kind") or "resource").strip()
+                    target = str(item.get("target") or "").strip()
+                    lines.append(f"  {item.get('id')}. {name} [{kind}]")
+                    if target and target != name:
+                        lines.append(f"     {target}")
+                lines.append("")
+            if not found and len(lines) == 2:
+                lines.append("(none)")
+            lines.append("Actions: f attach | o open | x detach")
+            return "\n".join(lines).strip()
 
         def _note_excerpt(self, body: str, *, max_lines: int = 16, max_width: int = 92) -> str:
             cleaned: list[str] = []

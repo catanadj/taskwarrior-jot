@@ -130,6 +130,9 @@ Main shortcuts:
 - `Enter` open the selected row
 - `e` open the active note in the editor
 - `d` move the active note to trash
+- `f` attach a file or URL resource to the active note
+- `o` open a resource from the active note
+- `x` detach a resource from the active note
 - `a` add a timestamped entry under a task heading
 - `c` add a timestamped entry under a chain heading
 - `p` open the project workspace
