@@ -5,6 +5,7 @@ import sys
 
 from . import __version__
 from .app import build_app_context
+from .command_help import build_command_catalog
 from .config import ensure_app_dirs
 from .doctor import run_doctor, run_doctor_config_error
 from .editor import open_in_editor
@@ -431,7 +432,15 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
     if not argv:
-        build_parser().print_help()
+        parser = build_parser()
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            try:
+                from jot_tui.command_browser import run_command_browser
+
+                return run_command_browser(build_command_catalog(parser))
+            except RuntimeError:
+                pass
+        parser.print_help()
         return 0
     shorthand_ref, shorthand_json = _parse_task_shorthand(argv)
     if shorthand_ref:

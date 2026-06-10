@@ -10,6 +10,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from jot_core.cli import build_parser
+from jot_core.command_help import build_command_catalog
 from jot_core.frontmatter import parse_document, render_document
 from jot_tui.palette import PaletteEntry, filter_palette_entries
 
@@ -155,6 +157,26 @@ class PaletteTests(unittest.TestCase):
         ]
         filtered = filter_palette_entries(entries, "project")
         self.assertEqual([item.id for item in filtered], ["browse-projects"])
+
+
+class CommandHelpTests(unittest.TestCase):
+    def test_catalog_is_derived_from_parser_commands(self) -> None:
+        catalog = build_command_catalog(build_parser())
+        by_name = {item.name: item for item in catalog}
+
+        self.assertIn("note", by_name)
+        self.assertIn("attach", by_name)
+        self.assertIn("report recent", by_name)
+        self.assertEqual(by_name["attach"].category, "Resources")
+        self.assertIn("jot attach", by_name["attach"].usage)
+        self.assertIn("file path or URL", by_name["attach"].description)
+        self.assertTrue(any("--label" in item for item in by_name["attach"].arguments))
+
+    def test_catalog_contains_unique_leaf_commands(self) -> None:
+        catalog = build_command_catalog(build_parser())
+        names = [item.name for item in catalog]
+        self.assertEqual(len(names), len(set(names)))
+        self.assertNotIn("report", names)
 
 
 class CliIntegrationTests(JotCliTestCase):
