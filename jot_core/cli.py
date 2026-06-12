@@ -31,6 +31,7 @@ from .notes import (
 from .ops import iso_now, read_ops
 from .output import emit_result, warn
 from .report import list_project_notes, project_rollup, recent_activity
+from .progress import parse_progress_pair, parse_progress_value, read_note_progress
 from .resources import open_resource_target
 from .search import normalize_chain_id, normalize_kinds, normalize_project, search_all
 from .services import JotService
@@ -53,6 +54,8 @@ from .storage import (
     finalize_chain_note_edit,
     finalize_project_note_edit,
     finalize_task_note_edit,
+    mutate_project_progress_storage,
+    mutate_task_progress_storage,
     record_event_add,
 )
 from .taskwarrior import INTEGER_RE, SHORT_UUID_RE, UUID_RE
@@ -81,6 +84,9 @@ def build_parser() -> argparse.ArgumentParser:
             "  jot attach task 42 ~/invoice.pdf --label invoice\n"
             "  jot resources task 42\n"
             "  jot open-resource task 42 1\n"
+            "  jot progress task 42 set 120/350 --unit pages\n"
+            "  jot progress task 42 add 20\n"
+            "  jot progress task 42 show\n"
             "  jot project-append Finances.Expense \"baseline updated\"\n"
             "  jot project-show Finances.Expense\n"
             "  jot project-report Finances.Expense\n"
@@ -379,6 +385,62 @@ def build_parser() -> argparse.ArgumentParser:
     detach_resource.add_argument("note_ref", help="task ref for task/chain or project name for project")
     detach_resource.add_argument("resource_id", type=int, help="resource ID shown by resources")
 
+    progress = subparsers.add_parser(
+        "progress",
+        help="track generic progress in a task, chain, or project note",
+        description="Track content-agnostic progress using decimal current and target values.",
+    )
+    progress.add_argument("note_kind", choices=("task", "chain", "project"), help="target note kind")
+    progress.add_argument("note_ref", help="task ref for task/chain or project name for project")
+    progress_subparsers = progress.add_subparsers(dest="progress_command", required=True)
+
+    progress_set = progress_subparsers.add_parser(
+        "set",
+        help="set current and target progress",
+        description="Set progress using CURRENT/TARGET values with optional user-defined unit and status.",
+    )
+    progress_set.add_argument("measurement", help="CURRENT/TARGET, for example 120/350")
+    progress_set.add_argument("--unit", help="user-defined unit, for example pages, km, or items")
+    progress_set.add_argument("--status", help="optional user-defined status")
+
+    progress_add = progress_subparsers.add_parser(
+        "add",
+        help="increase current progress",
+        description="Increase the current progress value by a decimal amount.",
+    )
+    progress_add.add_argument("amount", help="decimal amount to add")
+
+    progress_subtract = progress_subparsers.add_parser(
+        "subtract",
+        help="decrease current progress",
+        description="Decrease the current progress value by a decimal amount.",
+    )
+    progress_subtract.add_argument("amount", help="decimal amount to subtract")
+
+    progress_subparsers.add_parser(
+        "show",
+        help="show current progress",
+        description="Show the current progress state without modifying the note.",
+    )
+
+    progress_status = progress_subparsers.add_parser(
+        "status",
+        help="set a user-defined progress status",
+        description="Set a free-form status on existing progress.",
+    )
+    progress_status.add_argument("value", help="status value, for example active, paused, or complete")
+
+    progress_clear = progress_subparsers.add_parser(
+        "clear",
+        help="clear current progress state",
+        description="Remove progress state from frontmatter while retaining the human-readable history.",
+    )
+    progress_clear.add_argument(
+        "--yes",
+        action="store_true",
+        help="confirm clearing the current progress state",
+    )
+
     add = subparsers.add_parser(
         "add",
         help="add a short event to the task annotation stream",
@@ -533,6 +595,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _run_open_resource(ctx, args)
         elif args.command == "detach-resource":
             result = _run_detach_resource(ctx, args)
+        elif args.command == "progress":
+            result = _run_progress(ctx, args)
         elif args.command == "list":
             result = _run_list(ctx, args.task_ref)
         elif args.command == "show":
@@ -953,6 +1017,80 @@ def _run_detach_resource(ctx, args) -> CommandResult:
             "path": str(result["note_path"]),
             "resource": result["resource"],
             "resources": result["resources"],
+        },
+    )
+
+
+def _run_progress(ctx, args) -> CommandResult:
+    note_kind = str(args.note_kind)
+    note_ref = str(args.note_ref).strip()
+    operation = str(args.progress_command)
+    if operation == "show":
+        note_path, identity = _existing_note_path_for_kind(ctx, note_kind, note_ref)
+        result = read_note_progress(note_path)
+        return CommandResult(
+            command="progress",
+            payload={
+                "operation": operation,
+                "note_kind": note_kind,
+                **identity,
+                "path": str(note_path),
+                "progress": result.progress,
+                "entry": None,
+            },
+        )
+    if operation == "clear" and not bool(args.yes):
+        raise RuntimeError("progress clear requires --yes; history will be retained")
+
+    current = target = amount = None
+    unit = status = None
+    if operation == "set":
+        current, target = parse_progress_pair(args.measurement)
+        unit = args.unit
+        status = args.status
+    elif operation in {"add", "subtract"}:
+        amount = parse_progress_value(args.amount)
+    elif operation == "status":
+        status = args.value
+
+    if note_kind in {"task", "chain"}:
+        task = ctx.taskwarrior.resolve_task(note_ref)
+        result = mutate_task_progress_storage(
+            ctx.config,
+            task,
+            note_kind=note_kind,
+            operation=operation,
+            current=current,
+            target=target,
+            amount=amount,
+            unit=unit,
+            status=status,
+        )
+        identity = {
+            "task_short_uuid": task.task_short_uuid,
+            "chain_id": chain_id_for_task(task.task) if note_kind == "chain" else None,
+        }
+    else:
+        result = mutate_project_progress_storage(
+            ctx.config,
+            note_ref,
+            operation=operation,
+            current=current,
+            target=target,
+            amount=amount,
+            unit=unit,
+            status=status,
+        )
+        identity = {"project": note_ref}
+    return CommandResult(
+        command="progress",
+        payload={
+            "operation": operation,
+            "note_kind": note_kind,
+            **identity,
+            "path": str(result["note_path"]),
+            "progress": result["progress"],
+            "entry": result["entry"],
         },
     )
 

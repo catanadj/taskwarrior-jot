@@ -96,7 +96,7 @@ def _command_category(path: tuple[str, ...]) -> str:
         return "Projects"
     if name in {"attach", "resources", "open-resource", "detach-resource"}:
         return "Resources"
-    if name in {"add-to", "headings", "section"}:
+    if name in {"add-to", "headings", "section", "progress"}:
         return "Notes"
     if name in {"search", "report"}:
         return "Search & Reports"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 
 from .index import (
@@ -28,9 +29,19 @@ from .notes import (
     ensure_chain_note,
     ensure_project_note,
     ensure_task_note,
+    find_chain_note,
+    find_project_note,
+    find_task_note,
     touch_updated,
 )
 from .ops import append_op
+from .progress import (
+    ProgressResult,
+    adjust_note_progress,
+    clear_note_progress,
+    set_note_progress,
+    set_note_progress_status,
+)
 
 
 def finalize_task_note_edit(config: AppConfig, task: ResolvedTask, note: NotePaths) -> None:
@@ -427,6 +438,149 @@ def detach_project_resource_storage(
         path=str(result.note_path),
     )
     return {"note_path": result.note_path, "resource": result.resource, "resources": result.resources}
+
+
+def mutate_task_progress_storage(
+    config: AppConfig,
+    task: ResolvedTask,
+    *,
+    note_kind: str,
+    operation: str,
+    current: Decimal | None = None,
+    target: Decimal | None = None,
+    amount: Decimal | None = None,
+    unit: str | None = None,
+    status: str | None = None,
+) -> dict[str, object]:
+    if note_kind == "task":
+        note = _task_progress_note(config, task, operation)
+        chain_id = None
+    elif note_kind == "chain":
+        note = _chain_progress_note(config, task, operation)
+        chain_id = chain_id_for_task(task.task)
+    else:
+        raise RuntimeError(f"unsupported task progress note kind: {note_kind}")
+
+    result = _mutate_progress(
+        note.note_path,
+        operation=operation,
+        current=current,
+        target=target,
+        amount=amount,
+        unit=unit,
+        status=status,
+    )
+    if note_kind == "task":
+        update_task_note_index(config, task, result.note_path)
+    else:
+        update_chain_note_index(config, task, result.note_path)
+    append_op(
+        config,
+        f"{note_kind}_progress_{operation}",
+        task_short_uuid=task.task_short_uuid,
+        task_uuid=task.task_uuid,
+        chain_id=chain_id or None,
+        progress=result.progress,
+        entry=result.entry,
+        path=str(result.note_path),
+    )
+    return {
+        "note_path": result.note_path,
+        "opened": note.existed,
+        "progress": result.progress,
+        "entry": result.entry,
+    }
+
+
+def mutate_project_progress_storage(
+    config: AppConfig,
+    project_name: str,
+    *,
+    operation: str,
+    current: Decimal | None = None,
+    target: Decimal | None = None,
+    amount: Decimal | None = None,
+    unit: str | None = None,
+    status: str | None = None,
+) -> dict[str, object]:
+    if operation == "set":
+        note = ensure_project_note(config, project_name)
+    else:
+        note_path = find_project_note(config, project_name)
+        if note_path is None:
+            raise RuntimeError(f"project note does not exist for {project_name}")
+        note = NotePaths(note_path=note_path, existed=True)
+    result = _mutate_progress(
+        note.note_path,
+        operation=operation,
+        current=current,
+        target=target,
+        amount=amount,
+        unit=unit,
+        status=status,
+    )
+    update_project_note_index(config, project_name, result.note_path)
+    append_op(
+        config,
+        f"project_progress_{operation}",
+        project=project_name,
+        progress=result.progress,
+        entry=result.entry,
+        path=str(result.note_path),
+    )
+    return {
+        "note_path": result.note_path,
+        "opened": note.existed,
+        "progress": result.progress,
+        "entry": result.entry,
+    }
+
+
+def _mutate_progress(
+    note_path: Path,
+    *,
+    operation: str,
+    current: Decimal | None,
+    target: Decimal | None,
+    amount: Decimal | None,
+    unit: str | None,
+    status: str | None,
+) -> ProgressResult:
+    if operation == "set":
+        if current is None or target is None:
+            raise RuntimeError("set requires current and target values")
+        return set_note_progress(note_path, current, target, unit=unit, status=status)
+    if operation == "add":
+        if amount is None:
+            raise RuntimeError("add requires an amount")
+        return adjust_note_progress(note_path, amount)
+    if operation == "subtract":
+        if amount is None:
+            raise RuntimeError("subtract requires an amount")
+        return adjust_note_progress(note_path, -amount)
+    if operation == "status":
+        return set_note_progress_status(note_path, str(status or ""))
+    if operation == "clear":
+        return clear_note_progress(note_path)
+    raise RuntimeError(f"unknown progress operation: {operation}")
+
+
+def _task_progress_note(config: AppConfig, task: ResolvedTask, operation: str) -> NotePaths:
+    if operation == "set":
+        return ensure_task_note(config, task)
+    note_path = find_task_note(config, task)
+    if note_path is None:
+        raise RuntimeError(f"task note does not exist for {task.task_short_uuid}")
+    return NotePaths(note_path=note_path, existed=True)
+
+
+def _chain_progress_note(config: AppConfig, task: ResolvedTask, operation: str) -> NotePaths:
+    if operation == "set":
+        return ensure_chain_note(config, task)
+    note_path = find_chain_note(config, task)
+    if note_path is None:
+        raise RuntimeError(f"chain note does not exist for {task.task_short_uuid}")
+    return NotePaths(note_path=note_path, existed=True)
 
 
 def record_event_add(

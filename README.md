@@ -121,6 +121,25 @@ jot show 42
 jot search vendor
 ```
 
+### For measurable progress
+
+Track any numeric current/target measurement without imposing a methodology:
+
+```bash
+jot progress task 42 set 120/350 --unit pages --status active
+jot progress task 42 add 20
+jot progress task 42 subtract 5
+jot progress task 42 status paused
+jot progress task 42 show
+
+jot progress chain 42 set 3/12 --unit sessions
+jot progress project Renovation set 2.5/8 --unit rooms
+```
+
+Units and statuses are free-form. Current state is stored in note frontmatter,
+while every change is appended under `## Progress`. Percentages are calculated
+for display, and Jot never changes Taskwarrior task status automatically.
+
 ## TUI
 
 `jot tui` is the fastest way to browse and update notes.
@@ -206,6 +225,17 @@ jot section {task|chain|project} <ref> <heading>
 jot list <task-ref>
 jot show <task-ref>
 jot export <task-ref>
+```
+
+Progress tracking:
+
+```bash
+jot progress {task|chain|project} <ref> set <current>/<target> [--unit UNIT] [--status STATUS]
+jot progress {task|chain|project} <ref> add <amount>
+jot progress {task|chain|project} <ref> subtract <amount>
+jot progress {task|chain|project} <ref> show
+jot progress {task|chain|project} <ref> status <value>
+jot progress {task|chain|project} <ref> clear --yes
 ```
 
 All commands support `--json`.

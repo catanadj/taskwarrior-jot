@@ -13,6 +13,7 @@ from pathlib import Path
 from jot_core.cli import build_parser
 from jot_core.command_help import build_command_catalog
 from jot_core.frontmatter import parse_document, render_document
+from jot_core.progress import parse_progress_pair, parse_progress_value
 from jot_tui.palette import PaletteEntry, filter_palette_entries
 
 
@@ -177,6 +178,18 @@ class CommandHelpTests(unittest.TestCase):
         names = [item.name for item in catalog]
         self.assertEqual(len(names), len(set(names)))
         self.assertNotIn("report", names)
+
+
+class ProgressValueTests(unittest.TestCase):
+    def test_progress_values_accept_decimals_and_reject_invalid_values(self) -> None:
+        self.assertEqual(str(parse_progress_value("-1.25")), "-1.25")
+        self.assertEqual(tuple(str(value) for value in parse_progress_pair("1.5/3")), ("1.5", "3"))
+        for value in ("", "abc", "NaN", "Infinity"):
+            with self.subTest(value=value):
+                with self.assertRaises(RuntimeError):
+                    parse_progress_value(value)
+        with self.assertRaises(RuntimeError):
+            parse_progress_pair("1")
 
 
 class CliIntegrationTests(JotCliTestCase):
@@ -773,6 +786,125 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(text_listed.returncode, 0, text_listed.stderr)
         self.assertIn("[file] exists", text_listed.stdout)
         self.assertIn("[file] missing", text_listed.stdout)
+
+    def test_task_progress_tracks_state_history_and_clear(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Read a book",
+            "project": "reading",
+            "tags": [],
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+
+        set_result = self.run_jot(
+            "--json",
+            "progress",
+            "task",
+            "1",
+            "set",
+            "100/200",
+            "--unit",
+            "pages",
+            "--status",
+            "active",
+        )
+        self.assertEqual(set_result.returncode, 0, set_result.stderr)
+        set_payload = json.loads(set_result.stdout)
+        self.assertEqual(set_payload["progress"]["current"], "100")
+        self.assertEqual(set_payload["progress"]["target"], "200")
+        self.assertEqual(set_payload["progress"]["percentage"], "50")
+        self.assertEqual(set_payload["progress"]["unit"], "pages")
+        self.assertEqual(set_payload["progress"]["status"], "active")
+
+        self.assertEqual(self.run_jot("progress", "task", "1", "add", "25").returncode, 0)
+        self.assertEqual(self.run_jot("progress", "task", "1", "subtract", "5").returncode, 0)
+        self.assertEqual(self.run_jot("progress", "task", "1", "status", "paused").returncode, 0)
+
+        shown = self.run_jot("--json", "progress", "task", "1", "show")
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        shown_payload = json.loads(shown.stdout)
+        self.assertEqual(shown_payload["progress"]["current"], "120")
+        self.assertEqual(shown_payload["progress"]["percentage"], "60")
+        self.assertEqual(shown_payload["progress"]["status"], "paused")
+
+        note_path = list((self.home / ".task" / "jot" / "tasks").glob("*.md"))[0]
+        note_text = note_path.read_text(encoding="utf-8")
+        self.assertIn("progress_current: 120", note_text)
+        self.assertIn("progress_target: 200", note_text)
+        self.assertIn("progress_unit: pages", note_text)
+        self.assertIn("progress_status: paused", note_text)
+        self.assertIn("## Progress", note_text)
+        self.assertIn("set: 100/200 pages; status active", note_text)
+        self.assertIn("change +25", note_text)
+        self.assertIn("change -5", note_text)
+        self.assertIn("status: 120/200 pages; status paused", note_text)
+
+        rejected = self.run_jot("progress", "task", "1", "clear")
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("requires --yes", rejected.stderr)
+
+        cleared = self.run_jot("--json", "progress", "task", "1", "clear", "--yes")
+        self.assertEqual(cleared.returncode, 0, cleared.stderr)
+        self.assertIsNone(json.loads(cleared.stdout)["progress"])
+        cleared_text = note_path.read_text(encoding="utf-8")
+        self.assertNotIn("progress_current:", cleared_text)
+        self.assertIn("cleared progress state", cleared_text)
+
+    def test_project_and_chain_progress_support_decimals(self) -> None:
+        project_set = self.run_jot(
+            "--json",
+            "progress",
+            "project",
+            "renovation",
+            "set",
+            "1.5/8",
+            "--unit",
+            "rooms",
+        )
+        self.assertEqual(project_set.returncode, 0, project_set.stderr)
+        project_payload = json.loads(project_set.stdout)
+        self.assertEqual(project_payload["progress"]["current"], "1.5")
+        self.assertEqual(project_payload["progress"]["percentage"], "18.75")
+
+        thirds = self.run_jot("--json", "progress", "project", "writing", "set", "1/3")
+        self.assertEqual(thirds.returncode, 0, thirds.stderr)
+        self.assertEqual(json.loads(thirds.stdout)["progress"]["percentage"], "33.33")
+
+        task = {
+            "uuid": "3d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Recurring practice",
+            "project": "practice",
+            "tags": [],
+            "chainID": "b4bf5egh",
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "2": [task]})
+        chain_set = self.run_jot("--json", "progress", "chain", "2", "set", "2/10", "--unit", "sessions")
+        self.assertEqual(chain_set.returncode, 0, chain_set.stderr)
+        chain_payload = json.loads(chain_set.stdout)
+        self.assertEqual(chain_payload["chain_id"], "b4bf5egh")
+        self.assertEqual(chain_payload["progress"]["unit"], "sessions")
+
+    def test_progress_show_does_not_create_missing_note(self) -> None:
+        task = {
+            "uuid": "4d6d7d7d-1111-2222-3333-444444444444",
+            "description": "No progress yet",
+            "project": "",
+            "tags": [],
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "3": [task]})
+
+        result = self.run_jot("progress", "task", "3", "show")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("task note does not exist", result.stderr)
+        self.assertFalse(list((self.home / ".task" / "jot" / "tasks").glob("*.md")))
+
+        add_result = self.run_jot("progress", "task", "3", "add", "1")
+        self.assertNotEqual(add_result.returncode, 0)
+        self.assertIn("task note does not exist", add_result.stderr)
+        self.assertFalse(list((self.home / ".task" / "jot" / "tasks").glob("*.md")))
 
     def test_add_and_list_events(self) -> None:
         task = {

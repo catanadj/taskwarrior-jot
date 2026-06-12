@@ -77,6 +77,9 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "detach-resource":
         _emit_detach_resource(payload)
         return
+    if command == "progress":
+        _emit_progress(payload)
+        return
     if command in {"note-append", "chain-append", "project-append"}:
         _emit_append_like(command, payload)
         return
@@ -438,6 +441,35 @@ def _emit_detach_resource(payload: dict[str, Any]) -> None:
     _emit_field("path", payload.get("path"), indent=0)
     _emit_field("id", resource.get("id"), indent=0)
     _emit_field("target", resource.get("target"), indent=0)
+
+
+def _emit_progress(payload: dict[str, Any]) -> None:
+    progress = payload.get("progress")
+    kind = str(payload.get("note_kind") or "note")
+    operation = str(payload.get("operation") or "show")
+    sys.stdout.write(f"Progress for {kind} note\n")
+    _emit_field("path", payload.get("path"), indent=0)
+    _emit_field("operation", operation, indent=0)
+    if not isinstance(progress, dict):
+        sys.stdout.write("\n(not set)\n")
+        return
+    unit = str(progress.get("unit") or "").strip()
+    measurement = f"{progress.get('current')}/{progress.get('target')}"
+    if unit:
+        measurement += f" {unit}"
+    _emit_field("progress", measurement, indent=0)
+    percentage = progress.get("percentage")
+    if percentage is not None:
+        _emit_field("percentage", f"{percentage}%", indent=0)
+    status = str(progress.get("status") or "").strip()
+    if status:
+        _emit_field("status", status, indent=0)
+    updated = progress.get("updated")
+    if updated:
+        _emit_field("updated", updated, indent=0)
+    entry = str(payload.get("entry") or "").strip()
+    if entry:
+        _emit_field("history", entry, indent=0)
 
 
 def _emit_list(payload: dict[str, Any]) -> None:
