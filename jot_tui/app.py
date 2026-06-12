@@ -493,7 +493,7 @@ def run_tui(service: JotService) -> int:
                                             yield Checkbox("Notes only", id="task-filter-notes")
                                             yield Button("Clear", id="task-filter-clear")
                                         tasks = DataTable(id="tasks-table", cursor_type="row")
-                                        tasks.add_columns("id", "description", "project", "tags", "notes")
+                                        tasks.add_columns("id", "description", "project", "progress", "tags", "notes")
                                         yield tasks
                                     with Vertical(id="task-workspace"):
                                         yield Static("Task Workspace", classes="title")
@@ -516,7 +516,7 @@ def run_tui(service: JotService) -> int:
                                 with Horizontal():
                                     with Vertical(id="browse-projects"):
                                         projects = DataTable(id="projects-table", cursor_type="row")
-                                        projects.add_columns("project tree", "tasks", "note", "updated")
+                                        projects.add_columns("project tree", "tasks", "progress", "note", "updated")
                                         yield Static("Projects", classes="title")
                                         yield projects
                                     with Vertical(id="project-workspace"):
@@ -897,6 +897,7 @@ def run_tui(service: JotService) -> int:
                 table.add_row(
                     str(item.get("label") or item.get("project") or ""),
                     str(item.get("count") or ""),
+                    str(item.get("progress") or "-"),
                     str(item.get("note") or ""),
                     str(item.get("updated") or ""),
                 )
@@ -922,6 +923,7 @@ def run_tui(service: JotService) -> int:
                     str(item.get("short_uuid") or ""),
                     str(item.get("description") or ""),
                     str(item.get("project") or ""),
+                    str(item.get("progress") or "-"),
                     ",".join(str(tag) for tag in item.get("tags") or []),
                     ",".join(notes) or "-",
                 )

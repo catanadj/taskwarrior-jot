@@ -8,12 +8,15 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from collections import OrderedDict
 from pathlib import Path
 
 from jot_core.cli import build_parser
 from jot_core.command_help import build_command_catalog
-from jot_core.frontmatter import parse_document, render_document
-from jot_core.progress import parse_progress_pair, parse_progress_value
+from jot_core.frontmatter import parse_document, render_document, write_document
+from jot_core.models import AppConfig
+from jot_core.progress import format_progress_summary, parse_progress_pair, parse_progress_value
+from jot_core.services import JotService
 from jot_tui.palette import PaletteEntry, filter_palette_entries
 
 
@@ -190,6 +193,117 @@ class ProgressValueTests(unittest.TestCase):
                     parse_progress_value(value)
         with self.assertRaises(RuntimeError):
             parse_progress_pair("1")
+
+    def test_progress_summary_is_compact_and_optional(self) -> None:
+        progress = {
+            "current": "120",
+            "target": "350",
+            "unit": "pages",
+            "percentage": "34.29",
+        }
+        self.assertEqual(format_progress_summary(progress), "120/350 pages (34.29%)")
+        self.assertEqual(format_progress_summary(progress, prefix="T"), "T 120/350 pages (34.29%)")
+        self.assertEqual(format_progress_summary(None), "")
+
+
+class ServiceProgressRowTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory(prefix="jot-service-test-")
+        self.addCleanup(self.tempdir.cleanup)
+        root = Path(self.tempdir.name)
+        self.config = AppConfig(
+            config_path=root / "config-jot.toml",
+            root_dir=root,
+            trash_dir=root / ".jot_trash",
+            tasks_dir=root / "tasks",
+            chains_dir=root / "chains",
+            projects_dir=root / "projects",
+            templates_dir=root / "templates",
+            editor_command="true",
+            color_mode="auto",
+            default_format="text",
+            nautical_enabled=True,
+        )
+        for path in (
+            self.config.tasks_dir,
+            self.config.chains_dir,
+            self.config.projects_dir,
+            self.config.templates_dir,
+        ):
+            path.mkdir(parents=True, exist_ok=True)
+
+    def test_task_and_project_rows_include_progress_summaries(self) -> None:
+        task_path = self.config.tasks_dir / "2d6d7d7d--read-book.md"
+        chain_path = self.config.chains_dir / "a4bf5egh--reading-cycle.md"
+        project_path = self.config.projects_dir / "reading" / "index.md"
+        write_document(
+            task_path,
+            OrderedDict(
+                [
+                    ("kind", "task-note"),
+                    ("task_short_uuid", "2d6d7d7d"),
+                    ("progress_current", "120"),
+                    ("progress_target", "350"),
+                    ("progress_unit", "pages"),
+                    ("progress_updated", "2026-06-12T10:00:00Z"),
+                ]
+            ),
+            "# Read book",
+        )
+        write_document(
+            chain_path,
+            OrderedDict(
+                [
+                    ("kind", "chain-note"),
+                    ("chain_id", "a4bf5egh"),
+                    ("progress_current", "3"),
+                    ("progress_target", "12"),
+                    ("progress_unit", "sessions"),
+                    ("progress_updated", "2026-06-12T10:00:00Z"),
+                ]
+            ),
+            "# Reading cycle",
+        )
+        write_document(
+            project_path,
+            OrderedDict(
+                [
+                    ("kind", "project-note"),
+                    ("project", "reading"),
+                    ("project_path", ["reading"]),
+                    ("updated", "2026-06-12T10:00:00Z"),
+                    ("progress_current", "2"),
+                    ("progress_target", "10"),
+                    ("progress_unit", "books"),
+                    ("progress_updated", "2026-06-12T10:00:00Z"),
+                ]
+            ),
+            "# reading",
+        )
+
+        class FakeTaskwarrior:
+            def list_tasks(self, *, limit: int, status: str) -> list[dict[str, object]]:
+                return [
+                    {
+                        "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+                        "short_uuid": "2d6d7d7d",
+                        "description": "Read book",
+                        "project": "reading",
+                        "tags": [],
+                        "chain_id": "a4bf5egh",
+                        "status": "pending",
+                        "due": None,
+                    }
+                ]
+
+        service = JotService(config=self.config, taskwarrior=FakeTaskwarrior())  # type: ignore[arg-type]
+        task_rows = service.tasks()
+        self.assertEqual(
+            task_rows[0]["progress"],
+            "T 120/350 pages (34.29%) | C 3/12 sessions (25%)",
+        )
+        project_rows = service.project_tree_rows()
+        self.assertEqual(project_rows[0]["progress"], "2/10 books (20%)")
 
 
 class CliIntegrationTests(JotCliTestCase):

@@ -145,6 +145,8 @@ for display, and Jot never changes Taskwarrior task status automatically.
 `jot tui` is the fastest way to browse and update notes.
 Task, project, and latest-edit workspaces include a `Progress` tab with the
 current measurement, calculated percentage, status, and a compact progress bar.
+Task and project browser rows also show compact progress summaries, so tracked
+work is visible without opening its workspace.
 
 Main shortcuts:
 

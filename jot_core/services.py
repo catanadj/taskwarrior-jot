@@ -21,7 +21,12 @@ from .notes import (
     task_note_path,
 )
 from .report import list_project_notes, recent_activity
-from .progress import parse_progress_pair, parse_progress_value, read_note_progress
+from .progress import (
+    format_progress_summary,
+    parse_progress_pair,
+    parse_progress_value,
+    read_note_progress,
+)
 from .resources import open_resource_target
 from .search import search_all
 from .storage import add_to_task_heading_storage, finalize_task_note_edit
@@ -92,6 +97,7 @@ class JotService:
                 if note:
                     node["has_note"] = True
                     node["updated"] = note.get("updated") or node["updated"]
+                    node["progress"] = _progress_summary_for_path(note.get("path"))
 
         rows = list(nodes.values())
         rows.sort(key=lambda item: (str(item.get("project") or "").lower(), int(item.get("depth") or 0)))
@@ -102,6 +108,7 @@ class JotService:
             item["label"] = f"{'  ' * depth}{label}"
             item["selectable"] = bool(item.get("is_exact") or item.get("has_note"))
             item["note"] = "yes" if item.get("has_note") else "-"
+            item["progress"] = str(item.get("progress") or "").strip() or "-"
             item["updated"] = str(item.get("updated") or "").strip()
         return rows
 
@@ -126,13 +133,25 @@ class JotService:
             short_uuid = str(item.get("short_uuid") or "").strip()
             project = str(item.get("project") or "").strip()
             chain_id = str(item.get("chain_id") or "").strip()
-            has_task_note = bool(short_uuid and list(self.config.tasks_dir.glob(f"{short_uuid}--*.md")))
-            has_chain_note = bool(chain_id and list(self.config.chains_dir.glob(f"{chain_id}--*.md")))
+            task_notes = sorted(self.config.tasks_dir.glob(f"{short_uuid}--*.md")) if short_uuid else []
+            chain_notes = sorted(self.config.chains_dir.glob(f"{chain_id}--*.md")) if chain_id else []
+            has_task_note = bool(task_notes)
+            has_chain_note = bool(chain_notes)
             has_project_note = bool(project and find_project_note(self.config, project))
             item["has_task_note"] = has_task_note
             item["has_chain_note"] = has_chain_note
             item["has_project_note"] = has_project_note
             item["has_notes"] = has_task_note or has_chain_note or has_project_note
+            summaries = []
+            if task_notes:
+                summary = _progress_summary_for_path(task_notes[0], prefix="T")
+                if summary:
+                    summaries.append(summary)
+            if chain_notes:
+                summary = _progress_summary_for_path(chain_notes[0], prefix="C")
+                if summary:
+                    summaries.append(summary)
+            item["progress"] = " | ".join(summaries) or "-"
         return items
 
     def search(self, query: str) -> dict[str, list[dict[str, Any]]]:
@@ -423,3 +442,14 @@ class JotService:
                 status=status,
             )
         raise RuntimeError(f"unknown progress target kind: {kind}")
+
+
+def _progress_summary_for_path(path: object, *, prefix: str = "") -> str:
+    note_path = Path(str(path or ""))
+    if not str(path or "").strip() or not note_path.exists():
+        return ""
+    try:
+        progress = read_note_progress(note_path).progress
+    except RuntimeError:
+        return f"{prefix} invalid".strip()
+    return format_progress_summary(progress, prefix=prefix)

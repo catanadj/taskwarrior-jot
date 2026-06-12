@@ -51,6 +51,24 @@ def read_note_progress(note_path: Path) -> ProgressResult:
     return ProgressResult(note_path=note_path, progress=_progress_from_metadata(metadata))
 
 
+def format_progress_summary(progress: dict[str, object] | None, *, prefix: str = "") -> str:
+    if not isinstance(progress, dict):
+        return ""
+    current = str(progress.get("current") or "").strip()
+    target = str(progress.get("target") or "").strip()
+    if not current or not target:
+        return ""
+    measurement = f"{current}/{target}"
+    unit = str(progress.get("unit") or "").strip()
+    if unit:
+        measurement += f" {unit}"
+    percentage = progress.get("percentage")
+    if percentage is not None:
+        measurement += f" ({percentage}%)"
+    normalized_prefix = str(prefix or "").strip()
+    return f"{normalized_prefix} {measurement}".strip()
+
+
 def set_note_progress(
     note_path: Path,
     current: Decimal,
