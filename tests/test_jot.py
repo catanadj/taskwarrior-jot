@@ -174,6 +174,10 @@ class CommandHelpTests(unittest.TestCase):
         self.assertEqual(by_name["attach"].category, "Resources")
         self.assertIn("jot attach", by_name["attach"].usage)
         self.assertIn("file path or URL", by_name["attach"].description)
+        self.assertEqual(
+            by_name["attach"].example,
+            "jot attach task 42 ~/documents/invoice.pdf --label invoice",
+        )
         self.assertTrue(any("--label" in item for item in by_name["attach"].arguments))
 
     def test_catalog_contains_unique_leaf_commands(self) -> None:
@@ -181,6 +185,8 @@ class CommandHelpTests(unittest.TestCase):
         names = [item.name for item in catalog]
         self.assertEqual(len(names), len(set(names)))
         self.assertNotIn("report", names)
+        missing_examples = [item.name for item in catalog if not item.example]
+        self.assertEqual(missing_examples, [])
 
 
 class ProgressValueTests(unittest.TestCase):

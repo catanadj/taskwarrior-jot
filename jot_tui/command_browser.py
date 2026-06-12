@@ -81,7 +81,7 @@ def run_command_browser(commands: list[CommandHelp]) -> int:
                 item
                 for item in self.items
                 if query in " ".join(
-                    (item.name, item.category, item.summary, item.description)
+                    (item.name, item.category, item.summary, item.description, item.example)
                 ).lower()
             ]
             self._render_table()
@@ -118,6 +118,9 @@ def run_command_browser(commands: list[CommandHelp]) -> int:
                 "",
                 "Usage",
                 f"  {item.usage}",
+                "",
+                "Example",
+                f"  {item.example}",
             ]
             if item.arguments:
                 lines.extend(["", "Arguments and options"])

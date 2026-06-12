@@ -49,9 +49,9 @@ jot
 ```
 
 In an interactive terminal, this opens a searchable command browser. Moving
-through the list shows what each command does, its syntax, and its arguments
-without executing it. When output is redirected or Textual is unavailable,
-`jot` prints the standard help instead.
+through the list shows what each command does, its syntax, a concrete example,
+and its arguments without executing it. When output is redirected or Textual
+is unavailable, `jot` prints the standard help instead.
 
 If you want the full help:
 

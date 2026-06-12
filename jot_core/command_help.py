@@ -11,7 +11,53 @@ class CommandHelp:
     summary: str
     description: str
     usage: str
+    example: str
     arguments: tuple[str, ...]
+
+
+COMMAND_EXAMPLES = {
+    "add": "jot add --type status 42 waiting on vendor",
+    "export": "jot --json export 42",
+    "list": "jot list 42",
+    "note": "jot note 42",
+    "note-append": "jot note-append 42 \"Vendor confirmed delivery\"",
+    "show": "jot show 42",
+    "task-cat": "jot task-cat 42",
+    "task-delete": "jot task-delete 42",
+    "chain": "jot chain 42",
+    "chain-append": "jot chain-append 42 \"Skip public holidays\"",
+    "chain-cat": "jot chain-cat 42",
+    "chain-delete": "jot chain-delete 42",
+    "project": "jot project Finances.Expense",
+    "project-append": "jot project-append Finances.Expense \"Policy review pending\"",
+    "project-cat": "jot project-cat Finances.Expense",
+    "project-delete": "jot project-delete Finances.Expense",
+    "project-list": "jot project-list",
+    "project-report": "jot project-report Finances.Expense --limit 10",
+    "project-show": "jot project-show Finances.Expense",
+    "add-to": 'jot add-to task 42 --heading "Next steps" --text "Call vendor"',
+    "headings": "jot headings task 42",
+    "progress add": "jot progress task 42 add 20",
+    "progress clear": "jot progress task 42 clear --yes",
+    "progress set": "jot progress task 42 set 120/350 --unit pages --status active",
+    "progress show": "jot progress task 42 show",
+    "progress status": "jot progress task 42 status paused",
+    "progress subtract": "jot progress task 42 subtract 5",
+    "section": 'jot section task 42 "Next steps"',
+    "attach": "jot attach task 42 ~/documents/invoice.pdf --label invoice",
+    "detach-resource": "jot detach-resource task 42 1",
+    "open-resource": "jot open-resource task 42 1",
+    "resources": "jot resources task 42",
+    "report recent": "jot report recent --limit 10 --kind event",
+    "search": "jot search vendor --kind task-note",
+    "tui": "jot tui",
+    "doctor": "jot doctor",
+    "paths": "jot paths",
+    "rebuild-index": "jot rebuild-index",
+    "stats": "jot stats",
+    "trash-list": "jot trash-list",
+    "trash-restore": "jot trash-restore 1",
+}
 
 
 def build_command_catalog(parser: argparse.ArgumentParser) -> list[CommandHelp]:
@@ -45,6 +91,7 @@ def _command_help(parser: argparse.ArgumentParser, path: tuple[str, ...]) -> Com
         summary=summary,
         description=description,
         usage=_clean_usage(parser.format_usage()),
+        example=COMMAND_EXAMPLES.get(name, ""),
         arguments=tuple(_argument_lines(parser)),
     )
 
