@@ -168,6 +168,100 @@ def run_tui(service: JotService) -> int:
                 return
             self.dismiss({"target": target, "label": label})
 
+    class ProgressModal(ModalScreen[dict[str, Any] | None]):
+        CSS = """
+        #dialog {
+            width: 78;
+            height: auto;
+            border: round $accent;
+            padding: 1 2;
+            background: $surface;
+        }
+        #dialog Input { margin: 1 0; }
+        #progress-help { color: $text-muted; }
+        #buttons { height: auto; }
+        """
+
+        BINDINGS = [("escape", "cancel", "Cancel")]
+
+        def __init__(self, *, scopes: list[str], initial_scope: str) -> None:
+            super().__init__()
+            self.scopes = scopes
+            self.initial_scope = initial_scope
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id="dialog"):
+                yield Label("Update progress")
+                yield Static(
+                    "Operations: set, add, subtract, status, clear\n"
+                    f"Available scopes: {', '.join(self.scopes)}",
+                    id="progress-help",
+                )
+                yield Input(value=self.initial_scope, placeholder="Scope", id="progress-scope")
+                yield Input(placeholder="Operation", id="progress-operation")
+                yield Input(
+                    placeholder="Value: 120/350 for set, 20 for add/subtract, text for status",
+                    id="progress-value",
+                )
+                yield Input(placeholder="Optional unit for set", id="progress-unit")
+                yield Input(placeholder="Optional status for set", id="progress-status")
+                yield Checkbox("Confirm clear", id="progress-confirm-clear")
+                with Horizontal(id="buttons"):
+                    yield Button("Cancel", id="cancel-btn")
+                    yield Button("Apply", id="apply-btn", variant="primary")
+
+        def action_cancel(self) -> None:
+            self.dismiss(None)
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "cancel-btn":
+                self.dismiss(None)
+                return
+            self._submit()
+
+        def on_input_submitted(self, event: Input.Submitted) -> None:
+            order = {
+                "progress-scope": "#progress-operation",
+                "progress-operation": "#progress-value",
+                "progress-value": "#progress-unit",
+                "progress-unit": "#progress-status",
+            }
+            next_id = order.get(event.input.id or "")
+            if next_id:
+                self.query_one(next_id, Input).focus()
+                return
+            self._submit()
+
+        def _submit(self) -> None:
+            scope = self.query_one("#progress-scope", Input).value.strip().lower()
+            operation = self.query_one("#progress-operation", Input).value.strip().lower()
+            value = self.query_one("#progress-value", Input).value.strip()
+            unit = self.query_one("#progress-unit", Input).value.strip()
+            status = self.query_one("#progress-status", Input).value.strip()
+            confirm_clear = bool(self.query_one("#progress-confirm-clear", Checkbox).value)
+            if scope not in self.scopes:
+                self.app.notify(f"Scope must be one of: {', '.join(self.scopes)}", severity="warning")
+                return
+            if operation not in {"set", "add", "subtract", "status", "clear"}:
+                self.app.notify("Operation must be set, add, subtract, status, or clear", severity="warning")
+                return
+            if operation != "clear" and not value:
+                self.app.notify("Value is required for this operation", severity="warning")
+                return
+            if operation == "clear" and not confirm_clear:
+                self.app.notify("Confirm clear before applying", severity="warning")
+                return
+            self.dismiss(
+                {
+                    "scope": scope,
+                    "operation": operation,
+                    "value": value,
+                    "unit": unit,
+                    "status": status,
+                    "confirm_clear": confirm_clear,
+                }
+            )
+
     class ResourcePickerModal(ModalScreen[dict[str, Any] | None]):
         CSS = """
         #dialog {
@@ -327,14 +421,14 @@ def run_tui(service: JotService) -> int:
             padding: 0 1;
         }
         #task-filter-project, #task-filter-tag { width: 1fr; margin: 0 1 0 0; }
-        #task-summary, #task-note-preview, #chain-note-preview, #project-note-preview, #task-events-preview, #task-resources-preview, #project-summary, #project-note-body, #project-resources-preview {
+        #task-summary, #task-note-preview, #chain-note-preview, #project-note-preview, #task-events-preview, #task-resources-preview, #task-progress-preview, #project-summary, #project-note-body, #project-resources-preview, #project-progress-preview {
             padding: 1;
             height: 1fr;
             overflow: auto;
         }
         #latest-pane { border: round $panel; }
         #latest-workspace-tabs { height: 1fr; }
-        #latest-summary, #latest-task-note-preview, #latest-chain-note-preview, #latest-project-note-preview, #latest-events-preview, #latest-resources-preview {
+        #latest-summary, #latest-task-note-preview, #latest-chain-note-preview, #latest-project-note-preview, #latest-events-preview, #latest-resources-preview, #latest-progress-preview {
             padding: 1;
             height: 1fr;
             overflow: auto;
@@ -357,6 +451,7 @@ def run_tui(service: JotService) -> int:
             ("f", "attach_resource", "Attach resource"),
             ("o", "open_resource", "Open resource"),
             ("x", "detach_resource", "Detach resource"),
+            ("g", "update_progress", "Progress"),
             ("a", "add_to_selected_task", "Add-to task"),
             ("c", "add_to_selected_chain", "Add-to chain"),
             ("p", "open_project_context", "Open project"),
@@ -378,6 +473,7 @@ def run_tui(service: JotService) -> int:
             self.current_latest_task_ref: str | None = None
             self.current_task_ref: str | None = None
             self.current_task_chain_path: str = ""
+            self.current_task_has_chain: bool = False
             self.current_task_project: str = ""
             self.current_project_name: str | None = None
 
@@ -414,6 +510,8 @@ def run_tui(service: JotService) -> int:
                                                 yield Static("No events loaded.", id="task-events-preview")
                                             with TabPane("Resources", id="task-resources-pane"):
                                                 yield Static("No resources loaded.", id="task-resources-preview")
+                                            with TabPane("Progress", id="task-progress-pane"):
+                                                yield Static("No progress loaded.", id="task-progress-preview")
                             with TabPane("Projects", id="project-browser-pane"):
                                 with Horizontal():
                                     with Vertical(id="browse-projects"):
@@ -430,6 +528,8 @@ def run_tui(service: JotService) -> int:
                                                 yield Static("No project note loaded.", id="project-note-body")
                                             with TabPane("Resources", id="project-resources-pane"):
                                                 yield Static("No resources loaded.", id="project-resources-preview")
+                                            with TabPane("Progress", id="project-progress-pane"):
+                                                yield Static("No progress loaded.", id="project-progress-preview")
                 with TabPane("Search", id="search-tab"):
                     with Vertical():
                         with Horizontal(id="search-bar"):
@@ -464,6 +564,8 @@ def run_tui(service: JotService) -> int:
                                 yield Static("No events loaded.", id="latest-events-preview")
                             with TabPane("Resources", id="latest-resources-pane"):
                                 yield Static("No resources loaded.", id="latest-resources-preview")
+                            with TabPane("Progress", id="latest-progress-pane"):
+                                yield Static("No progress loaded.", id="latest-progress-preview")
             yield Static("Actions: / search | r refresh | q quit", id="context-hints")
             yield Footer()
 
@@ -611,6 +713,17 @@ def run_tui(service: JotService) -> int:
                 return
             asyncio.create_task(self._choose_resource_async(target, mode="detach"))
 
+        def action_update_progress(self) -> None:
+            targets = self._progress_targets()
+            if not targets:
+                self.notify("Select a task or project context first", severity="warning")
+                return
+            scopes = [str(item["kind"]) for item in targets]
+            self.push_screen(
+                ProgressModal(scopes=scopes, initial_scope=scopes[0]),
+                lambda payload: self._on_progress_payload(targets, payload),
+            )
+
         def action_add_to_selected_task(self) -> None:
             if not self.current_task_ref:
                 self.notify("Select a task row in Recent first", severity="warning")
@@ -666,6 +779,20 @@ def run_tui(service: JotService) -> int:
                 asyncio.create_task(self._apply_open_resource_async(resource))
                 return
             asyncio.create_task(self._apply_detach_resource_async(target, resource))
+
+        def _on_progress_payload(
+            self,
+            targets: list[dict[str, Any]],
+            payload: dict[str, Any] | None,
+        ) -> None:
+            if not payload:
+                return
+            scope = str(payload.get("scope") or "")
+            target = next((item for item in targets if item.get("kind") == scope), None)
+            if target is None:
+                self.notify("Progress scope is no longer available", severity="error")
+                return
+            asyncio.create_task(self._apply_progress_async(target, payload))
 
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -910,6 +1037,9 @@ def run_tui(service: JotService) -> int:
             if command_id == "detach-resource":
                 self.action_detach_resource()
                 return
+            if command_id == "update-progress":
+                self.action_update_progress()
+                return
             if command_id == "add-task":
                 self.action_add_to_selected_task()
                 return
@@ -928,6 +1058,7 @@ def run_tui(service: JotService) -> int:
             project_note = self.query_one("#project-note-preview", Static)
             events_view = self.query_one("#task-events-preview", Static)
             resources_view = self.query_one("#task-resources-preview", Static)
+            progress_view = self.query_one("#task-progress-preview", Static)
             try:
                 data = await asyncio.to_thread(self.svc.task_workspace, task_ref)
             except Exception as exc:
@@ -954,6 +1085,7 @@ def run_tui(service: JotService) -> int:
             chain_note_data = notes.get("chain") or {}
             project_note_data = notes.get("project") or {}
             self.current_task_chain_path = str(chain_note_data.get("path") or "").strip()
+            self.current_task_has_chain = bool((data.get("nautical") or {}).get("chain_id"))
             self.current_task_project = str(task.get("project") or "").strip()
             lines.append("")
             events = data.get("events") or []
@@ -977,6 +1109,15 @@ def run_tui(service: JotService) -> int:
                     ]
                 )
             )
+            progress_view.update(
+                self._render_workspace_progress(
+                    [
+                        ("task", task_note_data),
+                        ("chain", chain_note_data),
+                        ("project", project_note_data),
+                    ]
+                )
+            )
             self._focus_best_task_workspace_tab(task_note_data, chain_note_data, project_note_data, events)
             self._update_action_hints()
 
@@ -987,6 +1128,7 @@ def run_tui(service: JotService) -> int:
             project_note = self.query_one("#latest-project-note-preview", Static)
             events_view = self.query_one("#latest-events-preview", Static)
             resources_view = self.query_one("#latest-resources-preview", Static)
+            progress_view = self.query_one("#latest-progress-preview", Static)
             try:
                 data = await asyncio.to_thread(self.svc.task_workspace, task_ref)
             except Exception as exc:
@@ -1014,6 +1156,7 @@ def run_tui(service: JotService) -> int:
             project_note_data = notes.get("project") or {}
             self.current_latest_task_ref = task_ref
             self.current_task_chain_path = str(chain_note_data.get("path") or "").strip()
+            self.current_task_has_chain = bool((data.get("nautical") or {}).get("chain_id"))
             self.current_task_project = str(task.get("project") or "").strip()
             lines.append("")
             events = data.get("events") or []
@@ -1037,6 +1180,15 @@ def run_tui(service: JotService) -> int:
                     ]
                 )
             )
+            progress_view.update(
+                self._render_workspace_progress(
+                    [
+                        ("task", task_note_data),
+                        ("chain", chain_note_data),
+                        ("project", project_note_data),
+                    ]
+                )
+            )
             self._focus_best_latest_workspace_tab(task_note_data, chain_note_data, project_note_data, events)
             self._update_action_hints()
 
@@ -1044,6 +1196,7 @@ def run_tui(service: JotService) -> int:
             summary = self.query_one("#project-summary", Static)
             note_body = self.query_one("#project-note-body", Static)
             resources_view = self.query_one("#project-resources-preview", Static)
+            progress_view = self.query_one("#project-progress-preview", Static)
             data = await asyncio.to_thread(self.svc.project_workspace, project_name)
             note = data.get("note") or {}
             body = str(note.get("body") or "").strip()
@@ -1060,6 +1213,7 @@ def run_tui(service: JotService) -> int:
             )
             note_body.update(self._render_note_panel("Project Note", note))
             resources_view.update(self._render_workspace_resources([("project", note)]))
+            progress_view.update(self._render_workspace_progress([("project", note)]))
             self._focus_best_project_workspace_tab(note)
             self._update_action_hints()
 
@@ -1189,11 +1343,40 @@ def run_tui(service: JotService) -> int:
             elif self.current_task_ref:
                 await self._load_task_async(self.current_task_ref)
 
+        async def _apply_progress_async(self, target: dict[str, Any], payload: dict[str, Any]) -> None:
+            try:
+                result = await asyncio.to_thread(
+                    self.svc.update_progress,
+                    str(target.get("kind") or ""),
+                    task_ref=str(target.get("task_ref") or ""),
+                    project_name=str(target.get("project") or ""),
+                    operation=str(payload.get("operation") or ""),
+                    value=str(payload.get("value") or ""),
+                    unit=str(payload.get("unit") or "") or None,
+                    status=str(payload.get("status") or "") or None,
+                    confirm_clear=bool(payload.get("confirm_clear")),
+                )
+            except Exception as exc:
+                self.notify(f"Progress update failed: {exc}", severity="error")
+                return
+            progress = result.get("progress")
+            if isinstance(progress, dict):
+                measurement = f"{progress.get('current')}/{progress.get('target')}"
+                unit = str(progress.get("unit") or "").strip()
+                if unit:
+                    measurement += f" {unit}"
+                self.notify(f"Progress updated: {measurement}", severity="information")
+            else:
+                self.notify("Progress state cleared", severity="information")
+            await self._refresh_after_resource_change_async()
+
         def _update_action_hints(self) -> None:
             hints = ["Actions: ctrl+p palette", "/ search", "r refresh", "u update", "q quit"]
             if self.current_task_ref or self.current_latest_task_ref or self.current_project_name:
                 hints.append("d delete-note")
                 hints.extend(["f attach-resource", "o open-resource", "x detach-resource"])
+            if self._progress_targets():
+                hints.append("g progress")
             if self.current_task_ref:
                 hints.extend(["e edit-task", "a add-task"])
             if self.current_task_ref and self.current_task_chain_path:
@@ -1216,11 +1399,31 @@ def run_tui(service: JotService) -> int:
                 PaletteEntry("attach-resource", "Attach resource", "Attach a file path or URL to the active note", bool(self._active_note_target())),
                 PaletteEntry("open-resource", "Open note resource", "Open a resource from the active note", bool(self._active_note_target())),
                 PaletteEntry("detach-resource", "Detach note resource", "Remove a resource from the active note", bool(self._active_note_target())),
+                PaletteEntry("update-progress", "Update progress", "Set or adjust progress for the current task, chain, or project", bool(self._progress_targets())),
                 PaletteEntry("add-task", "Add to task heading", "Add a timestamped entry under the selected task note", bool(self.current_task_ref)),
                 PaletteEntry("add-chain", "Add to chain heading", "Add a timestamped entry under the selected chain note", bool(self.current_task_ref and self.current_task_chain_path)),
                 PaletteEntry("open-project", "Open project workspace", "Open the selected or current project note", bool(self.current_project_name or self.current_task_project)),
             ]
             return entries
+
+        def _progress_targets(self) -> list[dict[str, Any]]:
+            main_tab = self.query_one("#main-tabs", TabbedContent).active
+            if main_tab not in {"browse-tab", "latest-tab"}:
+                return []
+            if main_tab == "browse-tab":
+                browse_tab = self.query_one("#browse-browser-tabs", TabbedContent).active
+                if browse_tab == "project-browser-pane":
+                    project = self.current_project_name
+                    return [{"kind": "project", "project": project}] if project else []
+            task_ref = self.current_latest_task_ref if main_tab == "latest-tab" else self.current_task_ref
+            if not task_ref:
+                return []
+            targets: list[dict[str, Any]] = [{"kind": "task", "task_ref": task_ref}]
+            if self.current_task_has_chain:
+                targets.append({"kind": "chain", "task_ref": task_ref})
+            if self.current_task_project:
+                targets.append({"kind": "project", "project": self.current_task_project})
+            return targets
 
         def _active_note_target(self) -> dict[str, Any] | None:
             main_tab = self.query_one("#main-tabs", TabbedContent).active
@@ -1492,6 +1695,46 @@ def run_tui(service: JotService) -> int:
                 lines.append("(none)")
             lines.append("Actions: f attach | o open | x detach")
             return "\n".join(lines).strip()
+
+        def _render_workspace_progress(self, note_items: list[tuple[str, dict[str, Any]]]) -> str:
+            lines = ["Progress", ""]
+            found = False
+            for label, note in note_items:
+                progress = note.get("progress")
+                if not isinstance(progress, dict):
+                    continue
+                found = True
+                current = str(progress.get("current") or "0")
+                target = str(progress.get("target") or "0")
+                unit = str(progress.get("unit") or "").strip()
+                status = str(progress.get("status") or "").strip()
+                percentage = progress.get("percentage")
+                measurement = f"{current}/{target}"
+                if unit:
+                    measurement += f" {unit}"
+                lines.append(f"{label.capitalize()} note")
+                lines.append(f"  {measurement}")
+                if percentage is not None:
+                    lines.append(f"  {self._progress_bar(str(percentage))} {percentage}%")
+                if status:
+                    lines.append(f"  Status: {status}")
+                if progress.get("updated"):
+                    lines.append(f"  Updated: {progress.get('updated')}")
+                lines.append("")
+            if not found:
+                lines.append("(not set)")
+                lines.append("")
+            lines.append("Action: g set, adjust, change status, or clear")
+            return "\n".join(lines).strip()
+
+        def _progress_bar(self, percentage: str, width: int = 24) -> str:
+            try:
+                value = float(percentage)
+            except (TypeError, ValueError):
+                value = 0.0
+            clamped = max(0.0, min(100.0, value))
+            filled = round((clamped / 100.0) * width)
+            return "[" + "#" * filled + "-" * (width - filled) + "]"
 
         def _note_excerpt(self, body: str, *, max_lines: int = 16, max_width: int = 92) -> str:
             cleaned: list[str] = []

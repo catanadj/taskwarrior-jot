@@ -21,6 +21,7 @@ from .notes import (
     task_note_path,
 )
 from .report import list_project_notes, recent_activity
+from .progress import parse_progress_pair, parse_progress_value, read_note_progress
 from .resources import open_resource_target
 from .search import search_all
 from .storage import add_to_task_heading_storage, finalize_task_note_edit
@@ -36,6 +37,8 @@ from .storage import (
     detach_chain_resource_storage,
     detach_project_resource_storage,
     detach_task_resource_storage,
+    mutate_project_progress_storage,
+    mutate_task_progress_storage,
 )
 from .taskwarrior import TaskwarriorClient
 
@@ -170,12 +173,13 @@ class JotService:
         def _note_payload(path) -> dict[str, Any]:
             resolved = str(path or "")
             if not path or not Path(path).exists():
-                return {"path": resolved, "body": "", "resources": []}
+                return {"path": resolved, "body": "", "resources": [], "progress": None}
             _metadata, body = read_document(path)
             return {
                 "path": resolved,
                 "body": body.strip(),
                 "resources": list_note_resources(path).resources,
+                "progress": read_note_progress(path).progress,
             }
 
         return {
@@ -203,12 +207,14 @@ class JotService:
                 "path": str(note),
                 "body": body.strip(),
                 "resources": list_note_resources(note).resources,
+                "progress": read_note_progress(note).progress,
             }
         else:
             note_data = {
                 "path": str(project_note_path(self.config, project_name)),
                 "body": "",
                 "resources": [],
+                "progress": None,
             }
         return {
             "project": project_name,
@@ -365,3 +371,55 @@ class JotService:
         if not path.exists():
             return []
         return list_note_resources(path).resources
+
+    def update_progress(
+        self,
+        kind: str,
+        *,
+        task_ref: str = "",
+        project_name: str = "",
+        operation: str,
+        value: str = "",
+        unit: str | None = None,
+        status: str | None = None,
+        confirm_clear: bool = False,
+    ) -> dict[str, Any]:
+        current = target = amount = None
+        normalized_operation = str(operation or "").strip().lower()
+        if normalized_operation == "set":
+            current, target = parse_progress_pair(value)
+        elif normalized_operation in {"add", "subtract"}:
+            amount = parse_progress_value(value)
+        elif normalized_operation == "status":
+            status = str(value or status or "").strip()
+        elif normalized_operation == "clear":
+            if not confirm_clear:
+                raise RuntimeError("progress clear requires confirmation")
+        else:
+            raise RuntimeError(f"unknown progress operation: {operation}")
+
+        if kind in {"task", "chain"}:
+            task = self.taskwarrior.resolve_task(task_ref)
+            return mutate_task_progress_storage(
+                self.config,
+                task,
+                note_kind=kind,
+                operation=normalized_operation,
+                current=current,
+                target=target,
+                amount=amount,
+                unit=unit,
+                status=status,
+            )
+        if kind == "project":
+            return mutate_project_progress_storage(
+                self.config,
+                project_name,
+                operation=normalized_operation,
+                current=current,
+                target=target,
+                amount=amount,
+                unit=unit,
+                status=status,
+            )
+        raise RuntimeError(f"unknown progress target kind: {kind}")

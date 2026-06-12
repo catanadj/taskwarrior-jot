@@ -143,6 +143,8 @@ for display, and Jot never changes Taskwarrior task status automatically.
 ## TUI
 
 `jot tui` is the fastest way to browse and update notes.
+Task, project, and latest-edit workspaces include a `Progress` tab with the
+current measurement, calculated percentage, status, and a compact progress bar.
 
 Main shortcuts:
 
@@ -157,6 +159,7 @@ Main shortcuts:
 - `f` attach a file or URL resource to the active note
 - `o` open a resource from the active note
 - `x` detach a resource from the active note
+- `g` set or adjust progress for the current task, chain, or project
 - `a` add a timestamped entry under a task heading
 - `c` add a timestamped entry under a chain heading
 - `p` open the project workspace
