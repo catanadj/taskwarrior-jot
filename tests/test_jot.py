@@ -1163,6 +1163,76 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("[legs] set: 4/12 sets", note_text)
         self.assertIn("[chest] cleared progress state", note_text)
 
+    def test_progress_show_compares_multiple_chain_references(self) -> None:
+        tasks = [
+            {
+                "uuid": "53aa7d7d-1111-2222-3333-444444444444",
+                "description": "Morning mobility",
+                "project": "fitness",
+                "tags": [],
+                "chainID": "chain053",
+                "annotations": [],
+            },
+            {
+                "uuid": "986e9d97-1111-2222-3333-444444444444",
+                "description": "Strength practice",
+                "project": "fitness",
+                "tags": [],
+                "chainID": "chain986",
+                "annotations": [],
+            },
+            {
+                "uuid": "41aa7d7d-1111-2222-3333-444444444444",
+                "description": "Evening stretch",
+                "project": "fitness",
+                "tags": [],
+                "chainID": "chain041",
+                "annotations": [],
+            },
+        ]
+        self.write_state(
+            {
+                "version": "2.6.2",
+                "single": [tasks[0]],
+                "53": [tasks[0]],
+                "uuid:986e9d97": [tasks[1]],
+                "41": [tasks[2]],
+            }
+        )
+        for reference, measurement in (("53", "2/5"), ("986e9d97", "3/5"), ("41", "4/5")):
+            result = self.run_jot(
+                "progress",
+                "chain",
+                reference,
+                "set",
+                measurement,
+                "--unit",
+                "sessions",
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+        shown = self.run_jot("--json", "prog", "c", "53,986e9d97,41", "sh")
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        payload = json.loads(shown.stdout)
+        self.assertEqual(payload["note_kind"], "chain")
+        self.assertEqual([item["reference"] for item in payload["items"]], ["53", "986e9d97", "41"])
+        self.assertEqual(
+            [item["chain_id"] for item in payload["items"]],
+            ["chain053", "chain986", "chain041"],
+        )
+        self.assertEqual(
+            [item["progress"]["current"] for item in payload["items"]],
+            ["2", "3", "4"],
+        )
+
+        text = self.run_jot("prog", "c", "53,986e9d97,41", "sh")
+        self.assertEqual(text.returncode, 0, text.stderr)
+        self.assertIn("Progress for 3 chain notes", text.stdout)
+        self.assertIn("chain053", text.stdout)
+        self.assertIn("chain986", text.stdout)
+        self.assertIn("chain041", text.stdout)
+        self.assertGreaterEqual(text.stdout.count("【"), 3)
+
     def test_progress_show_does_not_create_missing_note(self) -> None:
         task = {
             "uuid": "4d6d7d7d-1111-2222-3333-444444444444",

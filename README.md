@@ -149,13 +149,16 @@ jot progress task 42 set 3/12 --track chest --unit sets
 jot progress task 42 set 4/12 --track legs --unit sets
 jot progress task 42 add 1 --track chest
 jot progress task 42 show
+jot progress chain 53,986e9d97,41 show
 ```
 
 Track names, units, and statuses are free-form. Omitting `--track` uses the
 backward-compatible `default` track. Current state is stored in note frontmatter,
 while every change is appended under `## Progress`. Percentages are calculated
 for display. `progress show` renders each track as a terminal-aware visual
-progress bar, and Jot never changes Taskwarrior task status automatically.
+progress bar. It accepts comma-separated references to compare several task,
+chain, or project notes at once. Jot never changes Taskwarrior task status
+automatically.
 
 ## TUI
 
@@ -255,7 +258,7 @@ Progress tracking:
 jot progress {task|chain|project} <ref> set <current>/<target> [--track NAME] [--unit UNIT] [--status STATUS]
 jot progress {task|chain|project} <ref> add <amount> [--track NAME]
 jot progress {task|chain|project} <ref> subtract <amount> [--track NAME]
-jot progress {task|chain|project} <ref> show [--track NAME]
+jot progress {task|chain|project} <ref>[,<ref>...] show [--track NAME]
 jot progress {task|chain|project} <ref> status <value> [--track NAME]
 jot progress {task|chain|project} <ref> clear [--track NAME] --yes
 ```

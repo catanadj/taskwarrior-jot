@@ -394,7 +394,10 @@ def build_parser() -> argparse.ArgumentParser:
         description="Track content-agnostic progress using decimal current and target values.",
     )
     progress.add_argument("note_kind", choices=("task", "chain", "project"), help="target note kind")
-    progress.add_argument("note_ref", help="task ref for task/chain or project name for project")
+    progress.add_argument(
+        "note_ref",
+        help="task ref or project name; progress show accepts comma-separated references",
+    )
     progress_subparsers = progress.add_subparsers(dest="progress_command", required=True)
 
     progress_set = progress_subparsers.add_parser(
@@ -1040,18 +1043,43 @@ def _run_progress(ctx, args) -> CommandResult:
     operation = str(args.progress_command)
     track = getattr(args, "track", None)
     if operation == "show":
-        note_path, identity = _existing_note_path_for_kind(ctx, note_kind, note_ref)
-        result = read_note_progress(note_path, track or "default")
+        note_refs = _progress_note_refs(note_ref)
+        items: list[dict[str, object]] = []
+        seen_paths: set[str] = set()
+        for item_ref in note_refs:
+            note_path, identity = _existing_note_path_for_kind(ctx, note_kind, item_ref)
+            path_text = str(note_path)
+            if path_text in seen_paths:
+                continue
+            seen_paths.add(path_text)
+            result = read_note_progress(note_path, track or "default")
+            items.append(
+                {
+                    "reference": item_ref,
+                    **identity,
+                    "path": path_text,
+                    "progress": result.progress,
+                    "track": track,
+                    "tracks": list(result.tracks),
+                }
+            )
+        if len(note_refs) > 1:
+            return CommandResult(
+                command="progress",
+                payload={
+                    "operation": operation,
+                    "note_kind": note_kind,
+                    "track": track,
+                    "items": items,
+                },
+            )
+        item = items[0]
         return CommandResult(
             command="progress",
             payload={
                 "operation": operation,
                 "note_kind": note_kind,
-                **identity,
-                "path": str(note_path),
-                "progress": result.progress,
-                "track": track,
-                "tracks": list(result.tracks),
+                **item,
                 "entry": None,
             },
         )
@@ -1113,6 +1141,13 @@ def _run_progress(ctx, args) -> CommandResult:
             "entry": result["entry"],
         },
     )
+
+
+def _progress_note_refs(value: str) -> list[str]:
+    refs = [item.strip() for item in str(value or "").split(",")]
+    if not refs or any(not item for item in refs):
+        raise RuntimeError("progress references must be a comma-separated list without empty items")
+    return refs
 
 
 def _run_task_delete(ctx, task_ref: str) -> CommandResult:

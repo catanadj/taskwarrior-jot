@@ -40,7 +40,7 @@ COMMAND_EXAMPLES = {
     "progress add": "jot progress task 42 add 1 --track chest",
     "progress clear": "jot progress task 42 clear --track chest --yes",
     "progress set": "jot progress task 42 set 3/12 --track chest --unit sets --status active",
-    "progress show": "jot progress task 42 show",
+    "progress show": "jot progress chain 53,986e9d97,41 show",
     "progress status": "jot progress task 42 status paused --track chest",
     "progress subtract": "jot progress task 42 subtract 1 --track chest",
     "section": 'jot section task 42 "Next steps"',

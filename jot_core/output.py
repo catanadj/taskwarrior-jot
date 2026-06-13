@@ -447,6 +447,10 @@ def _emit_detach_resource(payload: dict[str, Any]) -> None:
 
 
 def _emit_progress(payload: dict[str, Any]) -> None:
+    items = payload.get("items")
+    if isinstance(items, list):
+        _emit_progress_items(payload, items)
+        return
     progress = payload.get("progress")
     tracks = payload.get("tracks") or []
     kind = str(payload.get("note_kind") or "note")
@@ -471,6 +475,40 @@ def _emit_progress(payload: dict[str, Any]) -> None:
     entry = str(payload.get("entry") or "").strip()
     if entry:
         _emit_field("history", entry, indent=0)
+
+
+def _emit_progress_items(payload: dict[str, Any], items: list[object]) -> None:
+    kind = str(payload.get("note_kind") or "note")
+    selected_track = str(payload.get("track") or "").strip()
+    sys.stdout.write(f"Progress for {len(items)} {kind} notes\n")
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        reference = str(item.get("reference") or "")
+        identity = (
+            item.get("chain_id")
+            or item.get("task_short_uuid")
+            or item.get("project")
+            or reference
+        )
+        sys.stdout.write(f"\n{_style(str(identity), bold=True)}")
+        if reference and reference != str(identity):
+            sys.stdout.write(f"  ({reference})")
+        sys.stdout.write("\n")
+        tracks = item.get("tracks") or []
+        if selected_track:
+            progress = item.get("progress")
+            if isinstance(progress, dict):
+                _emit_progress_track(progress, visual=True)
+            else:
+                sys.stdout.write(f"  track '{selected_track}' is not set\n")
+            continue
+        if not isinstance(tracks, list) or not tracks:
+            sys.stdout.write("  (not set)\n")
+            continue
+        for progress in tracks:
+            if isinstance(progress, dict):
+                _emit_progress_track(progress, visual=True)
 
 
 def _emit_progress_track(progress: dict[str, Any], *, visual: bool = False) -> None:
