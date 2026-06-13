@@ -575,9 +575,9 @@ def _progress_bar(percentage: object, width: int | None = None) -> str:
 
 def _progress_color(percentage: Decimal) -> str:
     if percentage >= 100:
-        return "bright_green"
-    if percentage >= 80:
         return "green"
+    if percentage >= 80:
+        return "bright_green"
     if percentage >= 60:
         return "yellow_green"
     if percentage >= 40:

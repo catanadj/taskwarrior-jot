@@ -158,7 +158,7 @@ the track when a note has only one named track; multiple named tracks require
 `--track`. Current state is stored in note frontmatter,
 while every change is appended under `## Progress`. Percentages are calculated
 for display. `progress show` renders each track as a terminal-aware visual
-progress bar with a consistent red-to-bright-green completion scale. It accepts
+progress bar with a consistent red-to-green completion scale. It accepts
 comma-separated references to compare several task, chain, or project notes at
 once. Jot never changes Taskwarrior task status automatically.
 

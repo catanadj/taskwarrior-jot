@@ -294,9 +294,9 @@ class ProgressValueTests(unittest.TestCase):
             ("20", "orange"),
             ("40", "yellow"),
             ("60", "yellow_green"),
-            ("80", "green"),
-            ("99.99", "green"),
-            ("100", "bright_green"),
+            ("80", "bright_green"),
+            ("99.99", "bright_green"),
+            ("100", "green"),
         )
         for percentage, color in expected:
             with self.subTest(percentage=percentage):
