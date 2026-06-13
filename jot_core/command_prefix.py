@@ -32,8 +32,12 @@ def expand_command_prefixes(parser: argparse.ArgumentParser, argv: list[str]) ->
         expanded[command_index] = command
         current_parser = subparsers.choices[command]
 
-        nested_offset = _fixed_positionals_before_subparser(current_parser)
-        if nested_offset is None:
+        nested_offset, has_nested_command = _expand_fixed_positionals(
+            current_parser,
+            expanded,
+            command_index + 1,
+        )
+        if not has_nested_command:
             break
         command_index += 1 + nested_offset
 
@@ -71,21 +75,31 @@ def _first_command_index(argv: list[str]) -> int | None:
     return None
 
 
-def _fixed_positionals_before_subparser(parser: argparse.ArgumentParser) -> int | None:
+def _expand_fixed_positionals(
+    parser: argparse.ArgumentParser,
+    argv: list[str],
+    start_index: int,
+) -> tuple[int, bool]:
     count = 0
     for action in parser._actions:
         if isinstance(action, argparse._SubParsersAction):
-            return count
+            return count, True
         if action.option_strings or action.dest == "help":
             continue
         if action.nargs is None:
-            count += 1
-            continue
-        if isinstance(action.nargs, int):
-            count += action.nargs
-            continue
-        return None
-    return None
+            action_count = 1
+        elif isinstance(action.nargs, int):
+            action_count = action.nargs
+        else:
+            return count, False
+        if action.choices and action_count == 1 and start_index + count < len(argv):
+            value = argv[start_index + count]
+            choices = tuple(str(choice) for choice in action.choices)
+            resolved = _resolve_prefix(value, choices)
+            if resolved is not None:
+                argv[start_index + count] = resolved
+        count += action_count
+    return count, False
 
 
 def _subparser_action(parser: argparse.ArgumentParser) -> argparse._SubParsersAction | None:

@@ -221,6 +221,20 @@ class CommandPrefixTests(unittest.TestCase):
             ["progress", "task", "42", "subtract", "5"],
         )
 
+    def test_expands_positional_choice_prefixes(self) -> None:
+        self.assertEqual(
+            expand_command_prefixes(self.parser, ["prog", "ch", "53", "sh"]),
+            ["progress", "chain", "53", "show"],
+        )
+        self.assertEqual(
+            expand_command_prefixes(self.parser, ["prog", "t", "53", "sh"]),
+            ["progress", "task", "53", "show"],
+        )
+        self.assertEqual(
+            expand_command_prefixes(self.parser, ["head", "pr", "Finances"]),
+            ["headings", "project", "Finances"],
+        )
+
     def test_preserves_global_options_before_command(self) -> None:
         self.assertEqual(
             expand_command_prefixes(self.parser, ["--json", "sta"]),

@@ -55,7 +55,9 @@ is unavailable, `jot` prints the standard help instead.
 
 Commands accept minimum-unique prefixes. For example,
 `jot proj-r Finances.Expense` runs `jot project-report Finances.Expense`;
-ambiguous prefixes are rejected with the matching commands listed.
+`jot prog ch 53 sh` runs `jot progress chain 53 show`. This also applies to
+choice arguments such as `task`, `chain`, and `project`. Ambiguous prefixes are
+rejected with the matching choices listed.
 
 If you want the full help:
 
