@@ -9,6 +9,7 @@ import tempfile
 import textwrap
 import unittest
 from collections import OrderedDict
+from decimal import Decimal
 from pathlib import Path
 
 from jot_core.cli import build_parser
@@ -16,7 +17,7 @@ from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from jot_core.frontmatter import parse_document, render_document, write_document
 from jot_core.models import AppConfig
-from jot_core.output import _progress_bar
+from jot_core.output import _progress_bar, _progress_color
 from jot_core.progress import (
     format_progress_summary,
     format_progress_tracks_summary,
@@ -285,6 +286,21 @@ class ProgressValueTests(unittest.TestCase):
         self.assertEqual(_progress_bar("12.5", width=8), "【█░░░░░░░】")
         self.assertEqual(_progress_bar("150", width=4), "【████】")
         self.assertEqual(_progress_bar("-5", width=4), "【░░░░】")
+
+    def test_progress_colors_follow_red_to_bright_green_scale(self) -> None:
+        expected = (
+            ("0", "red"),
+            ("19.99", "red"),
+            ("20", "orange"),
+            ("40", "yellow"),
+            ("60", "yellow_green"),
+            ("80", "green"),
+            ("99.99", "green"),
+            ("100", "bright_green"),
+        )
+        for percentage, color in expected:
+            with self.subTest(percentage=percentage):
+                self.assertEqual(_progress_color(Decimal(percentage)), color)
 
 
 class ServiceProgressRowTests(unittest.TestCase):

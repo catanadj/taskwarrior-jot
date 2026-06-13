@@ -575,12 +575,16 @@ def _progress_bar(percentage: object, width: int | None = None) -> str:
 
 def _progress_color(percentage: Decimal) -> str:
     if percentage >= 100:
+        return "bright_green"
+    if percentage >= 80:
         return "green"
-    if percentage >= 67:
-        return "cyan"
-    if percentage >= 34:
+    if percentage >= 60:
+        return "yellow_green"
+    if percentage >= 40:
         return "yellow"
-    return "blue"
+    if percentage >= 20:
+        return "orange"
+    return "red"
 
 
 def _style(text: str, *, color: str = "", bold: bool = False) -> str:
@@ -589,7 +593,14 @@ def _style(text: str, *, color: str = "", bold: bool = False) -> str:
     codes = []
     if bold:
         codes.append("1")
-    color_codes = {"blue": "34", "green": "32", "yellow": "33", "cyan": "36"}
+    color_codes = {
+        "red": "31",
+        "orange": "38;5;208",
+        "yellow": "33",
+        "yellow_green": "38;5;154",
+        "green": "32",
+        "bright_green": "92",
+    }
     if color in color_codes:
         codes.append(color_codes[color])
     if not codes:
