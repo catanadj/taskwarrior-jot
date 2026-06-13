@@ -160,7 +160,9 @@ while every change is appended under `## Progress`. Percentages are calculated
 for display. `progress show` renders each track as a terminal-aware visual
 progress bar with a consistent red-to-green completion scale. It accepts
 comma-separated references to compare several task, chain, or project notes at
-once. Jot never changes Taskwarrior task status automatically.
+once. Progress updates use file locking and atomic replacement so concurrent
+commands cannot overwrite each other. Jot never changes Taskwarrior task status
+automatically.
 
 ## TUI
 

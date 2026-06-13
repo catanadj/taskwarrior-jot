@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .frontmatter import read_document
+from .frontmatter import atomic_write_text, exclusive_file_lock, read_document
 from .models import AppConfig, ResolvedTask
 from .nautical import chain_id_for_task
 from .ops import iso_now, read_ops
@@ -16,17 +16,25 @@ def index_path(config: AppConfig) -> Path:
 
 def load_or_rebuild_index(config: AppConfig) -> dict[str, Any]:
     path = index_path(config)
+    with exclusive_file_lock(path):
+        data, rebuilt = _load_or_rebuild_index_unlocked(config)
+        if rebuilt:
+            _save_index_unlocked(config, data)
+        return data
+
+
+def _load_or_rebuild_index_unlocked(config: AppConfig) -> tuple[dict[str, Any], bool]:
+    path = index_path(config)
     if path.exists():
         try:
             with path.open("r", encoding="utf-8") as handle:
                 data = json.load(handle)
             if _valid_index_shape(data):
-                return data
+                return data, False
         except Exception:
             pass
     data = rebuild_index(config)
-    save_index(config, data)
-    return data
+    return data, True
 
 
 def read_index_status(config: AppConfig) -> dict[str, Any]:
@@ -80,11 +88,15 @@ def read_index_status(config: AppConfig) -> dict[str, Any]:
 
 
 def save_index(config: AppConfig, data: dict[str, Any]) -> None:
+    with exclusive_file_lock(index_path(config)):
+        _save_index_unlocked(config, data)
+
+
+def _save_index_unlocked(config: AppConfig, data: dict[str, Any]) -> None:
     data["updated"] = iso_now()
     path = index_path(config)
-    with path.open("w", encoding="utf-8") as handle:
-        json.dump(data, handle, ensure_ascii=False, indent=2, sort_keys=True)
-        handle.write("\n")
+    text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    atomic_write_text(path, text)
 
 
 def rebuild_index(config: AppConfig) -> dict[str, Any]:
@@ -128,75 +140,82 @@ def rebuild_index(config: AppConfig) -> dict[str, Any]:
 
 
 def update_task_note_index(config: AppConfig, task: ResolvedTask, note_path: Path) -> None:
-    data = load_or_rebuild_index(config)
-    existing = data["tasks"].get(task.task_short_uuid, {})
-    data["tasks"][task.task_short_uuid] = {
-        "task_short_uuid": task.task_short_uuid,
-        "task_uuid": task.task_uuid,
-        "note_path": _relative_note_path(config, note_path),
-        "chain_id": chain_id_for_task(task.task) or None,
-        "last_note_at": iso_now(),
-        "last_event_at": existing.get("last_event_at"),
-    }
-    save_index(config, data)
+    with exclusive_file_lock(index_path(config)):
+        data, _rebuilt = _load_or_rebuild_index_unlocked(config)
+        existing = data["tasks"].get(task.task_short_uuid, {})
+        data["tasks"][task.task_short_uuid] = {
+            "task_short_uuid": task.task_short_uuid,
+            "task_uuid": task.task_uuid,
+            "note_path": _relative_note_path(config, note_path),
+            "chain_id": chain_id_for_task(task.task) or None,
+            "last_note_at": iso_now(),
+            "last_event_at": existing.get("last_event_at"),
+        }
+        _save_index_unlocked(config, data)
 
 
 def update_chain_note_index(config: AppConfig, task: ResolvedTask, note_path: Path) -> None:
     chain_id = chain_id_for_task(task.task)
     if not chain_id:
         raise RuntimeError("task is not part of a Nautical chain")
-    data = load_or_rebuild_index(config)
-    data["chains"][chain_id] = {
-        "chain_id": chain_id,
-        "note_path": _relative_note_path(config, note_path),
-        "last_note_at": iso_now(),
-    }
-    save_index(config, data)
+    with exclusive_file_lock(index_path(config)):
+        data, _rebuilt = _load_or_rebuild_index_unlocked(config)
+        data["chains"][chain_id] = {
+            "chain_id": chain_id,
+            "note_path": _relative_note_path(config, note_path),
+            "last_note_at": iso_now(),
+        }
+        _save_index_unlocked(config, data)
 
 
 def update_task_event_index(config: AppConfig, task: ResolvedTask) -> None:
-    data = load_or_rebuild_index(config)
-    existing = data["tasks"].get(task.task_short_uuid, {})
-    data["tasks"][task.task_short_uuid] = {
-        "task_short_uuid": task.task_short_uuid,
-        "task_uuid": task.task_uuid,
-        "note_path": existing.get("note_path"),
-        "chain_id": chain_id_for_task(task.task) or existing.get("chain_id"),
-        "last_note_at": existing.get("last_note_at"),
-        "last_event_at": iso_now(),
-    }
-    save_index(config, data)
+    with exclusive_file_lock(index_path(config)):
+        data, _rebuilt = _load_or_rebuild_index_unlocked(config)
+        existing = data["tasks"].get(task.task_short_uuid, {})
+        data["tasks"][task.task_short_uuid] = {
+            "task_short_uuid": task.task_short_uuid,
+            "task_uuid": task.task_uuid,
+            "note_path": existing.get("note_path"),
+            "chain_id": chain_id_for_task(task.task) or existing.get("chain_id"),
+            "last_note_at": existing.get("last_note_at"),
+            "last_event_at": iso_now(),
+        }
+        _save_index_unlocked(config, data)
 
 
 def update_project_note_index(config: AppConfig, project_name: str, note_path: Path) -> None:
     normalized = str(project_name or "").strip()
     if not normalized:
         raise RuntimeError("project name is empty")
-    data = load_or_rebuild_index(config)
-    data["projects"][normalized] = {
-        "project": normalized,
-        "note_path": _relative_note_path(config, note_path),
-        "last_note_at": iso_now(),
-    }
-    save_index(config, data)
+    with exclusive_file_lock(index_path(config)):
+        data, _rebuilt = _load_or_rebuild_index_unlocked(config)
+        data["projects"][normalized] = {
+            "project": normalized,
+            "note_path": _relative_note_path(config, note_path),
+            "last_note_at": iso_now(),
+        }
+        _save_index_unlocked(config, data)
 
 
 def remove_task_note_index(config: AppConfig, short_uuid: str) -> None:
-    data = load_or_rebuild_index(config)
-    data["tasks"].pop(short_uuid, None)
-    save_index(config, data)
+    with exclusive_file_lock(index_path(config)):
+        data, _rebuilt = _load_or_rebuild_index_unlocked(config)
+        data["tasks"].pop(short_uuid, None)
+        _save_index_unlocked(config, data)
 
 
 def remove_chain_note_index(config: AppConfig, chain_id: str) -> None:
-    data = load_or_rebuild_index(config)
-    data["chains"].pop(chain_id, None)
-    save_index(config, data)
+    with exclusive_file_lock(index_path(config)):
+        data, _rebuilt = _load_or_rebuild_index_unlocked(config)
+        data["chains"].pop(chain_id, None)
+        _save_index_unlocked(config, data)
 
 
 def remove_project_note_index(config: AppConfig, project_name: str) -> None:
-    data = load_or_rebuild_index(config)
-    data["projects"].pop(str(project_name or "").strip(), None)
-    save_index(config, data)
+    with exclusive_file_lock(index_path(config)):
+        data, _rebuilt = _load_or_rebuild_index_unlocked(config)
+        data["projects"].pop(str(project_name or "").strip(), None)
+        _save_index_unlocked(config, data)
 
 
 def _empty_index() -> dict[str, Any]:

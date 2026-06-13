@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .frontmatter import exclusive_file_lock
 from .models import AppConfig
 
 
@@ -24,24 +26,28 @@ def append_op(config: AppConfig, op: str, **fields: Any) -> None:
         "ok": True,
     }
     payload.update(fields)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+    with exclusive_file_lock(path):
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
 
 
 def read_ops(config: AppConfig) -> list[dict[str, Any]]:
     path = ops_log_path(config)
-    if not path.exists():
-        return []
     items: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            text = line.strip()
-            if not text:
-                continue
-            try:
-                data = json.loads(text)
-            except Exception:
-                continue
-            if isinstance(data, dict):
-                items.append(data)
+    with exclusive_file_lock(path):
+        if not path.exists():
+            return []
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                text = line.strip()
+                if not text:
+                    continue
+                try:
+                    data = json.loads(text)
+                except Exception:
+                    continue
+                if isinstance(data, dict):
+                    items.append(data)
     return items

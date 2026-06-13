@@ -9,6 +9,7 @@ import tempfile
 import textwrap
 import unittest
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from pathlib import Path
 from unittest import mock
@@ -16,14 +17,16 @@ from unittest import mock
 from jot_core.cli import build_parser
 from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
-from jot_core.frontmatter import parse_document, render_document, write_document
+from jot_core.frontmatter import atomic_write_text, parse_document, read_document, render_document, write_document
 from jot_core.models import AppConfig
 from jot_core.output import _progress_bar, _progress_color, _style
 from jot_core.progress import (
+    adjust_note_progress,
     format_progress_summary,
     format_progress_tracks_summary,
     parse_progress_pair,
     parse_progress_value,
+    set_note_progress,
 )
 from jot_core.services import JotService
 from jot_tui.palette import PaletteEntry, filter_palette_entries
@@ -159,6 +162,36 @@ class FrontMatterTests(unittest.TestCase):
         reparsed, rebody = parse_document(rendered)
         self.assertEqual(metadata, reparsed)
         self.assertEqual(body, rebody)
+
+    def test_atomic_write_preserves_original_when_replace_fails(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="jot-atomic-") as tempdir:
+            path = Path(tempdir) / "note.md"
+            path.write_text("original\n", encoding="utf-8")
+            with mock.patch("jot_core.frontmatter.os.replace", side_effect=OSError("replace failed")):
+                with self.assertRaisesRegex(OSError, "replace failed"):
+                    atomic_write_text(path, "replacement\n")
+            self.assertEqual(path.read_text(encoding="utf-8"), "original\n")
+            self.assertEqual(list(path.parent.glob(f".{path.name}.*.tmp")), [])
+
+    def test_concurrent_progress_adjustments_are_not_lost(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="jot-lock-") as tempdir:
+            path = Path(tempdir) / "note.md"
+            write_document(path, OrderedDict([("kind", "task-note")]), "# Note\n")
+            set_note_progress(path, Decimal("0"), Decimal("100"))
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                results = list(
+                    executor.map(
+                        lambda _item: adjust_note_progress(path, Decimal("1")),
+                        range(40),
+                    )
+                )
+
+            metadata, body = read_document(path)
+            self.assertEqual(metadata["progress_current"], "40")
+            self.assertEqual(len(results), 40)
+            self.assertEqual(body.count("change +1"), 40)
+            self.assertTrue((path.parent / f".{path.name}.lock").exists())
 
 
 class PaletteTests(unittest.TestCase):
@@ -1217,6 +1250,44 @@ class CliIntegrationTests(JotCliTestCase):
         payload = json.loads(adjusted.stdout)
         self.assertEqual(payload["track"], "chest")
         self.assertEqual(payload["progress"]["current"], "4")
+
+    def test_concurrent_progress_commands_preserve_note_index_and_ops(self) -> None:
+        task = {
+            "uuid": "62aa7d7d-1111-2222-3333-444444444444",
+            "description": "Concurrent workout",
+            "project": "fitness",
+            "tags": [],
+            "chainID": "chain062",
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "62": [task]})
+        created = self.run_jot("progress", "chain", "62", "set", "0/20", "--track", "sets")
+        self.assertEqual(created.returncode, 0, created.stderr)
+
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            results = list(
+                executor.map(
+                    lambda _item: self.run_jot("prog", "c", "62", "add", "1"),
+                    range(12),
+                )
+            )
+        for result in results:
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+        shown = self.run_jot("--json", "prog", "c", "62", "sh", "--track", "sets")
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        self.assertEqual(json.loads(shown.stdout)["progress"]["current"], "12")
+
+        jot_root = self.home / ".task" / "jot"
+        index_data = json.loads((jot_root / "index.json").read_text(encoding="utf-8"))
+        self.assertIn("chain062", index_data["chains"])
+        ops = [
+            json.loads(line)
+            for line in (jot_root / "ops.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        progress_ops = [item for item in ops if item.get("op") == "chain_progress_add"]
+        self.assertEqual(len(progress_ops), 12)
 
     def test_progress_adjustment_requires_track_when_multiple_named_tracks_exist(self) -> None:
         task = {

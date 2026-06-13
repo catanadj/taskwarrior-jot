@@ -6,7 +6,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
-from .frontmatter import read_document, write_document
+from .frontmatter import locked_document, read_document, write_document
 from .ops import iso_now
 
 
@@ -129,69 +129,66 @@ def set_note_progress(
     status: str | None = None,
     track: str = DEFAULT_TRACK,
 ) -> ProgressResult:
-    metadata, body = read_document(note_path)
-    normalized_track = normalize_progress_track(track)
-    previous = _find_track(_progress_tracks_from_metadata(metadata), normalized_track)
-    timestamp = iso_now()
-    normalized_unit = _select_text(unit, previous, "unit")
-    normalized_status = _select_text(status, previous, "status")
-    progress = _build_progress(
-        current=current,
-        target=target,
-        unit=normalized_unit,
-        status=normalized_status,
-        updated=timestamp,
-        track=normalized_track,
-    )
-    _write_progress(
-        metadata,
-        progress,
-    )
-    entry = _history_entry(
-        timestamp,
-        "set",
-        current=current,
-        target=target,
-        unit=normalized_unit,
-        status=normalized_status,
-        track=normalized_track,
-    )
-    write_document(note_path, metadata, _append_progress_history(body, entry))
-    tracks = _progress_tracks_from_metadata(metadata)
+    with locked_document(note_path) as (metadata, body):
+        normalized_track = normalize_progress_track(track)
+        previous = _find_track(_progress_tracks_from_metadata(metadata), normalized_track)
+        timestamp = iso_now()
+        normalized_unit = _select_text(unit, previous, "unit")
+        normalized_status = _select_text(status, previous, "status")
+        progress = _build_progress(
+            current=current,
+            target=target,
+            unit=normalized_unit,
+            status=normalized_status,
+            updated=timestamp,
+            track=normalized_track,
+        )
+        _write_progress(metadata, progress)
+        entry = _history_entry(
+            timestamp,
+            "set",
+            current=current,
+            target=target,
+            unit=normalized_unit,
+            status=normalized_status,
+            track=normalized_track,
+        )
+        write_document(note_path, metadata, _append_progress_history(body, entry))
+        tracks = _progress_tracks_from_metadata(metadata)
     return ProgressResult(note_path, _find_track(tracks, normalized_track), entry, normalized_track, tracks)
 
 
 def adjust_note_progress(note_path: Path, amount: Decimal, *, track: str | None = None) -> ProgressResult:
-    metadata, body = read_document(note_path)
-    normalized_track = _resolve_existing_track(metadata, track)
-    previous = _required_track(metadata, normalized_track)
-    current = parse_progress_value(str(previous["current"]))
-    target = parse_progress_value(str(previous["target"]))
-    updated_current = current + amount
-    timestamp = iso_now()
-    unit = str(previous.get("unit") or "").strip()
-    status = str(previous.get("status") or "").strip()
-    progress = _build_progress(
-        current=updated_current,
-        target=target,
-        unit=unit,
-        status=status,
-        updated=timestamp,
-        track=normalized_track,
-    )
-    _write_progress(metadata, progress)
-    entry = _history_entry(
-        timestamp,
-        "adjust",
-        current=updated_current,
-        target=target,
-        unit=unit,
-        status=status,
-        amount=amount,
-        track=normalized_track,
-    )
-    write_document(note_path, metadata, _append_progress_history(body, entry))
-    tracks = _progress_tracks_from_metadata(metadata)
+    with locked_document(note_path) as (metadata, body):
+        normalized_track = _resolve_existing_track(metadata, track)
+        previous = _required_track(metadata, normalized_track)
+        current = parse_progress_value(str(previous["current"]))
+        target = parse_progress_value(str(previous["target"]))
+        updated_current = current + amount
+        timestamp = iso_now()
+        unit = str(previous.get("unit") or "").strip()
+        status = str(previous.get("status") or "").strip()
+        progress = _build_progress(
+            current=updated_current,
+            target=target,
+            unit=unit,
+            status=status,
+            updated=timestamp,
+            track=normalized_track,
+        )
+        _write_progress(metadata, progress)
+        entry = _history_entry(
+            timestamp,
+            "adjust",
+            current=updated_current,
+            target=target,
+            unit=unit,
+            status=status,
+            amount=amount,
+            track=normalized_track,
+        )
+        write_document(note_path, metadata, _append_progress_history(body, entry))
+        tracks = _progress_tracks_from_metadata(metadata)
     return ProgressResult(note_path, _find_track(tracks, normalized_track), entry, normalized_track, tracks)
 
 
@@ -204,53 +201,56 @@ def set_note_progress_status(
     normalized = str(status or "").strip()
     if not normalized:
         raise RuntimeError("progress status is empty")
-    metadata, body = read_document(note_path)
-    normalized_track = _resolve_existing_track(metadata, track)
-    previous = _required_track(metadata, normalized_track)
-    current = parse_progress_value(str(previous["current"]))
-    target = parse_progress_value(str(previous["target"]))
-    timestamp = iso_now()
-    unit = str(previous.get("unit") or "").strip()
-    progress = _build_progress(
-        current=current,
-        target=target,
-        unit=unit,
-        status=normalized,
-        updated=timestamp,
-        track=normalized_track,
-    )
-    _write_progress(metadata, progress)
-    entry = _history_entry(
-        timestamp,
-        "status",
-        current=current,
-        target=target,
-        unit=unit,
-        status=normalized,
-        track=normalized_track,
-    )
-    write_document(note_path, metadata, _append_progress_history(body, entry))
-    tracks = _progress_tracks_from_metadata(metadata)
+    with locked_document(note_path) as (metadata, body):
+        normalized_track = _resolve_existing_track(metadata, track)
+        previous = _required_track(metadata, normalized_track)
+        current = parse_progress_value(str(previous["current"]))
+        target = parse_progress_value(str(previous["target"]))
+        timestamp = iso_now()
+        unit = str(previous.get("unit") or "").strip()
+        progress = _build_progress(
+            current=current,
+            target=target,
+            unit=unit,
+            status=normalized,
+            updated=timestamp,
+            track=normalized_track,
+        )
+        _write_progress(metadata, progress)
+        entry = _history_entry(
+            timestamp,
+            "status",
+            current=current,
+            target=target,
+            unit=unit,
+            status=normalized,
+            track=normalized_track,
+        )
+        write_document(note_path, metadata, _append_progress_history(body, entry))
+        tracks = _progress_tracks_from_metadata(metadata)
     return ProgressResult(note_path, _find_track(tracks, normalized_track), entry, normalized_track, tracks)
 
 
 def clear_note_progress(note_path: Path, *, track: str | None = None) -> ProgressResult:
-    metadata, body = read_document(note_path)
-    normalized_track = _resolve_existing_track(metadata, track)
-    previous = _find_track(_progress_tracks_from_metadata(metadata), normalized_track)
-    if previous is None:
-        raise RuntimeError(f"progress track '{normalized_track}' is not set")
-    timestamp = iso_now()
-    if normalized_track == DEFAULT_TRACK:
-        for key in PROGRESS_KEYS:
-            metadata.pop(key, None)
-    else:
-        named = [item for item in _named_tracks_from_metadata(metadata) if not _same_track(item, normalized_track)]
-        _write_named_tracks(metadata, named)
-    metadata["updated"] = timestamp
-    entry = f"- [{timestamp}] [{normalized_track}] cleared progress state"
-    write_document(note_path, metadata, _append_progress_history(body, entry))
-    tracks = _progress_tracks_from_metadata(metadata)
+    with locked_document(note_path) as (metadata, body):
+        normalized_track = _resolve_existing_track(metadata, track)
+        previous = _find_track(_progress_tracks_from_metadata(metadata), normalized_track)
+        if previous is None:
+            raise RuntimeError(f"progress track '{normalized_track}' is not set")
+        timestamp = iso_now()
+        if normalized_track == DEFAULT_TRACK:
+            for key in PROGRESS_KEYS:
+                metadata.pop(key, None)
+        else:
+            named = [
+                item for item in _named_tracks_from_metadata(metadata)
+                if not _same_track(item, normalized_track)
+            ]
+            _write_named_tracks(metadata, named)
+        metadata["updated"] = timestamp
+        entry = f"- [{timestamp}] [{normalized_track}] cleared progress state"
+        write_document(note_path, metadata, _append_progress_history(body, entry))
+        tracks = _progress_tracks_from_metadata(metadata)
     return ProgressResult(note_path, None, entry, normalized_track, tracks)
 
 

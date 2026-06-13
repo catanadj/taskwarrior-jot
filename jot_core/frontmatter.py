@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import fcntl
+import os
+import tempfile
 from collections import OrderedDict
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 FrontMatter = OrderedDict[str, Any]
@@ -14,8 +18,52 @@ def read_document(path: Path) -> tuple[FrontMatter, str]:
 
 
 def write_document(path: Path, metadata: FrontMatter, body: str) -> None:
+    atomic_write_text(path, render_document(metadata, body))
+
+
+def atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_document(metadata, body), encoding="utf-8")
+    existing_mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary_path, existing_mode)
+        os.replace(temporary_path, path)
+        temporary_path = None
+        _fsync_directory(path.parent)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+@contextmanager
+def exclusive_file_lock(path: Path) -> Iterator[None]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.parent / f".{path.name}.lock"
+    with lock_path.open("a+", encoding="utf-8") as lock_handle:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def locked_document(path: Path) -> Iterator[tuple[FrontMatter, str]]:
+    """Lock a note across a complete read-modify-write transaction."""
+    with exclusive_file_lock(path):
+        yield read_document(path)
 
 
 def parse_document(text: str) -> tuple[FrontMatter, str]:
@@ -98,3 +146,11 @@ def _render_scalar(value: Any) -> str:
     if value is None:
         return "null"
     return str(value)
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
