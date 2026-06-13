@@ -11,13 +11,14 @@ import unittest
 from collections import OrderedDict
 from decimal import Decimal
 from pathlib import Path
+from unittest import mock
 
 from jot_core.cli import build_parser
 from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from jot_core.frontmatter import parse_document, render_document, write_document
 from jot_core.models import AppConfig
-from jot_core.output import _progress_bar, _progress_color
+from jot_core.output import _progress_bar, _progress_color, _style
 from jot_core.progress import (
     format_progress_summary,
     format_progress_tracks_summary,
@@ -301,6 +302,14 @@ class ProgressValueTests(unittest.TestCase):
         for percentage, color in expected:
             with self.subTest(percentage=percentage):
                 self.assertEqual(_progress_color(Decimal(percentage)), color)
+
+    def test_final_green_bands_use_distinct_explicit_rgb_colors(self) -> None:
+        with mock.patch("jot_core.output._use_color", return_value=True):
+            near_complete = _style("bar", color="bright_green")
+            complete = _style("bar", color="green")
+        self.assertIn("\033[38;2;52;190;90m", near_complete)
+        self.assertIn("\033[38;2;0;255;70m", complete)
+        self.assertNotEqual(near_complete, complete)
 
 
 class ServiceProgressRowTests(unittest.TestCase):

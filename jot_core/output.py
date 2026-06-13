@@ -598,8 +598,8 @@ def _style(text: str, *, color: str = "", bold: bool = False) -> str:
         "orange": "38;5;208",
         "yellow": "33",
         "yellow_green": "38;5;154",
-        "green": "32",
-        "bright_green": "92",
+        "bright_green": "38;2;52;190;90",
+        "green": "38;2;0;255;70",
     }
     if color in color_codes:
         codes.append(color_codes[color])
