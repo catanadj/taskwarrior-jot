@@ -153,7 +153,9 @@ jot progress chain 53,986e9d97,41 show
 ```
 
 Track names, units, and statuses are free-form. Omitting `--track` uses the
-backward-compatible `default` track. Current state is stored in note frontmatter,
+backward-compatible `default` track when it exists. Adjustment commands infer
+the track when a note has only one named track; multiple named tracks require
+`--track`. Current state is stored in note frontmatter,
 while every change is appended under `## Progress`. Percentages are calculated
 for display. `progress show` renders each track as a terminal-aware visual
 progress bar. It accepts comma-separated references to compare several task,

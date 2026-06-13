@@ -1163,6 +1163,55 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("[legs] set: 4/12 sets", note_text)
         self.assertIn("[chest] cleared progress state", note_text)
 
+    def test_progress_adjustment_infers_sole_named_track(self) -> None:
+        task = {
+            "uuid": "60aa7d7d-1111-2222-3333-444444444444",
+            "description": "Workout",
+            "project": "fitness",
+            "tags": [],
+            "chainID": "chain060",
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "60": [task]})
+
+        created = self.run_jot(
+            "progress",
+            "chain",
+            "60",
+            "set",
+            "3/10",
+            "--track",
+            "chest",
+            "--unit",
+            "sets",
+        )
+        self.assertEqual(created.returncode, 0, created.stderr)
+
+        adjusted = self.run_jot("--json", "prog", "c", "60", "add", "1")
+        self.assertEqual(adjusted.returncode, 0, adjusted.stderr)
+        payload = json.loads(adjusted.stdout)
+        self.assertEqual(payload["track"], "chest")
+        self.assertEqual(payload["progress"]["current"], "4")
+
+    def test_progress_adjustment_requires_track_when_multiple_named_tracks_exist(self) -> None:
+        task = {
+            "uuid": "61aa7d7d-1111-2222-3333-444444444444",
+            "description": "Workout",
+            "project": "fitness",
+            "tags": [],
+            "chainID": "chain061",
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "61": [task]})
+        for track in ("chest", "legs"):
+            created = self.run_jot("progress", "chain", "61", "set", "3/10", "--track", track)
+            self.assertEqual(created.returncode, 0, created.stderr)
+
+        rejected = self.run_jot("prog", "c", "61", "add", "1")
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("multiple progress tracks exist", rejected.stderr)
+        self.assertIn("specify --track", rejected.stderr)
+
     def test_progress_show_compares_multiple_chain_references(self) -> None:
         tasks = [
             {

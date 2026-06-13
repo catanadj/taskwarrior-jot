@@ -451,7 +451,7 @@ def mutate_task_progress_storage(
     amount: Decimal | None = None,
     unit: str | None = None,
     status: str | None = None,
-    track: str = "default",
+    track: str | None = None,
 ) -> dict[str, object]:
     if note_kind == "task":
         note = _task_progress_note(config, task, operation)
@@ -507,7 +507,7 @@ def mutate_project_progress_storage(
     amount: Decimal | None = None,
     unit: str | None = None,
     status: str | None = None,
-    track: str = "default",
+    track: str | None = None,
 ) -> dict[str, object]:
     if operation == "set":
         note = ensure_project_note(config, project_name)
@@ -555,7 +555,7 @@ def _mutate_progress(
     amount: Decimal | None,
     unit: str | None,
     status: str | None,
-    track: str,
+    track: str | None,
 ) -> ProgressResult:
     if operation == "set":
         if current is None or target is None:

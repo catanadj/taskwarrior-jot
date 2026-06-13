@@ -416,7 +416,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Increase the current progress value by a decimal amount.",
     )
     progress_add.add_argument("amount", help="decimal amount to add")
-    progress_add.add_argument("--track", default="default", help="progress track name; default: default")
+    progress_add.add_argument("--track", help="progress track name; inferred when only one track exists")
 
     progress_subtract = progress_subparsers.add_parser(
         "subtract",
@@ -424,7 +424,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Decrease the current progress value by a decimal amount.",
     )
     progress_subtract.add_argument("amount", help="decimal amount to subtract")
-    progress_subtract.add_argument("--track", default="default", help="progress track name; default: default")
+    progress_subtract.add_argument("--track", help="progress track name; inferred when only one track exists")
 
     progress_show = progress_subparsers.add_parser(
         "show",
@@ -439,7 +439,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Set a free-form status on existing progress.",
     )
     progress_status.add_argument("value", help="status value, for example active, paused, or complete")
-    progress_status.add_argument("--track", default="default", help="progress track name; default: default")
+    progress_status.add_argument("--track", help="progress track name; inferred when only one track exists")
 
     progress_clear = progress_subparsers.add_parser(
         "clear",
@@ -451,7 +451,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="confirm clearing the current progress state",
     )
-    progress_clear.add_argument("--track", default="default", help="progress track name; default: default")
+    progress_clear.add_argument("--track", help="progress track name; inferred when only one track exists")
 
     add = subparsers.add_parser(
         "add",
@@ -1109,7 +1109,7 @@ def _run_progress(ctx, args) -> CommandResult:
             amount=amount,
             unit=unit,
             status=status,
-            track=track or "default",
+            track=track,
         )
         identity = {
             "task_short_uuid": task.task_short_uuid,
@@ -1125,7 +1125,7 @@ def _run_progress(ctx, args) -> CommandResult:
             amount=amount,
             unit=unit,
             status=status,
-            track=track or "default",
+            track=track,
         )
         identity = {"project": note_ref}
     return CommandResult(

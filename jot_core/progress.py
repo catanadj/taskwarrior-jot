@@ -161,9 +161,9 @@ def set_note_progress(
     return ProgressResult(note_path, _find_track(tracks, normalized_track), entry, normalized_track, tracks)
 
 
-def adjust_note_progress(note_path: Path, amount: Decimal, *, track: str = DEFAULT_TRACK) -> ProgressResult:
+def adjust_note_progress(note_path: Path, amount: Decimal, *, track: str | None = None) -> ProgressResult:
     metadata, body = read_document(note_path)
-    normalized_track = normalize_progress_track(track)
+    normalized_track = _resolve_existing_track(metadata, track)
     previous = _required_track(metadata, normalized_track)
     current = parse_progress_value(str(previous["current"]))
     target = parse_progress_value(str(previous["target"]))
@@ -199,13 +199,13 @@ def set_note_progress_status(
     note_path: Path,
     status: str,
     *,
-    track: str = DEFAULT_TRACK,
+    track: str | None = None,
 ) -> ProgressResult:
     normalized = str(status or "").strip()
     if not normalized:
         raise RuntimeError("progress status is empty")
     metadata, body = read_document(note_path)
-    normalized_track = normalize_progress_track(track)
+    normalized_track = _resolve_existing_track(metadata, track)
     previous = _required_track(metadata, normalized_track)
     current = parse_progress_value(str(previous["current"]))
     target = parse_progress_value(str(previous["target"]))
@@ -234,9 +234,9 @@ def set_note_progress_status(
     return ProgressResult(note_path, _find_track(tracks, normalized_track), entry, normalized_track, tracks)
 
 
-def clear_note_progress(note_path: Path, *, track: str = DEFAULT_TRACK) -> ProgressResult:
+def clear_note_progress(note_path: Path, *, track: str | None = None) -> ProgressResult:
     metadata, body = read_document(note_path)
-    normalized_track = normalize_progress_track(track)
+    normalized_track = _resolve_existing_track(metadata, track)
     previous = _find_track(_progress_tracks_from_metadata(metadata), normalized_track)
     if previous is None:
         raise RuntimeError(f"progress track '{normalized_track}' is not set")
@@ -386,6 +386,21 @@ def _required_track(metadata: dict[str, Any], track: str) -> dict[str, object]:
     if progress is None:
         raise RuntimeError(f"progress track '{track}' is not set; use progress set first")
     return progress
+
+
+def _resolve_existing_track(metadata: dict[str, Any], requested: str | None) -> str:
+    tracks = _progress_tracks_from_metadata(metadata)
+    if requested is not None:
+        return normalize_progress_track(requested)
+    default = _find_track(tracks, DEFAULT_TRACK)
+    if default is not None:
+        return DEFAULT_TRACK
+    if len(tracks) == 1:
+        return str(tracks[0].get("track") or DEFAULT_TRACK)
+    if not tracks:
+        raise RuntimeError("progress is not set; use progress set first")
+    names = ", ".join(str(item.get("track") or DEFAULT_TRACK) for item in tracks)
+    raise RuntimeError(f"multiple progress tracks exist ({names}); specify --track")
 
 
 def _select_text(value: str | None, previous: dict[str, object] | None, key: str) -> str:
