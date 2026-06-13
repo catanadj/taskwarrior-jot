@@ -6,6 +6,7 @@ import sys
 from . import __version__
 from .app import build_app_context
 from .command_help import build_command_catalog
+from .command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from .config import ensure_app_dirs
 from .doctor import run_doctor, run_doctor_config_error
 from .editor import open_in_editor
@@ -100,7 +101,9 @@ def build_parser() -> argparse.ArgumentParser:
             "  jot trash-restore 1\n"
             "  jot stats\n"
             "  jot paths\n"
-            "  jot tui"
+            "  jot tui\n"
+            "\n"
+            "Commands accept unique prefixes, for example: jot proj-r Finances.Expense"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -520,6 +523,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     parser = build_parser()
+    try:
+        argv = expand_command_prefixes(parser, argv)
+    except AmbiguousCommandPrefix as exc:
+        parser.error(str(exc))
     args = parser.parse_args(argv)
 
     try:

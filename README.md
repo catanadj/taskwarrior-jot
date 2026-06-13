@@ -53,6 +53,10 @@ through the list shows what each command does, its syntax, a concrete example,
 and its arguments without executing it. When output is redirected or Textual
 is unavailable, `jot` prints the standard help instead.
 
+Commands accept minimum-unique prefixes. For example,
+`jot proj-r Finances.Expense` runs `jot project-report Finances.Expense`;
+ambiguous prefixes are rejected with the matching commands listed.
+
 If you want the full help:
 
 ```bash

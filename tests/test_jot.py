@@ -13,6 +13,7 @@ from pathlib import Path
 
 from jot_core.cli import build_parser
 from jot_core.command_help import build_command_catalog
+from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from jot_core.frontmatter import parse_document, render_document, write_document
 from jot_core.models import AppConfig
 from jot_core.progress import format_progress_summary, parse_progress_pair, parse_progress_value
@@ -189,6 +190,45 @@ class CommandHelpTests(unittest.TestCase):
         self.assertEqual(missing_examples, [])
 
 
+class CommandPrefixTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.parser = build_parser()
+
+    def test_expands_unique_top_level_prefix(self) -> None:
+        self.assertEqual(
+            expand_command_prefixes(self.parser, ["proj-r", "Finances.Expense"]),
+            ["project-report", "Finances.Expense"],
+        )
+
+    def test_exact_command_takes_precedence_over_longer_matches(self) -> None:
+        self.assertEqual(
+            expand_command_prefixes(self.parser, ["project", "Finances"]),
+            ["project", "Finances"],
+        )
+
+    def test_expands_nested_command_prefixes(self) -> None:
+        self.assertEqual(
+            expand_command_prefixes(self.parser, ["report", "rec", "--limit", "5"]),
+            ["report", "recent", "--limit", "5"],
+        )
+        self.assertEqual(
+            expand_command_prefixes(self.parser, ["progress", "task", "42", "sub", "5"]),
+            ["progress", "task", "42", "subtract", "5"],
+        )
+
+    def test_preserves_global_options_before_command(self) -> None:
+        self.assertEqual(
+            expand_command_prefixes(self.parser, ["--json", "sta"]),
+            ["--json", "stats"],
+        )
+
+    def test_rejects_ambiguous_prefix(self) -> None:
+        with self.assertRaises(AmbiguousCommandPrefix) as raised:
+            expand_command_prefixes(self.parser, ["pro"])
+        self.assertIn("progress", raised.exception.matches)
+        self.assertIn("project", raised.exception.matches)
+
+
 class ProgressValueTests(unittest.TestCase):
     def test_progress_values_accept_decimals_and_reject_invalid_values(self) -> None:
         self.assertEqual(str(parse_progress_value("-1.25")), "-1.25")
@@ -326,6 +366,18 @@ class CliIntegrationTests(JotCliTestCase):
         result = self.run_jot("--version")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "jot 0.3.0")
+
+    def test_unique_command_prefix_runs_command(self) -> None:
+        result = self.run_jot("sta")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Stats", result.stdout)
+
+    def test_ambiguous_command_prefix_lists_matches(self) -> None:
+        result = self.run_jot("pro")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("ambiguous command 'pro'", result.stderr)
+        self.assertIn("progress", result.stderr)
+        self.assertIn("project", result.stderr)
 
     def test_task_ref_shorthand_opens_task_note_without_chain(self) -> None:
         task = {
