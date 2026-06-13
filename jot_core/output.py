@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import sys
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from .models import CommandResult, DoctorCheck
@@ -456,20 +459,24 @@ def _emit_progress(payload: dict[str, Any]) -> None:
         if not tracks:
             sys.stdout.write("\n(not set)\n")
             return
+        sys.stdout.write("\n")
         for item in tracks:
             if isinstance(item, dict):
-                _emit_progress_track(item)
+                _emit_progress_track(item, visual=True)
         return
     if not isinstance(progress, dict):
         sys.stdout.write("\n(not set)\n")
         return
-    _emit_progress_track(progress)
+    _emit_progress_track(progress, visual=operation == "show")
     entry = str(payload.get("entry") or "").strip()
     if entry:
         _emit_field("history", entry, indent=0)
 
 
-def _emit_progress_track(progress: dict[str, Any]) -> None:
+def _emit_progress_track(progress: dict[str, Any], *, visual: bool = False) -> None:
+    if visual:
+        _emit_progress_visual(progress)
+        return
     _emit_field("track", progress.get("track") or "default", indent=0)
     unit = str(progress.get("unit") or "").strip()
     measurement = f"{progress.get('current')}/{progress.get('target')}"
@@ -485,6 +492,75 @@ def _emit_progress_track(progress: dict[str, Any]) -> None:
     updated = progress.get("updated")
     if updated:
         _emit_field("updated", updated, indent=0)
+
+
+def _emit_progress_visual(progress: dict[str, Any]) -> None:
+    track = str(progress.get("track") or "default")
+    unit = str(progress.get("unit") or "").strip()
+    measurement = f"{progress.get('current')}/{progress.get('target')}"
+    if unit:
+        measurement += f" {unit}"
+    percentage = progress.get("percentage")
+    percentage_text = f"{percentage}%" if percentage is not None else "no percentage"
+    status = str(progress.get("status") or "").strip()
+
+    sys.stdout.write(f"  {_style(track, bold=True)}\n")
+    sys.stdout.write(f"  {_progress_bar(percentage)}  {_style(percentage_text, bold=True)}\n")
+    sys.stdout.write(f"  {measurement}")
+    if status:
+        sys.stdout.write(f"  ·  {status}")
+    sys.stdout.write("\n")
+    updated = progress.get("updated")
+    if updated:
+        sys.stdout.write(f"  updated {updated}\n")
+    sys.stdout.write("\n")
+
+
+def _progress_bar(percentage: object, width: int | None = None) -> str:
+    if width is None:
+        width = max(12, min(36, shutil.get_terminal_size(fallback=(80, 24)).columns - 24))
+    try:
+        value = Decimal(str(percentage))
+    except (InvalidOperation, ValueError):
+        value = Decimal("0")
+    clamped = max(Decimal("0"), min(Decimal("100"), value))
+    eighths = int((clamped / Decimal("100") * width * 8).quantize(Decimal("1")))
+    full, remainder = divmod(eighths, 8)
+    partials = " ▏▎▍▌▋▊▉"
+    filled = "█" * full
+    if remainder and full < width:
+        filled += partials[remainder]
+    empty = "░" * max(0, width - full - (1 if remainder else 0))
+    bar = f"{filled}{empty}"
+    return f"【{_style(bar, color=_progress_color(clamped))}】"
+
+
+def _progress_color(percentage: Decimal) -> str:
+    if percentage >= 100:
+        return "green"
+    if percentage >= 67:
+        return "cyan"
+    if percentage >= 34:
+        return "yellow"
+    return "blue"
+
+
+def _style(text: str, *, color: str = "", bold: bool = False) -> str:
+    if not _use_color():
+        return text
+    codes = []
+    if bold:
+        codes.append("1")
+    color_codes = {"blue": "34", "green": "32", "yellow": "33", "cyan": "36"}
+    if color in color_codes:
+        codes.append(color_codes[color])
+    if not codes:
+        return text
+    return f"\033[{';'.join(codes)}m{text}\033[0m"
+
+
+def _use_color() -> bool:
+    return sys.stdout.isatty() and "NO_COLOR" not in os.environ
 
 
 def _emit_list(payload: dict[str, Any]) -> None:

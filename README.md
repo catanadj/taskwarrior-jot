@@ -154,7 +154,8 @@ jot progress task 42 show
 Track names, units, and statuses are free-form. Omitting `--track` uses the
 backward-compatible `default` track. Current state is stored in note frontmatter,
 while every change is appended under `## Progress`. Percentages are calculated
-for display, and Jot never changes Taskwarrior task status automatically.
+for display. `progress show` renders each track as a terminal-aware visual
+progress bar, and Jot never changes Taskwarrior task status automatically.
 
 ## TUI
 

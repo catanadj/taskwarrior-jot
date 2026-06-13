@@ -16,6 +16,7 @@ from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from jot_core.frontmatter import parse_document, render_document, write_document
 from jot_core.models import AppConfig
+from jot_core.output import _progress_bar
 from jot_core.progress import (
     format_progress_summary,
     format_progress_tracks_summary,
@@ -278,6 +279,12 @@ class ProgressValueTests(unittest.TestCase):
             format_progress_tracks_summary(tracks),
             "chest: 120/350 pages (34.29%) | legs: 60/350 pages (17.14%) | +1 more",
         )
+
+    def test_progress_bar_handles_partial_and_out_of_range_values(self) -> None:
+        self.assertEqual(_progress_bar("50", width=8), "【████░░░░】")
+        self.assertEqual(_progress_bar("12.5", width=8), "【█░░░░░░░】")
+        self.assertEqual(_progress_bar("150", width=4), "【████】")
+        self.assertEqual(_progress_bar("-5", width=4), "【░░░░】")
 
 
 class ServiceProgressRowTests(unittest.TestCase):
