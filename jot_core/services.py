@@ -22,7 +22,7 @@ from .notes import (
 )
 from .report import list_project_notes, recent_activity
 from .progress import (
-    format_progress_summary,
+    format_progress_tracks_summary,
     parse_progress_pair,
     parse_progress_value,
     read_note_progress,
@@ -192,13 +192,15 @@ class JotService:
         def _note_payload(path) -> dict[str, Any]:
             resolved = str(path or "")
             if not path or not Path(path).exists():
-                return {"path": resolved, "body": "", "resources": [], "progress": None}
+                return {"path": resolved, "body": "", "resources": [], "progress": None, "progress_tracks": []}
             _metadata, body = read_document(path)
+            progress_result = read_note_progress(path)
             return {
                 "path": resolved,
                 "body": body.strip(),
                 "resources": list_note_resources(path).resources,
-                "progress": read_note_progress(path).progress,
+                "progress": progress_result.progress,
+                "progress_tracks": list(progress_result.tracks),
             }
 
         return {
@@ -222,11 +224,13 @@ class JotService:
         note = find_project_note(self.config, project_name)
         if note:
             _metadata, body = read_document(note)
+            progress_result = read_note_progress(note)
             note_data = {
                 "path": str(note),
                 "body": body.strip(),
                 "resources": list_note_resources(note).resources,
-                "progress": read_note_progress(note).progress,
+                "progress": progress_result.progress,
+                "progress_tracks": list(progress_result.tracks),
             }
         else:
             note_data = {
@@ -234,6 +238,7 @@ class JotService:
                 "body": "",
                 "resources": [],
                 "progress": None,
+                "progress_tracks": [],
             }
         return {
             "project": project_name,
@@ -401,6 +406,7 @@ class JotService:
         value: str = "",
         unit: str | None = None,
         status: str | None = None,
+        track: str = "default",
         confirm_clear: bool = False,
     ) -> dict[str, Any]:
         current = target = amount = None
@@ -429,6 +435,7 @@ class JotService:
                 amount=amount,
                 unit=unit,
                 status=status,
+                track=track,
             )
         if kind == "project":
             return mutate_project_progress_storage(
@@ -440,6 +447,7 @@ class JotService:
                 amount=amount,
                 unit=unit,
                 status=status,
+                track=track,
             )
         raise RuntimeError(f"unknown progress target kind: {kind}")
 
@@ -449,7 +457,7 @@ def _progress_summary_for_path(path: object, *, prefix: str = "") -> str:
     if not str(path or "").strip() or not note_path.exists():
         return ""
     try:
-        progress = read_note_progress(note_path).progress
+        tracks = read_note_progress(note_path).tracks
     except RuntimeError:
         return f"{prefix} invalid".strip()
-    return format_progress_summary(progress, prefix=prefix)
+    return format_progress_tracks_summary(tracks, prefix=prefix)

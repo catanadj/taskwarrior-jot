@@ -451,6 +451,7 @@ def mutate_task_progress_storage(
     amount: Decimal | None = None,
     unit: str | None = None,
     status: str | None = None,
+    track: str = "default",
 ) -> dict[str, object]:
     if note_kind == "task":
         note = _task_progress_note(config, task, operation)
@@ -469,6 +470,7 @@ def mutate_task_progress_storage(
         amount=amount,
         unit=unit,
         status=status,
+        track=track,
     )
     if note_kind == "task":
         update_task_note_index(config, task, result.note_path)
@@ -481,6 +483,7 @@ def mutate_task_progress_storage(
         task_uuid=task.task_uuid,
         chain_id=chain_id or None,
         progress=result.progress,
+        progress_track=result.track,
         entry=result.entry,
         path=str(result.note_path),
     )
@@ -488,6 +491,8 @@ def mutate_task_progress_storage(
         "note_path": result.note_path,
         "opened": note.existed,
         "progress": result.progress,
+        "track": result.track,
+        "tracks": list(result.tracks),
         "entry": result.entry,
     }
 
@@ -502,6 +507,7 @@ def mutate_project_progress_storage(
     amount: Decimal | None = None,
     unit: str | None = None,
     status: str | None = None,
+    track: str = "default",
 ) -> dict[str, object]:
     if operation == "set":
         note = ensure_project_note(config, project_name)
@@ -518,6 +524,7 @@ def mutate_project_progress_storage(
         amount=amount,
         unit=unit,
         status=status,
+        track=track,
     )
     update_project_note_index(config, project_name, result.note_path)
     append_op(
@@ -525,6 +532,7 @@ def mutate_project_progress_storage(
         f"project_progress_{operation}",
         project=project_name,
         progress=result.progress,
+        progress_track=result.track,
         entry=result.entry,
         path=str(result.note_path),
     )
@@ -532,6 +540,8 @@ def mutate_project_progress_storage(
         "note_path": result.note_path,
         "opened": note.existed,
         "progress": result.progress,
+        "track": result.track,
+        "tracks": list(result.tracks),
         "entry": result.entry,
     }
 
@@ -545,23 +555,24 @@ def _mutate_progress(
     amount: Decimal | None,
     unit: str | None,
     status: str | None,
+    track: str,
 ) -> ProgressResult:
     if operation == "set":
         if current is None or target is None:
             raise RuntimeError("set requires current and target values")
-        return set_note_progress(note_path, current, target, unit=unit, status=status)
+        return set_note_progress(note_path, current, target, unit=unit, status=status, track=track)
     if operation == "add":
         if amount is None:
             raise RuntimeError("add requires an amount")
-        return adjust_note_progress(note_path, amount)
+        return adjust_note_progress(note_path, amount, track=track)
     if operation == "subtract":
         if amount is None:
             raise RuntimeError("subtract requires an amount")
-        return adjust_note_progress(note_path, -amount)
+        return adjust_note_progress(note_path, -amount, track=track)
     if operation == "status":
-        return set_note_progress_status(note_path, str(status or ""))
+        return set_note_progress_status(note_path, str(status or ""), track=track)
     if operation == "clear":
-        return clear_note_progress(note_path)
+        return clear_note_progress(note_path, track=track)
     raise RuntimeError(f"unknown progress operation: {operation}")
 
 

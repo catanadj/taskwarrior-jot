@@ -16,7 +16,12 @@ from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from jot_core.frontmatter import parse_document, render_document, write_document
 from jot_core.models import AppConfig
-from jot_core.progress import format_progress_summary, parse_progress_pair, parse_progress_value
+from jot_core.progress import (
+    format_progress_summary,
+    format_progress_tracks_summary,
+    parse_progress_pair,
+    parse_progress_value,
+)
 from jot_core.services import JotService
 from jot_tui.palette import PaletteEntry, filter_palette_entries
 
@@ -250,6 +255,15 @@ class ProgressValueTests(unittest.TestCase):
         self.assertEqual(format_progress_summary(progress), "120/350 pages (34.29%)")
         self.assertEqual(format_progress_summary(progress, prefix="T"), "T 120/350 pages (34.29%)")
         self.assertEqual(format_progress_summary(None), "")
+        tracks = [
+            {**progress, "track": "chest"},
+            {**progress, "track": "legs", "current": "60", "percentage": "17.14"},
+            {**progress, "track": "back"},
+        ]
+        self.assertEqual(
+            format_progress_tracks_summary(tracks),
+            "chest: 120/350 pages (34.29%) | legs: 60/350 pages (17.14%) | +1 more",
+        )
 
 
 class ServiceProgressRowTests(unittest.TestCase):
@@ -1057,6 +1071,76 @@ class CliIntegrationTests(JotCliTestCase):
         chain_payload = json.loads(chain_set.stdout)
         self.assertEqual(chain_payload["chain_id"], "b4bf5egh")
         self.assertEqual(chain_payload["progress"]["unit"], "sessions")
+
+    def test_task_progress_supports_independent_named_tracks(self) -> None:
+        task = {
+            "uuid": "5d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Full body workout",
+            "project": "fitness",
+            "tags": [],
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "4": [task]})
+
+        chest = self.run_jot(
+            "--json",
+            "progress",
+            "task",
+            "4",
+            "set",
+            "3/12",
+            "--track",
+            "chest",
+            "--unit",
+            "sets",
+        )
+        self.assertEqual(chest.returncode, 0, chest.stderr)
+        legs = self.run_jot(
+            "--json",
+            "progress",
+            "task",
+            "4",
+            "set",
+            "4/12",
+            "--track",
+            "legs",
+            "--unit",
+            "sets",
+        )
+        self.assertEqual(legs.returncode, 0, legs.stderr)
+        adjusted = self.run_jot("--json", "progress", "task", "4", "add", "2", "--track", "chest")
+        self.assertEqual(adjusted.returncode, 0, adjusted.stderr)
+        self.assertEqual(json.loads(adjusted.stdout)["progress"]["current"], "5")
+
+        shown = self.run_jot("--json", "progress", "task", "4", "show")
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        tracks = {item["track"]: item for item in json.loads(shown.stdout)["tracks"]}
+        self.assertEqual(tracks["chest"]["current"], "5")
+        self.assertEqual(tracks["legs"]["current"], "4")
+
+        selected = self.run_jot("--json", "progress", "task", "4", "show", "--track", "legs")
+        self.assertEqual(selected.returncode, 0, selected.stderr)
+        self.assertEqual(json.loads(selected.stdout)["progress"]["track"], "legs")
+
+        cleared = self.run_jot(
+            "--json",
+            "progress",
+            "task",
+            "4",
+            "clear",
+            "--track",
+            "chest",
+            "--yes",
+        )
+        self.assertEqual(cleared.returncode, 0, cleared.stderr)
+        self.assertEqual([item["track"] for item in json.loads(cleared.stdout)["tracks"]], ["legs"])
+
+        note_path = list((self.home / ".task" / "jot" / "tasks").glob("*.md"))[0]
+        note_text = note_path.read_text(encoding="utf-8")
+        self.assertIn("progress_tracks:", note_text)
+        self.assertIn("[chest] set: 3/12 sets", note_text)
+        self.assertIn("[legs] set: 4/12 sets", note_text)
+        self.assertIn("[chest] cleared progress state", note_text)
 
     def test_progress_show_does_not_create_missing_note(self) -> None:
         task = {

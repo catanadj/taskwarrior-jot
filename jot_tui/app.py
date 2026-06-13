@@ -194,10 +194,12 @@ def run_tui(service: JotService) -> int:
                 yield Label("Update progress")
                 yield Static(
                     "Operations: set, add, subtract, status, clear\n"
+                    "Use separate track names for independent measurements.\n"
                     f"Available scopes: {', '.join(self.scopes)}",
                     id="progress-help",
                 )
                 yield Input(value=self.initial_scope, placeholder="Scope", id="progress-scope")
+                yield Input(value="default", placeholder="Track name", id="progress-track")
                 yield Input(placeholder="Operation", id="progress-operation")
                 yield Input(
                     placeholder="Value: 120/350 for set, 20 for add/subtract, text for status",
@@ -221,7 +223,8 @@ def run_tui(service: JotService) -> int:
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
             order = {
-                "progress-scope": "#progress-operation",
+                "progress-scope": "#progress-track",
+                "progress-track": "#progress-operation",
                 "progress-operation": "#progress-value",
                 "progress-value": "#progress-unit",
                 "progress-unit": "#progress-status",
@@ -234,6 +237,7 @@ def run_tui(service: JotService) -> int:
 
         def _submit(self) -> None:
             scope = self.query_one("#progress-scope", Input).value.strip().lower()
+            track = self.query_one("#progress-track", Input).value.strip()
             operation = self.query_one("#progress-operation", Input).value.strip().lower()
             value = self.query_one("#progress-value", Input).value.strip()
             unit = self.query_one("#progress-unit", Input).value.strip()
@@ -241,6 +245,9 @@ def run_tui(service: JotService) -> int:
             confirm_clear = bool(self.query_one("#progress-confirm-clear", Checkbox).value)
             if scope not in self.scopes:
                 self.app.notify(f"Scope must be one of: {', '.join(self.scopes)}", severity="warning")
+                return
+            if not track:
+                self.app.notify("Track name is required", severity="warning")
                 return
             if operation not in {"set", "add", "subtract", "status", "clear"}:
                 self.app.notify("Operation must be set, add, subtract, status, or clear", severity="warning")
@@ -254,6 +261,7 @@ def run_tui(service: JotService) -> int:
             self.dismiss(
                 {
                     "scope": scope,
+                    "track": track,
                     "operation": operation,
                     "value": value,
                     "unit": unit,
@@ -1356,6 +1364,7 @@ def run_tui(service: JotService) -> int:
                     value=str(payload.get("value") or ""),
                     unit=str(payload.get("unit") or "") or None,
                     status=str(payload.get("status") or "") or None,
+                    track=str(payload.get("track") or "default"),
                     confirm_clear=bool(payload.get("confirm_clear")),
                 )
             except Exception as exc:
@@ -1367,9 +1376,11 @@ def run_tui(service: JotService) -> int:
                 unit = str(progress.get("unit") or "").strip()
                 if unit:
                     measurement += f" {unit}"
-                self.notify(f"Progress updated: {measurement}", severity="information")
+                track = str(result.get("track") or "default")
+                self.notify(f"Progress updated [{track}]: {measurement}", severity="information")
             else:
-                self.notify("Progress state cleared", severity="information")
+                track = str(result.get("track") or "default")
+                self.notify(f"Progress track cleared: {track}", severity="information")
             await self._refresh_after_resource_change_async()
 
         def _update_action_hints(self) -> None:
@@ -1702,26 +1713,33 @@ def run_tui(service: JotService) -> int:
             lines = ["Progress", ""]
             found = False
             for label, note in note_items:
-                progress = note.get("progress")
-                if not isinstance(progress, dict):
+                tracks = note.get("progress_tracks")
+                if not isinstance(tracks, list):
+                    progress = note.get("progress")
+                    tracks = [progress] if isinstance(progress, dict) else []
+                if not tracks:
                     continue
-                found = True
-                current = str(progress.get("current") or "0")
-                target = str(progress.get("target") or "0")
-                unit = str(progress.get("unit") or "").strip()
-                status = str(progress.get("status") or "").strip()
-                percentage = progress.get("percentage")
-                measurement = f"{current}/{target}"
-                if unit:
-                    measurement += f" {unit}"
                 lines.append(f"{label.capitalize()} note")
-                lines.append(f"  {measurement}")
-                if percentage is not None:
-                    lines.append(f"  {self._progress_bar(str(percentage))} {percentage}%")
-                if status:
-                    lines.append(f"  Status: {status}")
-                if progress.get("updated"):
-                    lines.append(f"  Updated: {progress.get('updated')}")
+                for progress in tracks:
+                    if not isinstance(progress, dict):
+                        continue
+                    found = True
+                    track = str(progress.get("track") or "default")
+                    current = str(progress.get("current") or "0")
+                    target = str(progress.get("target") or "0")
+                    unit = str(progress.get("unit") or "").strip()
+                    status = str(progress.get("status") or "").strip()
+                    percentage = progress.get("percentage")
+                    measurement = f"{current}/{target}"
+                    if unit:
+                        measurement += f" {unit}"
+                    lines.append(f"  [{track}] {measurement}")
+                    if percentage is not None:
+                        lines.append(f"    {self._progress_bar(str(percentage))} {percentage}%")
+                    if status:
+                        lines.append(f"    Status: {status}")
+                    if progress.get("updated"):
+                        lines.append(f"    Updated: {progress.get('updated')}")
                 lines.append("")
             if not found:
                 lines.append("(not set)")

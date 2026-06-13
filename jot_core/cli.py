@@ -405,6 +405,7 @@ def build_parser() -> argparse.ArgumentParser:
     progress_set.add_argument("measurement", help="CURRENT/TARGET, for example 120/350")
     progress_set.add_argument("--unit", help="user-defined unit, for example pages, km, or items")
     progress_set.add_argument("--status", help="optional user-defined status")
+    progress_set.add_argument("--track", default="default", help="progress track name; default: default")
 
     progress_add = progress_subparsers.add_parser(
         "add",
@@ -412,6 +413,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Increase the current progress value by a decimal amount.",
     )
     progress_add.add_argument("amount", help="decimal amount to add")
+    progress_add.add_argument("--track", default="default", help="progress track name; default: default")
 
     progress_subtract = progress_subparsers.add_parser(
         "subtract",
@@ -419,12 +421,14 @@ def build_parser() -> argparse.ArgumentParser:
         description="Decrease the current progress value by a decimal amount.",
     )
     progress_subtract.add_argument("amount", help="decimal amount to subtract")
+    progress_subtract.add_argument("--track", default="default", help="progress track name; default: default")
 
-    progress_subparsers.add_parser(
+    progress_show = progress_subparsers.add_parser(
         "show",
         help="show current progress",
-        description="Show the current progress state without modifying the note.",
+        description="Show all progress tracks, or one named track, without modifying the note.",
     )
+    progress_show.add_argument("--track", help="show only this progress track")
 
     progress_status = progress_subparsers.add_parser(
         "status",
@@ -432,6 +436,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Set a free-form status on existing progress.",
     )
     progress_status.add_argument("value", help="status value, for example active, paused, or complete")
+    progress_status.add_argument("--track", default="default", help="progress track name; default: default")
 
     progress_clear = progress_subparsers.add_parser(
         "clear",
@@ -443,6 +448,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="confirm clearing the current progress state",
     )
+    progress_clear.add_argument("--track", default="default", help="progress track name; default: default")
 
     add = subparsers.add_parser(
         "add",
@@ -1032,9 +1038,10 @@ def _run_progress(ctx, args) -> CommandResult:
     note_kind = str(args.note_kind)
     note_ref = str(args.note_ref).strip()
     operation = str(args.progress_command)
+    track = getattr(args, "track", None)
     if operation == "show":
         note_path, identity = _existing_note_path_for_kind(ctx, note_kind, note_ref)
-        result = read_note_progress(note_path)
+        result = read_note_progress(note_path, track or "default")
         return CommandResult(
             command="progress",
             payload={
@@ -1043,6 +1050,8 @@ def _run_progress(ctx, args) -> CommandResult:
                 **identity,
                 "path": str(note_path),
                 "progress": result.progress,
+                "track": track,
+                "tracks": list(result.tracks),
                 "entry": None,
             },
         )
@@ -1072,6 +1081,7 @@ def _run_progress(ctx, args) -> CommandResult:
             amount=amount,
             unit=unit,
             status=status,
+            track=track or "default",
         )
         identity = {
             "task_short_uuid": task.task_short_uuid,
@@ -1087,6 +1097,7 @@ def _run_progress(ctx, args) -> CommandResult:
             amount=amount,
             unit=unit,
             status=status,
+            track=track or "default",
         )
         identity = {"project": note_ref}
     return CommandResult(
@@ -1097,6 +1108,8 @@ def _run_progress(ctx, args) -> CommandResult:
             **identity,
             "path": str(result["note_path"]),
             "progress": result["progress"],
+            "track": result["track"],
+            "tracks": result["tracks"],
             "entry": result["entry"],
         },
     )

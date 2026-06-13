@@ -445,14 +445,32 @@ def _emit_detach_resource(payload: dict[str, Any]) -> None:
 
 def _emit_progress(payload: dict[str, Any]) -> None:
     progress = payload.get("progress")
+    tracks = payload.get("tracks") or []
     kind = str(payload.get("note_kind") or "note")
     operation = str(payload.get("operation") or "show")
     sys.stdout.write(f"Progress for {kind} note\n")
     _emit_field("path", payload.get("path"), indent=0)
     _emit_field("operation", operation, indent=0)
+    selected_track = str(payload.get("track") or "").strip()
+    if operation == "show" and not selected_track and isinstance(tracks, list):
+        if not tracks:
+            sys.stdout.write("\n(not set)\n")
+            return
+        for item in tracks:
+            if isinstance(item, dict):
+                _emit_progress_track(item)
+        return
     if not isinstance(progress, dict):
         sys.stdout.write("\n(not set)\n")
         return
+    _emit_progress_track(progress)
+    entry = str(payload.get("entry") or "").strip()
+    if entry:
+        _emit_field("history", entry, indent=0)
+
+
+def _emit_progress_track(progress: dict[str, Any]) -> None:
+    _emit_field("track", progress.get("track") or "default", indent=0)
     unit = str(progress.get("unit") or "").strip()
     measurement = f"{progress.get('current')}/{progress.get('target')}"
     if unit:
@@ -467,9 +485,6 @@ def _emit_progress(payload: dict[str, Any]) -> None:
     updated = progress.get("updated")
     if updated:
         _emit_field("updated", updated, indent=0)
-    entry = str(payload.get("entry") or "").strip()
-    if entry:
-        _emit_field("history", entry, indent=0)
 
 
 def _emit_list(payload: dict[str, Any]) -> None:

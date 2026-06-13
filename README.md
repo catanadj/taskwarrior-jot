@@ -140,7 +140,17 @@ jot progress chain 42 set 3/12 --unit sessions
 jot progress project Renovation set 2.5/8 --unit rooms
 ```
 
-Units and statuses are free-form. Current state is stored in note frontmatter,
+One note can hold multiple named tracks:
+
+```bash
+jot progress task 42 set 3/12 --track chest --unit sets
+jot progress task 42 set 4/12 --track legs --unit sets
+jot progress task 42 add 1 --track chest
+jot progress task 42 show
+```
+
+Track names, units, and statuses are free-form. Omitting `--track` uses the
+backward-compatible `default` track. Current state is stored in note frontmatter,
 while every change is appended under `## Progress`. Percentages are calculated
 for display, and Jot never changes Taskwarrior task status automatically.
 
@@ -239,12 +249,12 @@ jot export <task-ref>
 Progress tracking:
 
 ```bash
-jot progress {task|chain|project} <ref> set <current>/<target> [--unit UNIT] [--status STATUS]
-jot progress {task|chain|project} <ref> add <amount>
-jot progress {task|chain|project} <ref> subtract <amount>
-jot progress {task|chain|project} <ref> show
-jot progress {task|chain|project} <ref> status <value>
-jot progress {task|chain|project} <ref> clear --yes
+jot progress {task|chain|project} <ref> set <current>/<target> [--track NAME] [--unit UNIT] [--status STATUS]
+jot progress {task|chain|project} <ref> add <amount> [--track NAME]
+jot progress {task|chain|project} <ref> subtract <amount> [--track NAME]
+jot progress {task|chain|project} <ref> show [--track NAME]
+jot progress {task|chain|project} <ref> status <value> [--track NAME]
+jot progress {task|chain|project} <ref> clear [--track NAME] --yes
 ```
 
 All commands support `--json`.

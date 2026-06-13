@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -16,6 +17,8 @@ PROGRESS_KEYS = (
     "progress_status",
     "progress_updated",
 )
+PROGRESS_TRACKS_KEY = "progress_tracks"
+DEFAULT_TRACK = "default"
 
 
 @dataclass(slots=True)
@@ -23,6 +26,8 @@ class ProgressResult:
     note_path: Path
     progress: dict[str, object] | None
     entry: str | None = None
+    track: str = DEFAULT_TRACK
+    tracks: tuple[dict[str, object], ...] = ()
 
 
 def parse_progress_value(value: str) -> Decimal:
@@ -46,9 +51,34 @@ def parse_progress_pair(value: str) -> tuple[Decimal, Decimal]:
     return parse_progress_value(current_text), parse_progress_value(target_text)
 
 
-def read_note_progress(note_path: Path) -> ProgressResult:
+def read_note_progress(note_path: Path, track: str = DEFAULT_TRACK) -> ProgressResult:
     metadata, _body = read_document(note_path)
-    return ProgressResult(note_path=note_path, progress=_progress_from_metadata(metadata))
+    normalized_track = normalize_progress_track(track)
+    tracks = _progress_tracks_from_metadata(metadata)
+    return ProgressResult(
+        note_path=note_path,
+        progress=_find_track(tracks, normalized_track),
+        track=normalized_track,
+        tracks=tracks,
+    )
+
+
+def read_note_progress_tracks(note_path: Path) -> tuple[dict[str, object], ...]:
+    metadata, _body = read_document(note_path)
+    return _progress_tracks_from_metadata(metadata)
+
+
+def normalize_progress_track(track: str | None) -> str:
+    normalized = " ".join(str(track or "").strip().split())
+    if not normalized:
+        return DEFAULT_TRACK
+    if normalized.casefold() == DEFAULT_TRACK:
+        return DEFAULT_TRACK
+    if len(normalized) > 80:
+        raise RuntimeError("progress track name must be 80 characters or fewer")
+    if any(character in normalized for character in "\r\n"):
+        raise RuntimeError("progress track name cannot contain line breaks")
+    return normalized
 
 
 def format_progress_summary(progress: dict[str, object] | None, *, prefix: str = "") -> str:
@@ -69,6 +99,27 @@ def format_progress_summary(progress: dict[str, object] | None, *, prefix: str =
     return f"{normalized_prefix} {measurement}".strip()
 
 
+def format_progress_tracks_summary(
+    tracks: tuple[dict[str, object], ...] | list[dict[str, object]],
+    *,
+    prefix: str = "",
+    limit: int = 2,
+) -> str:
+    summaries: list[str] = []
+    for progress in tracks[:limit]:
+        track = str(progress.get("track") or DEFAULT_TRACK)
+        label = "" if track == DEFAULT_TRACK else f"{track}:"
+        summary = format_progress_summary(progress, prefix=label)
+        if summary:
+            summaries.append(summary)
+    remaining = len(tracks) - len(summaries)
+    if remaining > 0:
+        summaries.append(f"+{remaining} more")
+    joined = " | ".join(summaries)
+    normalized_prefix = str(prefix or "").strip()
+    return f"{normalized_prefix} {joined}".strip()
+
+
 def set_note_progress(
     note_path: Path,
     current: Decimal,
@@ -76,19 +127,25 @@ def set_note_progress(
     *,
     unit: str | None = None,
     status: str | None = None,
+    track: str = DEFAULT_TRACK,
 ) -> ProgressResult:
     metadata, body = read_document(note_path)
-    previous = _progress_from_metadata(metadata)
+    normalized_track = normalize_progress_track(track)
+    previous = _find_track(_progress_tracks_from_metadata(metadata), normalized_track)
     timestamp = iso_now()
     normalized_unit = _select_text(unit, previous, "unit")
     normalized_status = _select_text(status, previous, "status")
-    _write_progress_metadata(
-        metadata,
+    progress = _build_progress(
         current=current,
         target=target,
         unit=normalized_unit,
         status=normalized_status,
         updated=timestamp,
+        track=normalized_track,
+    )
+    _write_progress(
+        metadata,
+        progress,
     )
     entry = _history_entry(
         timestamp,
@@ -97,27 +154,32 @@ def set_note_progress(
         target=target,
         unit=normalized_unit,
         status=normalized_status,
+        track=normalized_track,
     )
     write_document(note_path, metadata, _append_progress_history(body, entry))
-    return ProgressResult(note_path=note_path, progress=_progress_from_metadata(metadata), entry=entry)
+    tracks = _progress_tracks_from_metadata(metadata)
+    return ProgressResult(note_path, _find_track(tracks, normalized_track), entry, normalized_track, tracks)
 
 
-def adjust_note_progress(note_path: Path, amount: Decimal) -> ProgressResult:
+def adjust_note_progress(note_path: Path, amount: Decimal, *, track: str = DEFAULT_TRACK) -> ProgressResult:
     metadata, body = read_document(note_path)
-    current = _required_decimal(metadata, "progress_current")
-    target = _required_decimal(metadata, "progress_target")
+    normalized_track = normalize_progress_track(track)
+    previous = _required_track(metadata, normalized_track)
+    current = parse_progress_value(str(previous["current"]))
+    target = parse_progress_value(str(previous["target"]))
     updated_current = current + amount
     timestamp = iso_now()
-    unit = str(metadata.get("progress_unit") or "").strip()
-    status = str(metadata.get("progress_status") or "").strip()
-    _write_progress_metadata(
-        metadata,
+    unit = str(previous.get("unit") or "").strip()
+    status = str(previous.get("status") or "").strip()
+    progress = _build_progress(
         current=updated_current,
         target=target,
         unit=unit,
         status=status,
         updated=timestamp,
+        track=normalized_track,
     )
+    _write_progress(metadata, progress)
     entry = _history_entry(
         timestamp,
         "adjust",
@@ -126,28 +188,38 @@ def adjust_note_progress(note_path: Path, amount: Decimal) -> ProgressResult:
         unit=unit,
         status=status,
         amount=amount,
+        track=normalized_track,
     )
     write_document(note_path, metadata, _append_progress_history(body, entry))
-    return ProgressResult(note_path=note_path, progress=_progress_from_metadata(metadata), entry=entry)
+    tracks = _progress_tracks_from_metadata(metadata)
+    return ProgressResult(note_path, _find_track(tracks, normalized_track), entry, normalized_track, tracks)
 
 
-def set_note_progress_status(note_path: Path, status: str) -> ProgressResult:
+def set_note_progress_status(
+    note_path: Path,
+    status: str,
+    *,
+    track: str = DEFAULT_TRACK,
+) -> ProgressResult:
     normalized = str(status or "").strip()
     if not normalized:
         raise RuntimeError("progress status is empty")
     metadata, body = read_document(note_path)
-    current = _required_decimal(metadata, "progress_current")
-    target = _required_decimal(metadata, "progress_target")
+    normalized_track = normalize_progress_track(track)
+    previous = _required_track(metadata, normalized_track)
+    current = parse_progress_value(str(previous["current"]))
+    target = parse_progress_value(str(previous["target"]))
     timestamp = iso_now()
-    unit = str(metadata.get("progress_unit") or "").strip()
-    _write_progress_metadata(
-        metadata,
+    unit = str(previous.get("unit") or "").strip()
+    progress = _build_progress(
         current=current,
         target=target,
         unit=unit,
         status=normalized,
         updated=timestamp,
+        track=normalized_track,
     )
+    _write_progress(metadata, progress)
     entry = _history_entry(
         timestamp,
         "status",
@@ -155,23 +227,31 @@ def set_note_progress_status(note_path: Path, status: str) -> ProgressResult:
         target=target,
         unit=unit,
         status=normalized,
+        track=normalized_track,
     )
     write_document(note_path, metadata, _append_progress_history(body, entry))
-    return ProgressResult(note_path=note_path, progress=_progress_from_metadata(metadata), entry=entry)
+    tracks = _progress_tracks_from_metadata(metadata)
+    return ProgressResult(note_path, _find_track(tracks, normalized_track), entry, normalized_track, tracks)
 
 
-def clear_note_progress(note_path: Path) -> ProgressResult:
+def clear_note_progress(note_path: Path, *, track: str = DEFAULT_TRACK) -> ProgressResult:
     metadata, body = read_document(note_path)
-    previous = _progress_from_metadata(metadata)
+    normalized_track = normalize_progress_track(track)
+    previous = _find_track(_progress_tracks_from_metadata(metadata), normalized_track)
     if previous is None:
-        raise RuntimeError("progress is not set")
+        raise RuntimeError(f"progress track '{normalized_track}' is not set")
     timestamp = iso_now()
-    for key in PROGRESS_KEYS:
-        metadata.pop(key, None)
+    if normalized_track == DEFAULT_TRACK:
+        for key in PROGRESS_KEYS:
+            metadata.pop(key, None)
+    else:
+        named = [item for item in _named_tracks_from_metadata(metadata) if not _same_track(item, normalized_track)]
+        _write_named_tracks(metadata, named)
     metadata["updated"] = timestamp
-    entry = f"- [{timestamp}] cleared progress state"
+    entry = f"- [{timestamp}] [{normalized_track}] cleared progress state"
     write_document(note_path, metadata, _append_progress_history(body, entry))
-    return ProgressResult(note_path=note_path, progress=None, entry=entry)
+    tracks = _progress_tracks_from_metadata(metadata)
+    return ProgressResult(note_path, None, entry, normalized_track, tracks)
 
 
 def _progress_from_metadata(metadata: dict[str, Any]) -> dict[str, object] | None:
@@ -185,6 +265,7 @@ def _progress_from_metadata(metadata: dict[str, Any]) -> dict[str, object] | Non
     if target != 0:
         percentage = _percentage_text((current / target) * Decimal("100"))
     return {
+        "track": DEFAULT_TRACK,
         "current": _decimal_text(current),
         "target": _decimal_text(target),
         "unit": str(metadata.get("progress_unit") or "").strip(),
@@ -194,34 +275,117 @@ def _progress_from_metadata(metadata: dict[str, Any]) -> dict[str, object] | Non
     }
 
 
-def _write_progress_metadata(
-    metadata: dict[str, Any],
+def _build_progress(
     *,
     current: Decimal,
     target: Decimal,
     unit: str,
     status: str,
     updated: str,
-) -> None:
-    metadata["progress_current"] = _decimal_text(current)
-    metadata["progress_target"] = _decimal_text(target)
-    if unit:
-        metadata["progress_unit"] = unit
-    else:
-        metadata.pop("progress_unit", None)
-    if status:
-        metadata["progress_status"] = status
-    else:
-        metadata.pop("progress_status", None)
-    metadata["progress_updated"] = updated
-    metadata["updated"] = updated
+    track: str,
+) -> dict[str, object]:
+    percentage = None if target == 0 else _percentage_text((current / target) * Decimal("100"))
+    return {
+        "track": track,
+        "current": _decimal_text(current),
+        "target": _decimal_text(target),
+        "unit": unit,
+        "status": status,
+        "updated": updated,
+        "percentage": percentage,
+    }
 
 
-def _required_decimal(metadata: dict[str, Any], key: str) -> Decimal:
-    value = metadata.get(key)
-    if value in (None, ""):
-        raise RuntimeError("progress is not set; use progress set first")
-    return parse_progress_value(str(value))
+def _write_progress(metadata: dict[str, Any], progress: dict[str, object]) -> None:
+    track = str(progress["track"])
+    if track == DEFAULT_TRACK:
+        metadata["progress_current"] = progress["current"]
+        metadata["progress_target"] = progress["target"]
+        _write_optional(metadata, "progress_unit", progress.get("unit"))
+        _write_optional(metadata, "progress_status", progress.get("status"))
+        metadata["progress_updated"] = progress["updated"]
+    else:
+        named = [item for item in _named_tracks_from_metadata(metadata) if not _same_track(item, track)]
+        named.append(progress)
+        _write_named_tracks(metadata, named)
+    metadata["updated"] = progress["updated"]
+
+
+def _write_optional(metadata: dict[str, Any], key: str, value: object) -> None:
+    if str(value or "").strip():
+        metadata[key] = value
+    else:
+        metadata.pop(key, None)
+
+
+def _progress_tracks_from_metadata(metadata: dict[str, Any]) -> tuple[dict[str, object], ...]:
+    tracks: list[dict[str, object]] = []
+    default = _progress_from_metadata(metadata)
+    if default is not None:
+        tracks.append(default)
+    tracks.extend(_named_tracks_from_metadata(metadata))
+    return tuple(tracks)
+
+
+def _named_tracks_from_metadata(metadata: dict[str, Any]) -> list[dict[str, object]]:
+    raw = metadata.get(PROGRESS_TRACKS_KEY)
+    if raw in (None, ""):
+        return []
+    try:
+        decoded = json.loads(str(raw))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("invalid progress_tracks metadata") from exc
+    if not isinstance(decoded, list):
+        raise RuntimeError("progress_tracks metadata must be a list")
+    tracks: list[dict[str, object]] = []
+    for item in decoded:
+        if not isinstance(item, dict):
+            raise RuntimeError("progress_tracks entries must be objects")
+        track = normalize_progress_track(str(item.get("track") or ""))
+        if track.casefold() == DEFAULT_TRACK:
+            raise RuntimeError("named progress tracks cannot use the reserved name 'default'")
+        current = parse_progress_value(str(item.get("current") or ""))
+        target = parse_progress_value(str(item.get("target") or ""))
+        tracks.append(
+            _build_progress(
+                current=current,
+                target=target,
+                unit=str(item.get("unit") or "").strip(),
+                status=str(item.get("status") or "").strip(),
+                updated=str(item.get("updated") or "").strip(),
+                track=track,
+            )
+        )
+    return tracks
+
+
+def _write_named_tracks(metadata: dict[str, Any], tracks: list[dict[str, object]]) -> None:
+    if not tracks:
+        metadata.pop(PROGRESS_TRACKS_KEY, None)
+        return
+    stored = [
+        {key: value for key, value in track.items() if key != "percentage" and value not in ("", None)}
+        for track in tracks
+    ]
+    metadata[PROGRESS_TRACKS_KEY] = json.dumps(stored, ensure_ascii=True, separators=(",", ":"))
+
+
+def _same_track(progress: dict[str, object], track: str) -> bool:
+    return str(progress.get("track") or "").casefold() == track.casefold()
+
+
+def _find_track(
+    tracks: tuple[dict[str, object], ...],
+    track: str,
+) -> dict[str, object] | None:
+    return next((item for item in tracks if _same_track(item, track)), None)
+
+
+def _required_track(metadata: dict[str, Any], track: str) -> dict[str, object]:
+    progress = _find_track(_progress_tracks_from_metadata(metadata), track)
+    if progress is None:
+        raise RuntimeError(f"progress track '{track}' is not set; use progress set first")
+    return progress
 
 
 def _select_text(value: str | None, previous: dict[str, object] | None, key: str) -> str:
@@ -241,6 +405,7 @@ def _history_entry(
     unit: str,
     status: str,
     amount: Decimal | None = None,
+    track: str = DEFAULT_TRACK,
 ) -> str:
     measurement = f"{_decimal_text(current)}/{_decimal_text(target)}"
     if unit:
@@ -251,7 +416,8 @@ def _history_entry(
         details.append(f"change {sign}{_decimal_text(amount)}")
     if status:
         details.append(f"status {status}")
-    return f"- [{timestamp}] {action}: {'; '.join(details)}"
+    track_label = "" if track == DEFAULT_TRACK else f"[{track}] "
+    return f"- [{timestamp}] {track_label}{action}: {'; '.join(details)}"
 
 
 def _append_progress_history(body: str, entry: str) -> str:
