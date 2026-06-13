@@ -396,6 +396,31 @@ class JotService:
             return []
         return list_note_resources(path).resources
 
+    def progress_track_names(
+        self,
+        kind: str,
+        *,
+        task_ref: str = "",
+        project_name: str = "",
+    ) -> list[str]:
+        if kind in {"task", "chain"}:
+            task = self.taskwarrior.resolve_task(task_ref)
+            note = (
+                find_task_note(self.config, task)
+                if kind == "task"
+                else find_chain_note(self.config, task)
+            )
+        elif kind == "project":
+            note = find_project_note(self.config, project_name)
+        else:
+            raise RuntimeError(f"unknown progress target kind: {kind}")
+        if note is None or not note.exists():
+            return []
+        return [
+            str(item.get("track") or "default")
+            for item in read_note_progress(note).tracks
+        ]
+
     def update_progress(
         self,
         kind: str,

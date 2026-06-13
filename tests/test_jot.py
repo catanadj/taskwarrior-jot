@@ -29,6 +29,7 @@ from jot_core.progress import (
     set_note_progress,
 )
 from jot_core.services import JotService
+from jot_tui.app import NEW_PROGRESS_TRACK, initial_progress_track, resolve_progress_track
 from jot_tui.palette import PaletteEntry, filter_palette_entries
 
 
@@ -203,6 +204,24 @@ class PaletteTests(unittest.TestCase):
         ]
         filtered = filter_palette_entries(entries, "project")
         self.assertEqual([item.id for item in filtered], ["browse-projects"])
+
+    def test_progress_track_selector_infers_only_safe_choices(self) -> None:
+        self.assertEqual(initial_progress_track(["default", "chest"]), "default")
+        self.assertEqual(initial_progress_track(["chest"]), "chest")
+        self.assertIsNone(initial_progress_track(["chest", "legs"]))
+        self.assertIsNone(initial_progress_track([]))
+
+    def test_new_progress_track_requires_set_and_a_name(self) -> None:
+        self.assertEqual(
+            resolve_progress_track(NEW_PROGRESS_TRACK, " upper body ", "set"),
+            "upper body",
+        )
+        with self.assertRaisesRegex(RuntimeError, "only be used with the set"):
+            resolve_progress_track(NEW_PROGRESS_TRACK, "chest", "add")
+        with self.assertRaisesRegex(RuntimeError, "name is required"):
+            resolve_progress_track(NEW_PROGRESS_TRACK, "", "set")
+        with self.assertRaisesRegex(RuntimeError, "Select a progress track"):
+            resolve_progress_track(None, "", "add")
 
 
 class CommandHelpTests(unittest.TestCase):
@@ -443,6 +462,84 @@ class ServiceProgressRowTests(unittest.TestCase):
         )
         project_rows = service.project_tree_rows()
         self.assertEqual(project_rows[0]["progress"], "2/10 books (20%)")
+
+    def test_progress_track_names_reads_each_note_scope(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Workout",
+            "project": "fitness",
+            "tags": [],
+            "chainID": "a4bf5egh",
+        }
+        task_path = self.config.tasks_dir / "2d6d7d7d--workout.md"
+        chain_path = self.config.chains_dir / "a4bf5egh--workout.md"
+        project_path = self.config.projects_dir / "fitness" / "index.md"
+        named_tracks = (
+            '[{"track":"chest","current":"3","target":"10"},'
+            '{"track":"legs","current":"4","target":"10"}]'
+        )
+        write_document(
+            task_path,
+            OrderedDict(
+                [
+                    ("kind", "task-note"),
+                    ("task_short_uuid", "2d6d7d7d"),
+                    ("progress_tracks", named_tracks),
+                ]
+            ),
+            "# Workout",
+        )
+        write_document(
+            chain_path,
+            OrderedDict(
+                [
+                    ("kind", "chain-note"),
+                    ("chain_id", "a4bf5egh"),
+                    ("progress_current", "2"),
+                    ("progress_target", "5"),
+                ]
+            ),
+            "# Workout chain",
+        )
+        write_document(
+            project_path,
+            OrderedDict(
+                [
+                    ("kind", "project-note"),
+                    ("project", "fitness"),
+                    ("progress_tracks", named_tracks),
+                ]
+            ),
+            "# Fitness",
+        )
+
+        class FakeTaskwarrior:
+            def resolve_task(self, task_ref: str):
+                from jot_core.models import ResolvedTask, TaskRef
+
+                return ResolvedTask(
+                    ref=TaskRef(raw=task_ref),
+                    task_uuid=str(task["uuid"]),
+                    task_short_uuid="2d6d7d7d",
+                    description="Workout",
+                    project="fitness",
+                    tags=[],
+                    task=task,
+                )
+
+        service = JotService(config=self.config, taskwarrior=FakeTaskwarrior())  # type: ignore[arg-type]
+        self.assertEqual(
+            service.progress_track_names("task", task_ref="2d6d7d7d"),
+            ["chest", "legs"],
+        )
+        self.assertEqual(
+            service.progress_track_names("chain", task_ref="2d6d7d7d"),
+            ["default"],
+        )
+        self.assertEqual(
+            service.progress_track_names("project", project_name="fitness"),
+            ["chest", "legs"],
+        )
 
 
 class CliIntegrationTests(JotCliTestCase):

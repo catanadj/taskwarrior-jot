@@ -10,12 +10,42 @@ from jot_core.notes import preview_trash_path
 from jot_tui.palette import PaletteEntry, filter_palette_entries
 
 
+NEW_PROGRESS_TRACK = "__new_progress_track__"
+
+
+def initial_progress_track(tracks: list[str]) -> str | None:
+    normalized = [str(track or "").strip() for track in tracks if str(track or "").strip()]
+    if "default" in normalized:
+        return "default"
+    if len(normalized) == 1:
+        return normalized[0]
+    return None
+
+
+def resolve_progress_track(
+    selected: str | None,
+    new_track: str,
+    operation: str,
+) -> str:
+    if selected == NEW_PROGRESS_TRACK:
+        normalized = " ".join(str(new_track or "").strip().split())
+        if operation != "set":
+            raise RuntimeError("New track can only be used with the set operation")
+        if not normalized:
+            raise RuntimeError("New track name is required")
+        return normalized
+    normalized = str(selected or "").strip()
+    if not normalized:
+        raise RuntimeError("Select a progress track")
+    return normalized
+
+
 def run_tui(service: JotService) -> int:
     try:
         from textual.app import App, ComposeResult
         from textual.containers import Horizontal, Vertical
         from textual.screen import ModalScreen
-        from textual.widgets import Button, Checkbox, DataTable, Footer, Header, Input, Label, Static
+        from textual.widgets import Button, Checkbox, DataTable, Footer, Header, Input, Label, Select, Static
         from textual.widgets import TabbedContent, TabPane
     except Exception as exc:  # pragma: no cover
         raise RuntimeError(
@@ -31,7 +61,7 @@ def run_tui(service: JotService) -> int:
             padding: 1 2;
             background: $surface;
         }
-        #dialog Input { margin: 1 0; }
+        #dialog Input, #dialog Select { margin: 1 0; }
         #buttons { height: auto; }
         """
 
@@ -184,10 +214,17 @@ def run_tui(service: JotService) -> int:
 
         BINDINGS = [("escape", "cancel", "Cancel")]
 
-        def __init__(self, *, scopes: list[str], initial_scope: str) -> None:
+        def __init__(
+            self,
+            *,
+            scopes: list[str],
+            initial_scope: str,
+            tracks_by_scope: dict[str, list[str]],
+        ) -> None:
             super().__init__()
             self.scopes = scopes
             self.initial_scope = initial_scope
+            self.tracks_by_scope = tracks_by_scope
 
         def compose(self) -> ComposeResult:
             with Vertical(id="dialog"):
@@ -198,8 +235,18 @@ def run_tui(service: JotService) -> int:
                     f"Available scopes: {', '.join(self.scopes)}",
                     id="progress-help",
                 )
-                yield Input(value=self.initial_scope, placeholder="Scope", id="progress-scope")
-                yield Input(value="default", placeholder="Track name", id="progress-track")
+                yield Select(
+                    [(scope.capitalize(), scope) for scope in self.scopes],
+                    value=self.initial_scope,
+                    allow_blank=False,
+                    id="progress-scope",
+                )
+                yield Select([], prompt="Select track", id="progress-track")
+                yield Input(
+                    placeholder="New track name (used with set)",
+                    id="progress-new-track",
+                    disabled=True,
+                )
                 yield Input(placeholder="Operation", id="progress-operation")
                 yield Input(
                     placeholder="Value: 120/350 for set, 20 for add/subtract, text for status",
@@ -212,6 +259,9 @@ def run_tui(service: JotService) -> int:
                     yield Button("Cancel", id="cancel-btn")
                     yield Button("Apply", id="apply-btn", variant="primary")
 
+        def on_mount(self) -> None:
+            self._load_track_options(self.initial_scope)
+
         def action_cancel(self) -> None:
             self.dismiss(None)
 
@@ -223,8 +273,7 @@ def run_tui(service: JotService) -> int:
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
             order = {
-                "progress-scope": "#progress-track",
-                "progress-track": "#progress-operation",
+                "progress-new-track": "#progress-operation",
                 "progress-operation": "#progress-value",
                 "progress-value": "#progress-unit",
                 "progress-unit": "#progress-status",
@@ -235,9 +284,43 @@ def run_tui(service: JotService) -> int:
                 return
             self._submit()
 
+        def on_select_changed(self, event: Select.Changed) -> None:
+            if event.select.id == "progress-scope":
+                self._load_track_options(str(event.value))
+                return
+            if event.select.id == "progress-track":
+                new_track = self.query_one("#progress-new-track", Input)
+                is_new = event.value == NEW_PROGRESS_TRACK
+                new_track.disabled = not is_new
+                if is_new:
+                    new_track.focus()
+
+        def _load_track_options(self, scope: str) -> None:
+            tracks = self.tracks_by_scope.get(scope, [])
+            selector = self.query_one("#progress-track", Select)
+            new_track = self.query_one("#progress-new-track", Input)
+            new_track.value = ""
+            selector.set_options(
+                [(track, track) for track in tracks]
+                + [("New track...", NEW_PROGRESS_TRACK)]
+            )
+            initial = initial_progress_track(tracks)
+            if initial is not None:
+                selector.value = initial
+                new_track.disabled = True
+            elif not tracks:
+                selector.value = NEW_PROGRESS_TRACK
+                new_track.disabled = False
+            else:
+                selector.value = Select.BLANK
+                new_track.disabled = True
+
         def _submit(self) -> None:
-            scope = self.query_one("#progress-scope", Input).value.strip().lower()
-            track = self.query_one("#progress-track", Input).value.strip()
+            scope_value = self.query_one("#progress-scope", Select).value
+            scope = str(scope_value).strip().lower()
+            track_value = self.query_one("#progress-track", Select).value
+            selected_track = None if track_value is Select.BLANK else str(track_value)
+            new_track = self.query_one("#progress-new-track", Input).value
             operation = self.query_one("#progress-operation", Input).value.strip().lower()
             value = self.query_one("#progress-value", Input).value.strip()
             unit = self.query_one("#progress-unit", Input).value.strip()
@@ -246,11 +329,13 @@ def run_tui(service: JotService) -> int:
             if scope not in self.scopes:
                 self.app.notify(f"Scope must be one of: {', '.join(self.scopes)}", severity="warning")
                 return
-            if not track:
-                self.app.notify("Track name is required", severity="warning")
-                return
             if operation not in {"set", "add", "subtract", "status", "clear"}:
                 self.app.notify("Operation must be set, add, subtract, status, or clear", severity="warning")
+                return
+            try:
+                track = resolve_progress_track(selected_track, new_track, operation)
+            except RuntimeError as exc:
+                self.app.notify(str(exc), severity="warning")
                 return
             if operation != "clear" and not value:
                 self.app.notify("Value is required for this operation", severity="warning")
@@ -726,9 +811,29 @@ def run_tui(service: JotService) -> int:
             if not targets:
                 self.notify("Select a task or project context first", severity="warning")
                 return
+            asyncio.create_task(self._open_progress_modal_async(targets))
+
+        async def _open_progress_modal_async(self, targets: list[dict[str, Any]]) -> None:
+            tracks_by_scope: dict[str, list[str]] = {}
+            try:
+                for target in targets:
+                    kind = str(target.get("kind") or "")
+                    tracks_by_scope[kind] = await asyncio.to_thread(
+                        self.svc.progress_track_names,
+                        kind,
+                        task_ref=str(target.get("task_ref") or ""),
+                        project_name=str(target.get("project") or ""),
+                    )
+            except Exception as exc:
+                self.notify(f"Could not load progress tracks: {exc}", severity="error")
+                return
             scopes = [str(item["kind"]) for item in targets]
             self.push_screen(
-                ProgressModal(scopes=scopes, initial_scope=scopes[0]),
+                ProgressModal(
+                    scopes=scopes,
+                    initial_scope=scopes[0],
+                    tracks_by_scope=tracks_by_scope,
+                ),
                 lambda payload: self._on_progress_payload(targets, payload),
             )
 
