@@ -672,6 +672,15 @@ def _run_tui(ctx) -> int:
     return run_tui(service)
 
 
+def _open_note_in_editor(ctx, path) -> None:
+    open_in_editor(
+        path,
+        ctx.config.editor_command,
+        show_diff=ctx.config.editor_show_diff_on_save,
+        color_mode=ctx.config.editor_diff_color,
+    )
+
+
 def _run_trash_list(ctx) -> CommandResult:
     return CommandResult(command="trash-list", payload={"items": list_trash(ctx.config)})
 
@@ -684,7 +693,7 @@ def _run_auto_note(ctx, task_ref: str) -> CommandResult:
     task = ctx.taskwarrior.resolve_task(task_ref)
     if chain_id_for_task(task.task):
         note = ensure_chain_note(ctx.config, task)
-        open_in_editor(note.note_path, ctx.config.editor_command)
+        _open_note_in_editor(ctx, note.note_path)
         finalize_chain_note_edit(ctx.config, task, note)
         return CommandResult(
             command="chain",
@@ -695,7 +704,7 @@ def _run_auto_note(ctx, task_ref: str) -> CommandResult:
             },
         )
     note = ensure_task_note(ctx.config, task)
-    open_in_editor(note.note_path, ctx.config.editor_command)
+    _open_note_in_editor(ctx, note.note_path)
     finalize_task_note_edit(ctx.config, task, note)
     return CommandResult(
         command="note",
@@ -710,7 +719,7 @@ def _run_auto_note(ctx, task_ref: str) -> CommandResult:
 def _run_note(ctx, task_ref: str) -> CommandResult:
     task = ctx.taskwarrior.resolve_task(task_ref)
     note = ensure_task_note(ctx.config, task)
-    open_in_editor(note.note_path, ctx.config.editor_command)
+    _open_note_in_editor(ctx, note.note_path)
     finalize_task_note_edit(ctx.config, task, note)
     return CommandResult(
         command="note",
@@ -813,7 +822,7 @@ def _run_report(ctx, args) -> CommandResult:
 def _run_chain(ctx, task_ref: str) -> CommandResult:
     task = ctx.taskwarrior.resolve_task(task_ref)
     note = ensure_chain_note(ctx.config, task)
-    open_in_editor(note.note_path, ctx.config.editor_command)
+    _open_note_in_editor(ctx, note.note_path)
     finalize_chain_note_edit(ctx.config, task, note)
     return CommandResult(
         command="chain",
@@ -827,7 +836,7 @@ def _run_chain(ctx, task_ref: str) -> CommandResult:
 
 def _run_project(ctx, project_name: str) -> CommandResult:
     note = ensure_project_note(ctx.config, project_name)
-    open_in_editor(note.note_path, ctx.config.editor_command)
+    _open_note_in_editor(ctx, note.note_path)
     finalize_project_note_edit(ctx.config, project_name, note)
     return CommandResult(
         command="project",

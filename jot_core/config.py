@@ -32,6 +32,19 @@ def _read_config_file(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _config_bool(value: object, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value in (None, ""):
+        return default
+    text = str(value).strip().casefold()
+    if text in {"1", "yes", "true", "on"}:
+        return True
+    if text in {"0", "no", "false", "off"}:
+        return False
+    return default
+
+
 def _taskdata_root() -> Path:
     taskdata = str(os.environ.get("TASKDATA") or "").strip()
     if taskdata:
@@ -73,6 +86,8 @@ def load_config() -> AppConfig:
     templates_dir = _expand_path(paths_cfg.get("templates"), root_dir / "templates")
 
     editor_command = str(editor_cfg.get("command") or os.environ.get("EDITOR") or "vim").strip()
+    editor_show_diff_on_save = _config_bool(editor_cfg.get("show_diff_on_save"), True)
+    editor_diff_color = str(editor_cfg.get("diff_color") or "auto").strip() or "auto"
     color_mode = str(display_cfg.get("color") or "auto").strip() or "auto"
     default_format = str(display_cfg.get("default_format") or "text").strip() or "text"
     nautical_enabled = bool(nautical_cfg.get("enabled", True))
@@ -86,6 +101,8 @@ def load_config() -> AppConfig:
         projects_dir=projects_dir,
         templates_dir=templates_dir,
         editor_command=editor_command,
+        editor_show_diff_on_save=editor_show_diff_on_save,
+        editor_diff_color=editor_diff_color,
         color_mode=color_mode,
         default_format=default_format,
         nautical_enabled=nautical_enabled,

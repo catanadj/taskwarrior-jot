@@ -53,7 +53,7 @@ def _text_from_editor(editor_command: str, task_short_uuid: str, description: st
     ) as handle:
         path = Path(handle.name)
     try:
-        open_in_editor(path, editor_command)
+        open_in_editor(path, editor_command, show_diff=False)
         text = path.read_text(encoding="utf-8").strip()
         if not text:
             raise RuntimeError("event text is empty")

@@ -248,20 +248,28 @@ class JotService:
     def open_task_note_in_editor(self, task_ref: str) -> str:
         task = self.taskwarrior.resolve_task(task_ref)
         note = ensure_task_note(self.config, task)
-        open_in_editor(note.note_path, self.config.editor_command)
+        self._open_note_in_editor(note.note_path)
         finalize_task_note_edit(self.config, task, note)
         return str(note.note_path)
 
     def open_chain_note_in_editor(self, task_ref: str) -> str:
         task = self.taskwarrior.resolve_task(task_ref)
         note = ensure_chain_note(self.config, task)
-        open_in_editor(note.note_path, self.config.editor_command)
+        self._open_note_in_editor(note.note_path)
         return str(note.note_path)
 
     def open_project_note_in_editor(self, project_name: str) -> str:
         note = ensure_project_note(self.config, project_name)
-        open_in_editor(note.note_path, self.config.editor_command)
+        self._open_note_in_editor(note.note_path)
         return str(note.note_path)
+
+    def _open_note_in_editor(self, path) -> None:
+        open_in_editor(
+            path,
+            self.config.editor_command,
+            show_diff=self.config.editor_show_diff_on_save,
+            color_mode=self.config.editor_diff_color,
+        )
 
     def task_ref_for_chain_id(self, chain_id: str) -> str:
         task = self.taskwarrior.resolve_first_for_filter(f"chainID:{chain_id}")

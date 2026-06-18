@@ -128,6 +128,8 @@ templates = "$CONFIG_DIR/templates"
 
 [editor]
 command = ""
+show_diff_on_save = true
+diff_color = "auto"
 
 [display]
 color = "auto"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import difflib
+import os
 import shlex
 import shutil
 import subprocess
@@ -24,7 +25,13 @@ def resolve_editor_executable(editor_command: str) -> str | None:
     return shutil.which(executable)
 
 
-def open_in_editor(path: Path, editor_command: str) -> str:
+def open_in_editor(
+    path: Path,
+    editor_command: str,
+    *,
+    show_diff: bool = True,
+    color_mode: str = "auto",
+) -> str:
     before = path.read_text(encoding="utf-8") if path.exists() else ""
     cmd = split_editor_command(editor_command)
     cmd.append(str(path))
@@ -33,10 +40,8 @@ def open_in_editor(path: Path, editor_command: str) -> str:
         raise RuntimeError(f"editor exited with code {completed.returncode}")
     after = path.read_text(encoding="utf-8") if path.exists() else ""
     diff = note_diff(before, after, path=path)
-    if diff:
-        sys.stderr.write(diff)
-        if not diff.endswith("\n"):
-            sys.stderr.write("\n")
+    if diff and show_diff:
+        sys.stderr.write(colorize_diff(diff, color_mode=color_mode))
     return diff
 
 
@@ -51,3 +56,34 @@ def note_diff(before: str, after: str, *, path: Path) -> str:
         lineterm="",
     )
     return "\n".join(diff) + "\n"
+
+
+def colorize_diff(diff: str, *, color_mode: str = "auto") -> str:
+    if not _use_diff_color(color_mode):
+        return diff
+    styled_lines: list[str] = []
+    for line in diff.splitlines(keepends=True):
+        content = line[:-1] if line.endswith("\n") else line
+        newline = "\n" if line.endswith("\n") else ""
+        if content.startswith("--- ") or content.startswith("+++ "):
+            styled_lines.append(f"\033[1;36m{content}\033[0m{newline}")
+        elif content.startswith("@@"):
+            styled_lines.append(f"\033[36m{content}\033[0m{newline}")
+        elif content.startswith("+"):
+            styled_lines.append(f"\033[32m{content}\033[0m{newline}")
+        elif content.startswith("-"):
+            styled_lines.append(f"\033[31m{content}\033[0m{newline}")
+        else:
+            styled_lines.append(line)
+    return "".join(styled_lines)
+
+
+def _use_diff_color(color_mode: str) -> bool:
+    mode = str(color_mode or "auto").strip().casefold()
+    if mode in {"never", "false", "off", "no"}:
+        return False
+    if "NO_COLOR" in os.environ:
+        return False
+    if mode in {"always", "true", "on", "yes"}:
+        return True
+    return sys.stderr.isatty()

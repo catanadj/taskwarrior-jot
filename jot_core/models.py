@@ -31,6 +31,8 @@ class AppConfig:
     projects_dir: Path
     templates_dir: Path
     editor_command: str
+    editor_show_diff_on_save: bool
+    editor_diff_color: str
     color_mode: str
     default_format: str
     nautical_enabled: bool
