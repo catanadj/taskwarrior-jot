@@ -564,6 +564,51 @@ class ServiceProgressRowTests(unittest.TestCase):
             ["chest", "legs"],
         )
 
+    def test_tui_chain_and_project_editor_paths_finalize_index_and_ops(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Workout",
+            "project": "fitness",
+            "tags": [],
+            "chainID": "a4bf5egh",
+        }
+
+        class FakeTaskwarrior:
+            def resolve_task(self, task_ref: str):
+                from jot_core.models import ResolvedTask, TaskRef
+
+                return ResolvedTask(
+                    ref=TaskRef(raw=task_ref),
+                    task_uuid=str(task["uuid"]),
+                    task_short_uuid="2d6d7d7d",
+                    description="Workout",
+                    project="fitness",
+                    tags=[],
+                    task=task,
+                )
+
+        service = JotService(config=self.config, taskwarrior=FakeTaskwarrior())  # type: ignore[arg-type]
+
+        chain_path = Path(service.open_chain_note_in_editor("2d6d7d7d"))
+        project_path = Path(service.open_project_note_in_editor("fitness"))
+
+        index_data = json.loads((self.config.root_dir / "index.json").read_text(encoding="utf-8"))
+        self.assertEqual(index_data["chains"]["a4bf5egh"]["note_path"], str(chain_path.relative_to(self.config.root_dir)))
+        self.assertEqual(index_data["projects"]["fitness"]["note_path"], str(project_path.relative_to(self.config.root_dir)))
+        chain_metadata, _chain_body = read_document(chain_path)
+        project_metadata, _project_body = read_document(project_path)
+        self.assertIn("updated", chain_metadata)
+        self.assertIn("updated", project_metadata)
+
+        ops = [
+            json.loads(line)
+            for line in (self.config.root_dir / "ops.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        self.assertEqual([item["op"] for item in ops], ["chain_note_edit", "project_note_edit"])
+        self.assertEqual(ops[0]["chain_id"], "a4bf5egh")
+        self.assertEqual(ops[1]["project"], "fitness")
+
 
 class CliIntegrationTests(JotCliTestCase):
     def test_no_arguments_prints_command_overview(self) -> None:

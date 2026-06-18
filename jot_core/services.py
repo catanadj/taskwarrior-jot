@@ -29,7 +29,6 @@ from .progress import (
 )
 from .resources import open_resource_target
 from .search import search_all
-from .storage import add_to_task_heading_storage, finalize_task_note_edit
 from .storage import (
     add_to_chain_heading_storage,
     add_to_project_heading_storage,
@@ -42,6 +41,10 @@ from .storage import (
     detach_chain_resource_storage,
     detach_project_resource_storage,
     detach_task_resource_storage,
+    finalize_chain_note_edit,
+    finalize_project_note_edit,
+    finalize_task_note_edit,
+    add_to_task_heading_storage,
     mutate_project_progress_storage,
     mutate_task_progress_storage,
 )
@@ -256,11 +259,13 @@ class JotService:
         task = self.taskwarrior.resolve_task(task_ref)
         note = ensure_chain_note(self.config, task)
         self._open_note_in_editor(note.note_path)
+        finalize_chain_note_edit(self.config, task, note)
         return str(note.note_path)
 
     def open_project_note_in_editor(self, project_name: str) -> str:
         note = ensure_project_note(self.config, project_name)
         self._open_note_in_editor(note.note_path)
+        finalize_project_note_edit(self.config, project_name, note)
         return str(note.note_path)
 
     def _open_note_in_editor(self, path) -> None:
