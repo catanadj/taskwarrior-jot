@@ -467,11 +467,14 @@ def _emit_progress(payload: dict[str, Any]) -> None:
         for item in tracks:
             if isinstance(item, dict):
                 _emit_progress_track(item, visual=True)
+        _emit_progress_analysis(payload)
         return
     if not isinstance(progress, dict):
         sys.stdout.write("\n(not set)\n")
         return
     _emit_progress_track(progress, visual=operation == "show")
+    if operation == "show":
+        _emit_progress_analysis(payload, track=selected_track or str(progress.get("track") or "default"))
     entry = str(payload.get("entry") or "").strip()
     if entry:
         _emit_field("history", entry, indent=0)
@@ -500,6 +503,7 @@ def _emit_progress_items(payload: dict[str, Any], items: list[object]) -> None:
             progress = item.get("progress")
             if isinstance(progress, dict):
                 _emit_progress_track(progress, visual=True)
+                _emit_progress_analysis(item, track=selected_track)
             else:
                 sys.stdout.write(f"  track '{selected_track}' is not set\n")
             continue
@@ -509,6 +513,7 @@ def _emit_progress_items(payload: dict[str, Any], items: list[object]) -> None:
         for progress in tracks:
             if isinstance(progress, dict):
                 _emit_progress_track(progress, visual=True)
+        _emit_progress_analysis(item)
 
 
 def _emit_progress_track(progress: dict[str, Any], *, visual: bool = False) -> None:
@@ -552,6 +557,64 @@ def _emit_progress_visual(progress: dict[str, Any]) -> None:
     if updated:
         sys.stdout.write(f"  updated {updated}\n")
     sys.stdout.write("\n")
+
+
+def _emit_progress_analysis(payload: dict[str, Any], *, track: str | None = None) -> None:
+    trends = payload.get("trends") or []
+    history = payload.get("history") or []
+    selected_track = str(track or "").strip()
+    if isinstance(trends, list):
+        filtered = [
+            item for item in trends
+            if isinstance(item, dict)
+            and (not selected_track or str(item.get("track") or "default").casefold() == selected_track.casefold())
+        ]
+        if filtered:
+            sys.stdout.write("  Trends\n")
+            for item in filtered:
+                _emit_progress_trend(item)
+    if isinstance(history, list) and history:
+        filtered_history = [
+            item for item in history
+            if isinstance(item, dict)
+            and (not selected_track or str(item.get("track") or "default").casefold() == selected_track.casefold())
+        ]
+        if filtered_history:
+            sys.stdout.write("  Recent history\n")
+            for item in filtered_history:
+                _emit_progress_history_entry(item)
+            sys.stdout.write("\n")
+
+
+def _emit_progress_trend(trend: dict[str, Any]) -> None:
+    track = str(trend.get("track") or "default")
+    unit = str(trend.get("unit") or "").strip()
+    delta = str(trend.get("delta") or "").strip()
+    remaining = str(trend.get("remaining") or "").strip()
+    average = str(trend.get("average_change") or "").strip()
+    parts = [f"{track}: {trend.get('updates', 0)} updates"]
+    if delta:
+        parts.append(f"delta {delta}{(' ' + unit) if unit else ''}")
+    if remaining:
+        parts.append(f"remaining {remaining}{(' ' + unit) if unit else ''}")
+    if average:
+        parts.append(f"avg/update {average}{(' ' + unit) if unit else ''}")
+    last_change = str(trend.get("last_change") or "").strip()
+    if last_change:
+        parts.append(f"last {last_change}{(' ' + unit) if unit else ''}")
+    sys.stdout.write(f"    {' · '.join(parts)}\n")
+
+
+def _emit_progress_history_entry(entry: dict[str, Any]) -> None:
+    timestamp = str(entry.get("timestamp") or "").strip()
+    track = str(entry.get("track") or "default")
+    action = str(entry.get("action") or "unknown")
+    summary = str(entry.get("summary") or "").strip()
+    prefix = f"{timestamp}  {track}  {action}"
+    if summary:
+        sys.stdout.write(f"    {prefix}: {summary}\n")
+    else:
+        sys.stdout.write(f"    {prefix}\n")
 
 
 def _progress_bar(percentage: object, width: int | None = None) -> str:

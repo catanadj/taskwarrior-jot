@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -19,6 +20,8 @@ PROGRESS_KEYS = (
 )
 PROGRESS_TRACKS_KEY = "progress_tracks"
 DEFAULT_TRACK = "default"
+HISTORY_RE = re.compile(r"^- \[(?P<timestamp>[^\]]+)\] (?:(?:\[(?P<track>[^\]]+)\] )?)(?P<details>.+)$")
+ACTION_RE = re.compile(r"^(?P<action>[a-zA-Z_-]+): (?P<details>.+)$")
 
 
 @dataclass(slots=True)
@@ -66,6 +69,71 @@ def read_note_progress(note_path: Path, track: str = DEFAULT_TRACK) -> ProgressR
 def read_note_progress_tracks(note_path: Path) -> tuple[dict[str, object], ...]:
     metadata, _body = read_document(note_path)
     return _progress_tracks_from_metadata(metadata)
+
+
+def read_note_progress_analysis(
+    note_path: Path,
+    *,
+    track: str | None = None,
+    history_limit: int = 5,
+) -> dict[str, object]:
+    progress = read_note_progress(note_path, track or DEFAULT_TRACK)
+    selected_track = normalize_progress_track(track) if track else None
+    history = read_note_progress_history(note_path, track=selected_track)
+    trends = build_progress_trends(history, tracks=progress.tracks, track=selected_track)
+    if history_limit >= 0:
+        history = history[-history_limit:] if history_limit else []
+    return {
+        "history": history,
+        "trends": trends,
+    }
+
+
+def read_note_progress_history(note_path: Path, *, track: str | None = None) -> list[dict[str, object]]:
+    _metadata, body = read_document(note_path)
+    selected_track = normalize_progress_track(track) if track else None
+    entries: list[dict[str, object]] = []
+    for line in _progress_history_lines(body):
+        entry = _parse_progress_history_line(line)
+        if entry is None:
+            continue
+        if selected_track is not None and not _same_track(entry, selected_track):
+            continue
+        entries.append(entry)
+    return entries
+
+
+def build_progress_trends(
+    history: list[dict[str, object]],
+    *,
+    tracks: tuple[dict[str, object], ...] | list[dict[str, object]] = (),
+    track: str | None = None,
+) -> list[dict[str, object]]:
+    selected_track = normalize_progress_track(track) if track else None
+    ordered_tracks: list[str] = []
+    for item in tracks:
+        if not isinstance(item, dict):
+            continue
+        name = normalize_progress_track(str(item.get("track") or DEFAULT_TRACK))
+        if selected_track is None or name.casefold() == selected_track.casefold():
+            ordered_tracks.append(name)
+    for entry in history:
+        name = normalize_progress_track(str(entry.get("track") or DEFAULT_TRACK))
+        if selected_track is not None and name.casefold() != selected_track.casefold():
+            continue
+        ordered_tracks.append(name)
+
+    trends: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for name in ordered_tracks:
+        key = name.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        trend = _build_progress_trend(name, [item for item in history if _same_track(item, name)], tracks)
+        if trend is not None:
+            trends.append(trend)
+    return trends
 
 
 def normalize_progress_track(track: str | None) -> str:
@@ -467,6 +535,150 @@ def _progress_heading_index(lines: list[str]) -> int | None:
         if line.strip().lower() == "## progress":
             return index
     return None
+
+
+def _progress_history_lines(body: str) -> list[str]:
+    lines = str(body or "").splitlines()
+    heading_index = _progress_heading_index(lines)
+    if heading_index is None:
+        return []
+    next_index = len(lines)
+    for index in range(heading_index + 1, len(lines)):
+        stripped = lines[index].lstrip()
+        if stripped.startswith("#"):
+            level = len(stripped) - len(stripped.lstrip("#"))
+            if level <= 2 and stripped[level : level + 1] == " ":
+                next_index = index
+                break
+    return [line.strip() for line in lines[heading_index + 1 : next_index] if line.strip().startswith("- [")]
+
+
+def _parse_progress_history_line(line: str) -> dict[str, object] | None:
+    match = HISTORY_RE.match(line.strip())
+    if match is None:
+        return None
+    timestamp = match.group("timestamp").strip()
+    track = normalize_progress_track(match.group("track"))
+    details = match.group("details").strip()
+    if details == "cleared progress state":
+        return {
+            "timestamp": timestamp,
+            "track": track,
+            "action": "clear",
+            "summary": details,
+        }
+    action_match = ACTION_RE.match(details)
+    if action_match is None:
+        return {
+            "timestamp": timestamp,
+            "track": track,
+            "action": "unknown",
+            "summary": details,
+        }
+    action = action_match.group("action").strip().lower()
+    parts = [part.strip() for part in action_match.group("details").split(";") if part.strip()]
+    entry: dict[str, object] = {
+        "timestamp": timestamp,
+        "track": track,
+        "action": action,
+        "summary": action_match.group("details").strip(),
+    }
+    if parts:
+        entry.update(_parse_progress_measurement(parts[0]))
+    for part in parts[1:]:
+        if part.startswith("change "):
+            change_text = part.removeprefix("change ").strip()
+            entry["change"] = change_text
+        elif part.startswith("status "):
+            entry["status"] = part.removeprefix("status ").strip()
+    return entry
+
+
+def _parse_progress_measurement(value: str) -> dict[str, object]:
+    tokens = str(value or "").split()
+    if not tokens or "/" not in tokens[0]:
+        return {}
+    try:
+        current, target = parse_progress_pair(tokens[0])
+    except RuntimeError:
+        return {}
+    unit = " ".join(tokens[1:]).strip()
+    percentage = None if target == 0 else _percentage_text((current / target) * Decimal("100"))
+    result: dict[str, object] = {
+        "current": _decimal_text(current),
+        "target": _decimal_text(target),
+        "percentage": percentage,
+    }
+    if unit:
+        result["unit"] = unit
+    return result
+
+
+def _build_progress_trend(
+    track: str,
+    history: list[dict[str, object]],
+    tracks: tuple[dict[str, object], ...] | list[dict[str, object]],
+) -> dict[str, object] | None:
+    measured = [item for item in history if "current" in item and "target" in item]
+    current_track = next((item for item in tracks if _same_track(item, track)), None)
+    if not measured and current_track is None:
+        return None
+
+    latest = measured[-1] if measured else current_track or {}
+    first = measured[0] if measured else latest
+    current = _decimal_or_none(latest.get("current"))
+    target = _decimal_or_none(latest.get("target"))
+    first_current = _decimal_or_none(first.get("current"))
+    delta = None if current is None or first_current is None else current - first_current
+    remaining = None if current is None or target is None else target - current
+    last_change = _last_decimal_value(history, "change")
+    pace = None
+    if delta is not None and len(measured) > 1:
+        pace = delta / Decimal(len(measured) - 1)
+    trend: dict[str, object] = {
+        "track": track,
+        "entries": len(history),
+        "updates": len(measured),
+        "first_at": first.get("timestamp"),
+        "last_at": latest.get("timestamp"),
+        "current": _decimal_text(current) if current is not None else str(latest.get("current") or ""),
+        "target": _decimal_text(target) if target is not None else str(latest.get("target") or ""),
+        "unit": str(latest.get("unit") or (current_track or {}).get("unit") or "").strip(),
+        "status": str(latest.get("status") or (current_track or {}).get("status") or "").strip(),
+        "last_action": str(history[-1].get("action") or "") if history else "",
+    }
+    if delta is not None:
+        trend["delta"] = _signed_decimal_text(delta)
+        trend["direction"] = "up" if delta > 0 else "down" if delta < 0 else "flat"
+    if remaining is not None:
+        trend["remaining"] = _decimal_text(remaining)
+    if last_change is not None:
+        trend["last_change"] = _signed_decimal_text(last_change)
+    if pace is not None:
+        trend["average_change"] = _signed_decimal_text(pace)
+    return trend
+
+
+def _decimal_or_none(value: object) -> Decimal | None:
+    if value in (None, ""):
+        return None
+    try:
+        return parse_progress_value(str(value))
+    except RuntimeError:
+        return None
+
+
+def _last_decimal_value(history: list[dict[str, object]], key: str) -> Decimal | None:
+    for entry in reversed(history):
+        value = _decimal_or_none(entry.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _signed_decimal_text(value: Decimal) -> str:
+    sign = "+" if value > 0 else ""
+    return f"{sign}{_decimal_text(value)}"
 
 
 def _decimal_text(value: Decimal) -> str:

@@ -1189,6 +1189,24 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(shown_payload["progress"]["current"], "120")
         self.assertEqual(shown_payload["progress"]["percentage"], "60")
         self.assertEqual(shown_payload["progress"]["status"], "paused")
+        self.assertEqual(shown_payload["trends"][0]["track"], "default")
+        self.assertEqual(shown_payload["trends"][0]["delta"], "+20")
+        self.assertEqual(shown_payload["trends"][0]["remaining"], "80")
+        self.assertEqual(shown_payload["trends"][0]["last_change"], "-5")
+        self.assertEqual(len(shown_payload["history"]), 4)
+        self.assertEqual(shown_payload["history"][-1]["action"], "status")
+
+        limited = self.run_jot("--json", "progress", "task", "1", "show", "--history", "2")
+        self.assertEqual(limited.returncode, 0, limited.stderr)
+        limited_payload = json.loads(limited.stdout)
+        self.assertEqual(len(limited_payload["history"]), 2)
+        self.assertEqual([item["action"] for item in limited_payload["history"]], ["adjust", "status"])
+
+        text_shown = self.run_jot("progress", "task", "1", "show", "--history", "2")
+        self.assertEqual(text_shown.returncode, 0, text_shown.stderr)
+        self.assertIn("Trends", text_shown.stdout)
+        self.assertIn("delta +20 pages", text_shown.stdout)
+        self.assertIn("Recent history", text_shown.stdout)
 
         note_path = list((self.home / ".task" / "jot" / "tasks").glob("*.md"))[0]
         note_text = note_path.read_text(encoding="utf-8")
@@ -1290,13 +1308,20 @@ class CliIntegrationTests(JotCliTestCase):
 
         shown = self.run_jot("--json", "progress", "task", "4", "show")
         self.assertEqual(shown.returncode, 0, shown.stderr)
-        tracks = {item["track"]: item for item in json.loads(shown.stdout)["tracks"]}
+        shown_payload = json.loads(shown.stdout)
+        tracks = {item["track"]: item for item in shown_payload["tracks"]}
         self.assertEqual(tracks["chest"]["current"], "5")
         self.assertEqual(tracks["legs"]["current"], "4")
+        trends = {item["track"]: item for item in shown_payload["trends"]}
+        self.assertEqual(trends["chest"]["delta"], "+2")
+        self.assertEqual(trends["legs"]["remaining"], "8")
 
         selected = self.run_jot("--json", "progress", "task", "4", "show", "--track", "legs")
         self.assertEqual(selected.returncode, 0, selected.stderr)
-        self.assertEqual(json.loads(selected.stdout)["progress"]["track"], "legs")
+        selected_payload = json.loads(selected.stdout)
+        self.assertEqual(selected_payload["progress"]["track"], "legs")
+        self.assertEqual([item["track"] for item in selected_payload["trends"]], ["legs"])
+        self.assertEqual([item["track"] for item in selected_payload["history"]], ["legs"])
 
         cleared = self.run_jot(
             "--json",
@@ -1466,6 +1491,7 @@ class CliIntegrationTests(JotCliTestCase):
             [item["progress"]["current"] for item in payload["items"]],
             ["2", "3", "4"],
         )
+        self.assertEqual([item["trends"][0]["remaining"] for item in payload["items"]], ["3", "2", "1"])
 
         text = self.run_jot("prog", "c", "53,986e9d97,41", "sh")
         self.assertEqual(text.returncode, 0, text.stderr)

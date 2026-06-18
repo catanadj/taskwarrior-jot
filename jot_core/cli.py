@@ -32,7 +32,12 @@ from .notes import (
 from .ops import iso_now, read_ops
 from .output import emit_result, warn
 from .report import list_project_notes, project_rollup, recent_activity
-from .progress import parse_progress_pair, parse_progress_value, read_note_progress
+from .progress import (
+    parse_progress_pair,
+    parse_progress_value,
+    read_note_progress,
+    read_note_progress_analysis,
+)
 from .resources import open_resource_target
 from .search import normalize_chain_id, normalize_kinds, normalize_project, search_all
 from .services import JotService
@@ -432,6 +437,12 @@ def build_parser() -> argparse.ArgumentParser:
         description="Show all progress tracks, or one named track, without modifying the note.",
     )
     progress_show.add_argument("--track", help="show only this progress track")
+    progress_show.add_argument(
+        "--history",
+        type=int,
+        default=5,
+        help="number of recent history entries to show; use 0 to hide history",
+    )
 
     progress_status = progress_subparsers.add_parser(
         "status",
@@ -1044,6 +1055,9 @@ def _run_progress(ctx, args) -> CommandResult:
     track = getattr(args, "track", None)
     if operation == "show":
         note_refs = _progress_note_refs(note_ref)
+        history_limit = int(getattr(args, "history", 5))
+        if history_limit < 0:
+            raise RuntimeError("--history must be 0 or greater")
         items: list[dict[str, object]] = []
         seen_paths: set[str] = set()
         for item_ref in note_refs:
@@ -1053,6 +1067,11 @@ def _run_progress(ctx, args) -> CommandResult:
                 continue
             seen_paths.add(path_text)
             result = read_note_progress(note_path, track or "default")
+            analysis = read_note_progress_analysis(
+                note_path,
+                track=track,
+                history_limit=history_limit,
+            )
             items.append(
                 {
                     "reference": item_ref,
@@ -1061,6 +1080,8 @@ def _run_progress(ctx, args) -> CommandResult:
                     "progress": result.progress,
                     "track": track,
                     "tracks": list(result.tracks),
+                    "history": analysis["history"],
+                    "trends": analysis["trends"],
                 }
             )
         if len(note_refs) > 1:

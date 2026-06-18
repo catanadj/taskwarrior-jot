@@ -158,7 +158,9 @@ the track when a note has only one named track; multiple named tracks require
 `--track`. Current state is stored in note frontmatter,
 while every change is appended under `## Progress`. Percentages are calculated
 for display. `progress show` renders each track as a terminal-aware visual
-progress bar with a consistent red-to-green completion scale. It accepts
+progress bar with a consistent red-to-green completion scale, trend summary,
+and recent history tail. Use `--history 0` to hide recent entries or
+`--history 10` to show a longer tail. It accepts
 comma-separated references to compare several task, chain, or project notes at
 once. Progress updates use file locking and atomic replacement so concurrent
 commands cannot overwrite each other. Jot never changes Taskwarrior task status
@@ -264,7 +266,7 @@ Progress tracking:
 jot progress {task|chain|project} <ref> set <current>/<target> [--track NAME] [--unit UNIT] [--status STATUS]
 jot progress {task|chain|project} <ref> add <amount> [--track NAME]
 jot progress {task|chain|project} <ref> subtract <amount> [--track NAME]
-jot progress {task|chain|project} <ref>[,<ref>...] show [--track NAME]
+jot progress {task|chain|project} <ref>[,<ref>...] show [--track NAME] [--history N]
 jot progress {task|chain|project} <ref> status <value> [--track NAME]
 jot progress {task|chain|project} <ref> clear [--track NAME] --yes
 ```
