@@ -89,6 +89,10 @@ jot section task 42 "Next steps"
 jot task-cat 42
 ```
 
+When a note is changed in your editor, Jot prints a unified diff of the saved
+changes to `stderr`. This keeps `--json` output parseable while still showing
+what changed after the editor closes.
+
 ### For recurring Nautical work
 
 Keep a note for the whole recurrence chain:

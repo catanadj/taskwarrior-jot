@@ -17,6 +17,7 @@ from unittest import mock
 from jot_core.cli import build_parser
 from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
+from jot_core.editor import note_diff
 from jot_core.frontmatter import atomic_write_text, parse_document, read_document, render_document, write_document
 from jot_core.models import AppConfig
 from jot_core.output import _progress_bar, _progress_color, _style
@@ -193,6 +194,19 @@ class FrontMatterTests(unittest.TestCase):
             self.assertEqual(len(results), 40)
             self.assertEqual(body.count("change +1"), 40)
             self.assertTrue((path.parent / f".{path.name}.lock").exists())
+
+
+class EditorDiffTests(unittest.TestCase):
+    def test_note_diff_returns_unified_diff_for_changed_note(self) -> None:
+        path = Path("/tmp/example-note.md")
+        diff = note_diff("one\nold\n", "one\nnew\n", path=path)
+        self.assertIn("--- /tmp/example-note.md (before)", diff)
+        self.assertIn("+++ /tmp/example-note.md (after)", diff)
+        self.assertIn("-old", diff)
+        self.assertIn("+new", diff)
+
+    def test_note_diff_is_empty_for_unchanged_note(self) -> None:
+        self.assertEqual(note_diff("same\n", "same\n", path=Path("/tmp/example-note.md")), "")
 
 
 class PaletteTests(unittest.TestCase):
@@ -602,6 +616,37 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertTrue(payload["path"].endswith("chains/a4bf5egh--recurring-task.md"))
         self.assertEqual(len(list((self.home / ".task" / "jot" / "tasks").glob("*.md"))), 0)
         self.assertEqual(len(list((self.home / ".task" / "jot" / "chains").glob("*.md"))), 1)
+
+    def test_note_edit_prints_diff_to_stderr_after_save(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Plain task",
+            "project": "finance.audit",
+            "tags": [],
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        editor = self.root / "append_editor.py"
+        editor.write_text(
+            textwrap.dedent(
+                """\
+                import pathlib
+                import sys
+
+                path = pathlib.Path(sys.argv[-1])
+                with path.open("a", encoding="utf-8") as handle:
+                    handle.write("\\nmanual edit\\n")
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.run_jot_with_env("note", "1", extra_env={"EDITOR": f"{sys.executable} {editor}"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("task note", result.stdout)
+        self.assertIn("--- ", result.stderr)
+        self.assertIn("+++ ", result.stderr)
+        self.assertIn("+manual edit", result.stderr)
 
     def test_doctor_reports_hardened_checks(self) -> None:
         result = self.run_jot("--json", "doctor")
