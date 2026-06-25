@@ -272,6 +272,15 @@ class JotService:
         finalize_project_note_edit(self.config, project_name, note)
         return str(note.note_path)
 
+    def complete_task(self, task_ref: str) -> dict[str, Any]:
+        task = self.taskwarrior.resolve_task(task_ref)
+        self.taskwarrior.complete_task(task.task_uuid)
+        return {
+            "task_uuid": task.task_uuid,
+            "task_short_uuid": task.task_short_uuid,
+            "description": task.description,
+        }
+
     def _open_note_in_editor(self, path) -> None:
         open_in_editor(
             path,

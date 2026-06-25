@@ -85,6 +85,19 @@ class TaskwarriorClient:
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or "task annotate failed")
 
+    def complete_task(self, task_uuid: str) -> None:
+        proc = self._run(
+            [
+                "rc.hooks=off",
+                "rc.verbose=nothing",
+                "rc.confirmation=off",
+                task_uuid,
+                "done",
+            ]
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.strip() or "task done failed")
+
     def annotations_for_task(self, task: ResolvedTask) -> list[dict[str, Any]]:
         raw_items = task.task.get("annotations")
         if not isinstance(raw_items, list):

@@ -88,6 +88,7 @@ def load_config() -> AppConfig:
     editor_command = str(editor_cfg.get("command") or os.environ.get("EDITOR") or "vim").strip()
     editor_show_diff_on_save = _config_bool(editor_cfg.get("show_diff_on_save"), True)
     editor_diff_color = str(editor_cfg.get("diff_color") or "auto").strip() or "auto"
+    editor_post_save_actions = _config_bool(editor_cfg.get("post_save_actions"), True)
     color_mode = str(display_cfg.get("color") or "auto").strip() or "auto"
     default_format = str(display_cfg.get("default_format") or "text").strip() or "text"
     nautical_enabled = bool(nautical_cfg.get("enabled", True))
@@ -103,6 +104,7 @@ def load_config() -> AppConfig:
         editor_command=editor_command,
         editor_show_diff_on_save=editor_show_diff_on_save,
         editor_diff_color=editor_diff_color,
+        editor_post_save_actions=editor_post_save_actions,
         color_mode=color_mode,
         default_format=default_format,
         nautical_enabled=nautical_enabled,

@@ -33,6 +33,7 @@ class AppConfig:
     editor_command: str
     editor_show_diff_on_save: bool
     editor_diff_color: str
+    editor_post_save_actions: bool
     color_mode: str
     default_format: str
     nautical_enabled: bool

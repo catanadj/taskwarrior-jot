@@ -9,6 +9,7 @@ templates = "~/.task/jot/templates"
 command = ""
 show_diff_on_save = true
 diff_color = "auto"
+post_save_actions = true
 
 [display]
 color = "auto"

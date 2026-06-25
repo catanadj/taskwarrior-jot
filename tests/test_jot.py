@@ -30,6 +30,7 @@ from jot_core.progress import (
     set_note_progress,
 )
 from jot_core.services import JotService
+from jot_core.taskwarrior import TaskwarriorClient
 from jot_tui.app import (
     NEW_PROGRESS_TRACK,
     initial_progress_track,
@@ -69,6 +70,18 @@ def _write_fake_task_script(bin_dir: Path, state_path: Path) -> None:
             task = state[export_key][0]
             seq = len(task.setdefault('annotations', [])) + 1
             task['annotations'].append({{"entry": f"20260405T1715{{seq:02d}}Z", "description": text}})
+            state_path.write_text(json.dumps(state))
+            raise SystemExit(0)
+
+        if args and args[-1] == 'done':
+            task_uuid = args[-2]
+            state.setdefault('completed_tasks', []).append(task_uuid)
+            for value in state.values():
+                if not isinstance(value, list):
+                    continue
+                for task in value:
+                    if isinstance(task, dict) and task.get('uuid') == task_uuid:
+                        task['status'] = 'completed'
             state_path.write_text(json.dumps(state))
             raise SystemExit(0)
 
@@ -448,6 +461,7 @@ class ServiceProgressRowTests(unittest.TestCase):
             editor_command="true",
             editor_show_diff_on_save=True,
             editor_diff_color="auto",
+            editor_post_save_actions=True,
             color_mode="auto",
             default_format="text",
             nautical_enabled=True,
@@ -687,6 +701,23 @@ class ServiceProgressRowTests(unittest.TestCase):
 
 
 class CliIntegrationTests(JotCliTestCase):
+    def test_taskwarrior_completion_uses_task_uuid(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Workout",
+            "project": "fitness",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+
+        client = TaskwarriorClient(task_bin=str(self.bin_dir / "task"))
+        client.complete_task(task["uuid"])
+
+        state = json.loads(self.state_path.read_text(encoding="utf-8"))
+        self.assertEqual(state["completed_tasks"], [task["uuid"]])
+        self.assertEqual(state["single"][0]["status"], "completed")
+
     def test_no_arguments_prints_command_overview(self) -> None:
         result = self.run_jot()
         self.assertEqual(result.returncode, 0, result.stderr)

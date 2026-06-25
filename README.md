@@ -94,6 +94,9 @@ When a note is changed in your editor, Jot prints a unified diff of the saved
 changes to `stderr`. This keeps `--json` output parseable while still showing
 what changed after the editor closes. Configure this with
 `[editor] show_diff_on_save = true` and `[editor] diff_color = "auto"`.
+For task and chain notes, Jot can also offer post-save actions such as marking
+the related Taskwarrior task complete. Configure this with
+`[editor] post_save_actions = true`.
 
 ### For recurring Nautical work
 

@@ -273,6 +273,9 @@ def _emit_note_like(command: str, payload: dict[str, Any]) -> None:
         "project": "project note",
     }[command]
     sys.stdout.write(f"{action} {kind}: {payload['path']}\n")
+    post_save_action = payload.get("post_save_action") or {}
+    if post_save_action.get("action") == "complete-task":
+        sys.stdout.write(f"Completed task: {post_save_action.get('task_short_uuid')}\n")
 
 
 def _emit_append_like(command: str, payload: dict[str, Any]) -> None:

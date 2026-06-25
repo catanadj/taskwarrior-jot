@@ -904,12 +904,14 @@ def run_tui(service: JotService) -> int:
             )
 
         def action_edit_selected_task_note(self) -> None:
+            target = self._active_note_target()
             try:
                 path = self._open_active_note_in_editor()
             except Exception as exc:
                 self.notify(f"Editor failed: {exc}", severity="error")
                 return
             self.notify(f"Opened: {path}")
+            self._offer_post_save_actions(target)
             main_tab = self.query_one("#main-tabs", TabbedContent).active
             if main_tab == "notes-tab":
                 asyncio.create_task(self._refresh_notes_async())
@@ -919,6 +921,42 @@ def run_tui(service: JotService) -> int:
                 asyncio.create_task(self._load_task_async(self.current_task_ref))
             elif self.current_project_name:
                 asyncio.create_task(self._load_project_async(self.current_project_name))
+
+        def _offer_post_save_actions(self, target: dict[str, Any] | None) -> None:
+            if not self.svc.config.editor_post_save_actions or target is None:
+                return
+            kind = str(target.get("kind") or "")
+            task_ref = str(target.get("task_ref") or "").strip()
+            if kind not in {"task", "chain"} or not task_ref:
+                return
+            self.push_screen(
+                PaletteModal(
+                    [
+                        PaletteEntry(
+                            "complete-task",
+                            "Complete task",
+                            "Mark the related Taskwarrior task done",
+                        ),
+                    ],
+                    title="Post-save actions",
+                    placeholder="Type to filter actions",
+                ),
+                lambda payload: self._on_post_save_action_selected(payload, task_ref),
+            )
+
+        def _on_post_save_action_selected(self, payload: dict[str, Any] | None, task_ref: str) -> None:
+            if not payload or payload.get("id") != "complete-task":
+                return
+            asyncio.create_task(self._complete_task_async(task_ref))
+
+        async def _complete_task_async(self, task_ref: str) -> None:
+            try:
+                result = await asyncio.to_thread(self.svc.complete_task, task_ref)
+            except Exception as exc:
+                self.notify(f"Complete failed: {exc}", severity="error")
+                return
+            self.notify(f"Completed task: {result.get('task_short_uuid')}")
+            await self._refresh_current_context_async()
 
         def action_delete_selected_note(self) -> None:
             target = self._active_note_target()

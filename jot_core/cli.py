@@ -764,6 +764,30 @@ def _open_note_in_editor(ctx, path) -> None:
     )
 
 
+def _offer_post_save_task_action(ctx, task) -> dict | None:
+    if not ctx.config.editor_post_save_actions or not sys.stdin.isatty():
+        return None
+
+    sys.stderr.write("\nPost-save actions\n")
+    sys.stderr.write(f"Task: {task.task_short_uuid}  {task.description}\n")
+    sys.stderr.write("  c  complete task\n")
+    sys.stderr.write("  enter  do nothing\n")
+    sys.stderr.write("Action: ")
+    sys.stderr.flush()
+
+    choice = sys.stdin.readline().strip().casefold()
+    if choice not in {"c", "complete", "complete task", "done"}:
+        return None
+
+    ctx.taskwarrior.complete_task(task.task_uuid)
+    return {
+        "action": "complete-task",
+        "task_uuid": task.task_uuid,
+        "task_short_uuid": task.task_short_uuid,
+        "description": task.description,
+    }
+
+
 def _run_trash_list(ctx) -> CommandResult:
     return CommandResult(command="trash-list", payload={"items": list_trash(ctx.config)})
 
@@ -778,23 +802,27 @@ def _run_auto_note(ctx, task_ref: str) -> CommandResult:
         note = ensure_chain_note(ctx.config, task)
         _open_note_in_editor(ctx, note.note_path)
         finalize_chain_note_edit(ctx.config, task, note)
+        post_save_action = _offer_post_save_task_action(ctx, task)
         return CommandResult(
             command="chain",
             payload={
                 "path": str(note.note_path),
                 "opened": note.existed,
                 "task_short_uuid": task.task_short_uuid,
+                "post_save_action": post_save_action,
             },
         )
     note = ensure_task_note(ctx.config, task)
     _open_note_in_editor(ctx, note.note_path)
     finalize_task_note_edit(ctx.config, task, note)
+    post_save_action = _offer_post_save_task_action(ctx, task)
     return CommandResult(
         command="note",
         payload={
             "path": str(note.note_path),
             "opened": note.existed,
             "task_short_uuid": task.task_short_uuid,
+            "post_save_action": post_save_action,
         },
     )
 
@@ -804,12 +832,14 @@ def _run_note(ctx, task_ref: str) -> CommandResult:
     note = ensure_task_note(ctx.config, task)
     _open_note_in_editor(ctx, note.note_path)
     finalize_task_note_edit(ctx.config, task, note)
+    post_save_action = _offer_post_save_task_action(ctx, task)
     return CommandResult(
         command="note",
         payload={
             "path": str(note.note_path),
             "opened": note.existed,
             "task_short_uuid": task.task_short_uuid,
+            "post_save_action": post_save_action,
         },
     )
 
@@ -968,12 +998,14 @@ def _run_chain(ctx, task_ref: str) -> CommandResult:
     note = ensure_chain_note(ctx.config, task)
     _open_note_in_editor(ctx, note.note_path)
     finalize_chain_note_edit(ctx.config, task, note)
+    post_save_action = _offer_post_save_task_action(ctx, task)
     return CommandResult(
         command="chain",
         payload={
             "path": str(note.note_path),
             "opened": note.existed,
             "task_short_uuid": task.task_short_uuid,
+            "post_save_action": post_save_action,
         },
     )
 
