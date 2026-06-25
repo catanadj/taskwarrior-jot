@@ -87,6 +87,7 @@ jot resources task 42
 jot headings task 42
 jot section task 42 "Next steps"
 jot task-cat 42
+jot notes --kind task
 ```
 
 When a note is changed in your editor, Jot prints a unified diff of the saved
@@ -100,6 +101,7 @@ Keep a note for the whole recurrence chain:
 
 ```bash
 jot chain 42
+jot open chain 42
 jot chain-append 42 Skip holidays
 jot add-to chain 42 --heading "Operating notes" --text "Use the fallback path"
 jot attach chain 42 https://example.com/runbook --label runbook
@@ -113,6 +115,7 @@ Keep shared notes for a project namespace:
 
 ```bash
 jot project Finances.Expense
+jot edit project Finances.Expense
 jot project-append Finances.Expense Waiting on reimbursement policy update
 jot add-to project Finances.Expense --heading "Risks" --text "Vendor delay"
 jot attach project Finances.Expense ~/docs/reimbursement-policy.pdf
@@ -130,6 +133,7 @@ jot add --type status 42 waiting on vendor
 jot list 42
 jot show 42
 jot search vendor
+jot recent --limit 10
 ```
 
 ### For measurable progress
@@ -242,6 +246,8 @@ Browsing and reporting:
 
 ```bash
 jot project-list
+jot notes [--kind task|chain|project] [--project PROJECT]
+jot recent --limit 10
 jot report recent --limit 10
 jot stats
 jot paths
@@ -263,6 +269,9 @@ jot section {task|chain|project} <ref> <heading>
 jot list <task-ref>
 jot show <task-ref>
 jot export <task-ref>
+jot open [task|chain|project] <ref-or-project>
+jot edit [task|chain|project] <ref-or-project>
+jot cat [task|chain|project] <ref-or-project>
 ```
 
 Progress tracking:

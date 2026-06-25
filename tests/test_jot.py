@@ -2111,6 +2111,45 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual([item["project"] for item in payload["projects"]], ["finance.audit", "ops.runbook"])
         self.assertTrue(payload["projects"][0]["path"].endswith("projects/finance/audit/index.md"))
 
+    def test_notes_lists_existing_notes_across_scopes_and_filters(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Fix billing discrepancy",
+            "project": "finance.audit",
+            "tags": ["ann"],
+            "chainID": "a4bf5egh",
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        self.assertEqual(self.run_jot("note-append", "1", "task context").returncode, 0)
+        self.assertEqual(self.run_jot("chain-append", "1", "chain context").returncode, 0)
+        self.assertEqual(self.run_jot("project-append", "finance.audit", "project context").returncode, 0)
+
+        result = self.run_jot("--json", "notes")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(
+            sorted(item["kind"] for item in payload["notes"]),
+            ["chain-note", "project-note", "task-note"],
+        )
+
+        task_notes = self.run_jot("--json", "notes", "--kind", "task", "--project", "finance.audit")
+        self.assertEqual(task_notes.returncode, 0, task_notes.stderr)
+        task_payload = json.loads(task_notes.stdout)
+        self.assertEqual([item["kind"] for item in task_payload["notes"]], ["task-note"])
+        self.assertEqual(task_payload["notes"][0]["task_short_uuid"], "2d6d7d7d")
+
+        project_scoped = self.run_jot("--json", "notes", "--project", "finance.audit")
+        self.assertEqual(project_scoped.returncode, 0, project_scoped.stderr)
+        self.assertEqual(
+            sorted(item["kind"] for item in json.loads(project_scoped.stdout)["notes"]),
+            ["chain-note", "project-note", "task-note"],
+        )
+
+        text = self.run_jot("notes", "--kind", "project")
+        self.assertEqual(text.returncode, 0, text.stderr)
+        self.assertIn("project-note finance.audit", text.stdout)
+
     def test_report_recent_combines_notes_and_events(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
@@ -2139,12 +2178,48 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("chain-note", kinds)
         self.assertIn("project-note", kinds)
         self.assertIn("event", kinds)
+        alias = self.run_jot("--json", "recent", "--limit", "10")
+        self.assertEqual(alias.returncode, 0, alias.stderr)
+        self.assertEqual(json.loads(alias.stdout), payload)
         filtered = self.run_jot("--json", "report", "recent", "--kind", "event", "--limit", "10")
         self.assertEqual(filtered.returncode, 0, filtered.stderr)
         filtered_payload = json.loads(filtered.stdout)
         self.assertEqual(filtered_payload["kinds"], ["event"])
         self.assertTrue(filtered_payload["items"])
         self.assertEqual({item["kind"] for item in filtered_payload["items"]}, {"event"})
+
+    def test_open_edit_and_cat_aliases_route_to_existing_note_commands(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Fix billing discrepancy",
+            "project": "finance.audit",
+            "tags": ["ann"],
+            "chainID": "a4bf5egh",
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+
+        opened_chain = self.run_jot("--json", "open", "1")
+        self.assertEqual(opened_chain.returncode, 0, opened_chain.stderr)
+        self.assertTrue(json.loads(opened_chain.stdout)["path"].endswith("chains/a4bf5egh--fix-billing-discrepancy.md"))
+
+        opened_task = self.run_jot("--json", "edit", "task", "1")
+        self.assertEqual(opened_task.returncode, 0, opened_task.stderr)
+        self.assertIn("tasks/2d6d7d7d--fix-billing-discrepancy.md", json.loads(opened_task.stdout)["path"])
+
+        self.assertEqual(self.run_jot("note-append", "1", "task context").returncode, 0)
+        self.assertEqual(self.run_jot("chain-append", "1", "chain context").returncode, 0)
+        self.assertEqual(self.run_jot("project-append", "finance.audit", "project context").returncode, 0)
+
+        task_cat = self.run_jot("cat", "1")
+        self.assertEqual(task_cat.returncode, 0, task_cat.stderr)
+        self.assertIn("task context", task_cat.stdout)
+        chain_cat = self.run_jot("cat", "chain", "1")
+        self.assertEqual(chain_cat.returncode, 0, chain_cat.stderr)
+        self.assertIn("chain context", chain_cat.stdout)
+        project_cat = self.run_jot("cat", "project", "finance.audit")
+        self.assertEqual(project_cat.returncode, 0, project_cat.stderr)
+        self.assertIn("project context", project_cat.stdout)
 
     def test_ambiguous_short_uuid_returns_error(self) -> None:
         task_a = {

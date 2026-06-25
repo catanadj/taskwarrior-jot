@@ -411,6 +411,7 @@ def _build_chain_note_document(config: AppConfig, task: ResolvedTask) -> tuple[O
             ("kind", "chain-note"),
             ("chain_id", chain_id),
             ("description", task.description or ""),
+            ("project", task.project or ""),
             ("anchor", str(task.task.get("anchor") or "").strip() or None),
             ("cp", str(task.task.get("cp") or "").strip() or None),
             ("anchor_mode", str(task.task.get("anchor_mode") or "").strip() or None),

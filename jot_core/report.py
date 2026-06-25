@@ -10,6 +10,61 @@ from .ops import read_ops
 from .search import ALLOWED_KINDS
 
 
+NOTE_KIND_ALIASES = {
+    "task": "task-note",
+    "task-note": "task-note",
+    "chain": "chain-note",
+    "chain-note": "chain-note",
+    "project": "project-note",
+    "project-note": "project-note",
+}
+
+
+def list_notes(
+    config: AppConfig,
+    *,
+    kinds: set[str] | None = None,
+    project: str | None = None,
+) -> list[dict[str, Any]]:
+    selected = set(kinds or {"task-note", "chain-note", "project-note"})
+    project_filter = str(project or "").strip()
+    items: list[dict[str, Any]] = []
+    if "task-note" in selected:
+        items.extend(_note_inventory_task_notes(config))
+    if "chain-note" in selected:
+        items.extend(_note_inventory_chain_notes(config))
+    if "project-note" in selected:
+        items.extend(_note_inventory_project_notes(config))
+    if project_filter:
+        items = [
+            item for item in items
+            if str(item.get("project") or "").casefold() == project_filter.casefold()
+        ]
+    items.sort(
+        key=lambda item: (
+            str(item.get("updated") or ""),
+            str(item.get("kind") or ""),
+            str(item.get("title") or ""),
+        ),
+        reverse=True,
+    )
+    return items
+
+
+def normalize_note_kinds(values: list[str] | tuple[str, ...] | None) -> set[str] | None:
+    if not values:
+        return None
+    kinds: set[str] = set()
+    for value in values:
+        normalized = str(value or "").strip().casefold()
+        kind = NOTE_KIND_ALIASES.get(normalized)
+        if kind is None:
+            allowed = ", ".join(sorted(NOTE_KIND_ALIASES))
+            raise RuntimeError(f"unknown note kind '{value}'; expected one of: {allowed}")
+        kinds.add(kind)
+    return kinds
+
+
 def list_project_notes(config: AppConfig) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for path in sorted(config.projects_dir.glob("**/index.md")):
@@ -25,6 +80,74 @@ def list_project_notes(config: AppConfig) -> list[dict[str, Any]]:
             }
         )
     items.sort(key=lambda item: str(item.get("project") or "").lower())
+    return items
+
+
+def _note_inventory_task_notes(config: AppConfig) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for path in sorted(config.tasks_dir.glob("*.md")):
+        metadata, body = read_document(path)
+        short_uuid = str(metadata.get("task_short_uuid") or "").strip()
+        if not short_uuid:
+            continue
+        items.append(
+            {
+                "kind": "task-note",
+                "id": short_uuid,
+                "task_short_uuid": short_uuid,
+                "title": str(metadata.get("description") or short_uuid).strip(),
+                "description": str(metadata.get("description") or "").strip(),
+                "project": str(metadata.get("project") or "").strip(),
+                "chain_id": str(metadata.get("chain_id") or "").strip() or None,
+                "updated": str(metadata.get("updated") or "").strip() or None,
+                "path": str(path),
+                "preview": _body_preview(body, max_lines=2),
+            }
+        )
+    return items
+
+
+def _note_inventory_chain_notes(config: AppConfig) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for path in sorted(config.chains_dir.glob("*.md")):
+        metadata, body = read_document(path)
+        chain_id = str(metadata.get("chain_id") or "").strip()
+        if not chain_id:
+            continue
+        items.append(
+            {
+                "kind": "chain-note",
+                "id": chain_id,
+                "chain_id": chain_id,
+                "title": str(metadata.get("description") or chain_id).strip(),
+                "description": str(metadata.get("description") or "").strip(),
+                "project": str(metadata.get("project") or "").strip(),
+                "updated": str(metadata.get("updated") or "").strip() or None,
+                "path": str(path),
+                "preview": _body_preview(body, max_lines=2),
+            }
+        )
+    return items
+
+
+def _note_inventory_project_notes(config: AppConfig) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for path in sorted(config.projects_dir.glob("**/index.md")):
+        metadata, body = read_document(path)
+        project = str(metadata.get("project") or "").strip()
+        if not project:
+            continue
+        items.append(
+            {
+                "kind": "project-note",
+                "id": project,
+                "project": project,
+                "title": project,
+                "updated": str(metadata.get("updated") or "").strip() or None,
+                "path": str(path),
+                "preview": _body_preview(body, max_lines=2),
+            }
+        )
     return items
 
 

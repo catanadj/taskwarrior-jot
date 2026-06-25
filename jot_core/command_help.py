@@ -21,6 +21,9 @@ COMMAND_EXAMPLES = {
     "list": "jot list 42",
     "note": "jot note 42",
     "note-append": "jot note-append 42 \"Vendor confirmed delivery\"",
+    "open": "jot open chain 42",
+    "edit": "jot edit project Finances.Expense",
+    "cat": "jot cat project Finances.Expense",
     "show": "jot show 42",
     "task-cat": "jot task-cat 42",
     "task-delete": "jot task-delete 42",
@@ -33,6 +36,7 @@ COMMAND_EXAMPLES = {
     "project-cat": "jot project-cat Finances.Expense",
     "project-delete": "jot project-delete Finances.Expense",
     "project-list": "jot project-list",
+    "notes": "jot notes --kind task",
     "project-report": "jot project-report Finances.Expense --limit 10",
     "project-show": "jot project-show Finances.Expense",
     "add-to": 'jot add-to task 42 --heading "Next steps" --text "Call vendor"',
@@ -49,6 +53,7 @@ COMMAND_EXAMPLES = {
     "open-resource": "jot open-resource task 42 1",
     "resources": "jot resources task 42",
     "report recent": "jot report recent --limit 10 --kind event",
+    "recent": "jot recent --limit 10 --kind event",
     "search": "jot search vendor --kind task-note",
     "tui": "jot tui",
     "doctor": "jot doctor",
@@ -143,9 +148,9 @@ def _command_category(path: tuple[str, ...]) -> str:
         return "Projects"
     if name in {"attach", "resources", "open-resource", "detach-resource"}:
         return "Resources"
-    if name in {"add-to", "headings", "section", "progress"}:
+    if name in {"add-to", "headings", "section", "progress", "open", "edit", "cat", "notes"}:
         return "Notes"
-    if name in {"search", "report"}:
+    if name in {"search", "report", "recent"}:
         return "Search & Reports"
     if name == "tui":
         return "Interface"

@@ -31,7 +31,13 @@ from .notes import (
 )
 from .ops import iso_now, read_ops
 from .output import emit_result, warn
-from .report import list_project_notes, project_rollup, recent_activity
+from .report import (
+    list_notes,
+    list_project_notes,
+    normalize_note_kinds,
+    project_rollup,
+    recent_activity,
+)
 from .progress import (
     parse_progress_pair,
     parse_progress_value,
@@ -90,6 +96,10 @@ def build_parser() -> argparse.ArgumentParser:
             "  jot attach task 42 ~/invoice.pdf --label invoice\n"
             "  jot resources task 42\n"
             "  jot open-resource task 42 1\n"
+            "  jot notes --kind task\n"
+            "  jot recent --limit 10\n"
+            "  jot open chain 42\n"
+            "  jot cat project Finances.Expense\n"
             "  jot progress task 42 set 120/350 --unit pages\n"
             "  jot progress task 42 add 20\n"
             "  jot progress task 42 show\n"
@@ -155,6 +165,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="list known project notes",
         description="List known project notes discovered from the local jot projects directory.",
     )
+    notes = subparsers.add_parser(
+        "notes",
+        help="list existing task, chain, and project notes",
+        description="List existing jot notes across task, chain, and project scopes.",
+    )
+    notes.add_argument(
+        "--kind",
+        action="append",
+        dest="kinds",
+        help="filter by note kind: task, chain, project",
+    )
+    notes.add_argument(
+        "--project",
+        help="filter notes by exact Taskwarrior project name",
+    )
     subparsers.add_parser(
         "trash-list",
         help="list notes currently in jot trash",
@@ -188,6 +213,56 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         dest="kinds",
         help="filter by kind: task-note, chain-note, project-note, event",
+    )
+    recent = subparsers.add_parser(
+        "recent",
+        help="show recent note and event activity",
+        description="Shortcut for report recent.",
+    )
+    recent.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="maximum number of items to return",
+    )
+    recent.add_argument(
+        "--kind",
+        action="append",
+        dest="kinds",
+        help="filter by kind: task-note, chain-note, project-note, event",
+    )
+
+    open_note = subparsers.add_parser(
+        "open",
+        help="open a task, chain, or project note in your editor",
+        description="Open a note using a simpler scope-first command. Omit scope to use task/chain auto routing.",
+    )
+    open_note.add_argument(
+        "target",
+        nargs="+",
+        help="task ref, or: task <ref>, chain <ref>, project <name>",
+    )
+
+    edit_note = subparsers.add_parser(
+        "edit",
+        help="alias for open",
+        description="Alias for open.",
+    )
+    edit_note.add_argument(
+        "target",
+        nargs="+",
+        help="task ref, or: task <ref>, chain <ref>, project <name>",
+    )
+
+    cat_note = subparsers.add_parser(
+        "cat",
+        help="print a task, chain, or project note without editing",
+        description="Print a note using a simpler scope-first command. Omit scope for task notes.",
+    )
+    cat_note.add_argument(
+        "target",
+        nargs="+",
+        help="task ref, or: task <ref>, chain <ref>, project <name>",
     )
 
     task_commands = {
@@ -572,12 +647,20 @@ def main(argv: list[str] | None = None) -> int:
             return _run_tui(ctx)
         elif args.command == "project-list":
             result = _run_project_list(ctx)
+        elif args.command == "notes":
+            result = _run_notes(ctx, args)
         elif args.command == "trash-list":
             result = _run_trash_list(ctx)
         elif args.command == "trash-restore":
             result = _run_trash_restore(ctx, args.trash_id)
         elif args.command == "report":
             result = _run_report(ctx, args)
+        elif args.command == "recent":
+            result = _run_recent(ctx, args)
+        elif args.command in {"open", "edit"}:
+            result = _run_open_alias(ctx, args.target)
+        elif args.command == "cat":
+            result = _run_cat_alias(ctx, args.target)
         elif args.command == "note":
             result = _run_note(ctx, args.task_ref)
         elif args.command == "chain":
@@ -805,18 +888,79 @@ def _run_project_list(ctx) -> CommandResult:
     )
 
 
+def _run_notes(ctx, args) -> CommandResult:
+    kinds = normalize_note_kinds(getattr(args, "kinds", None))
+    return CommandResult(
+        command="notes",
+        payload={
+            "kinds": sorted(kinds or {"task-note", "chain-note", "project-note"}),
+            "project": getattr(args, "project", None),
+            "notes": list_notes(ctx.config, kinds=kinds, project=getattr(args, "project", None)),
+        },
+    )
+
+
 def _run_report(ctx, args) -> CommandResult:
     if args.report_command == "recent":
-        kinds = normalize_kinds(getattr(args, "kinds", None))
-        return CommandResult(
-            command="report-recent",
-            payload={
-                "limit": args.limit,
-                "kinds": sorted(kinds),
-                "items": recent_activity(ctx.config, limit=args.limit, kinds=kinds),
-            },
-        )
+        return _run_recent(ctx, args)
     raise RuntimeError(f"unknown report '{args.report_command}'")
+
+
+def _run_recent(ctx, args) -> CommandResult:
+    kinds = normalize_kinds(getattr(args, "kinds", None))
+    return CommandResult(
+        command="report-recent",
+        payload={
+            "limit": args.limit,
+            "kinds": sorted(kinds),
+            "items": recent_activity(ctx.config, limit=args.limit, kinds=kinds),
+        },
+    )
+
+
+def _run_open_alias(ctx, target: list[str]) -> CommandResult:
+    scope, value = _parse_scoped_target(target, default_scope="auto")
+    if scope == "auto":
+        return _run_auto_note(ctx, value)
+    if scope == "task":
+        return _run_note(ctx, value)
+    if scope == "chain":
+        return _run_chain(ctx, value)
+    if scope == "project":
+        return _run_project(ctx, value)
+    raise RuntimeError(f"unknown open scope '{scope}'")
+
+
+def _run_cat_alias(ctx, target: list[str]) -> CommandResult:
+    scope, value = _parse_scoped_target(target, default_scope="task")
+    if scope == "task":
+        return _run_task_cat(ctx, value)
+    if scope == "chain":
+        return _run_chain_cat(ctx, value)
+    if scope == "project":
+        return _run_project_cat(ctx, value)
+    raise RuntimeError(f"unknown cat scope '{scope}'")
+
+
+def _parse_scoped_target(parts: list[str], *, default_scope: str) -> tuple[str, str]:
+    if not parts:
+        raise RuntimeError("target is required")
+    first = str(parts[0] or "").strip().casefold()
+    scope_aliases = {
+        "t": "task",
+        "task": "task",
+        "c": "chain",
+        "ch": "chain",
+        "chain": "chain",
+        "p": "project",
+        "proj": "project",
+        "project": "project",
+    }
+    if first in scope_aliases:
+        if len(parts) < 2:
+            raise RuntimeError(f"{scope_aliases[first]} target is required")
+        return scope_aliases[first], " ".join(parts[1:]).strip()
+    return default_scope, " ".join(parts).strip()
 
 
 def _run_chain(ctx, task_ref: str) -> CommandResult:

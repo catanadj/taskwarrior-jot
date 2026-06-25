@@ -32,6 +32,9 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "project-list":
         _emit_project_list(payload)
         return
+    if command == "notes":
+        _emit_notes(payload)
+        return
     if command == "trash-list":
         _emit_trash_list(payload)
         return
@@ -53,7 +56,7 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "project-report":
         _emit_project_report(payload)
         return
-    if command in {"project-cat", "task-cat", "chain-cat"}:
+    if command in {"project-cat", "task-cat", "chain-cat", "cat"}:
         _emit_cat(payload)
         return
     if command == "add":
@@ -176,6 +179,38 @@ def _emit_project_list(payload: dict[str, Any]) -> None:
         sys.stdout.write(f"{project}\n")
         _emit_field("updated", updated, indent=2)
         _emit_field("path", path, indent=2)
+        sys.stdout.write("\n")
+
+
+def _emit_notes(payload: dict[str, Any]) -> None:
+    items = payload.get("notes") or []
+    sys.stdout.write("Notes\n\n")
+    if not items:
+        sys.stdout.write("(none)\n")
+        return
+    for item in items:
+        kind = str(item.get("kind") or "note")
+        ident = str(item.get("id") or "").strip()
+        title = str(item.get("title") or "").strip()
+        updated = str(item.get("updated") or "").strip() or "unknown"
+        path = str(item.get("path") or "")
+        heading = f"{kind}"
+        if ident:
+            heading += f" {ident}"
+        if title and title != ident:
+            heading += f"  {title}"
+        sys.stdout.write(f"{heading}\n")
+        project = str(item.get("project") or "").strip()
+        chain_id = str(item.get("chain_id") or "").strip()
+        if project:
+            _emit_field("project", project, indent=2)
+        if chain_id:
+            _emit_field("chain", chain_id, indent=2)
+        _emit_field("updated", updated, indent=2)
+        _emit_field("path", path, indent=2)
+        preview = str(item.get("preview") or "").strip()
+        if preview:
+            _emit_field("preview", preview, indent=2)
         sys.stdout.write("\n")
 
 
