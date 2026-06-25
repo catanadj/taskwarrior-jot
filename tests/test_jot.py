@@ -30,7 +30,14 @@ from jot_core.progress import (
     set_note_progress,
 )
 from jot_core.services import JotService
-from jot_tui.app import NEW_PROGRESS_TRACK, initial_progress_track, resolve_progress_track
+from jot_tui.app import (
+    NEW_PROGRESS_TRACK,
+    initial_progress_track,
+    resolve_progress_track,
+    tui_actions_block,
+    tui_next_actions,
+    tui_note_empty_guidance,
+)
 from jot_tui.palette import PaletteEntry, filter_palette_entries
 
 
@@ -243,6 +250,29 @@ class PaletteTests(unittest.TestCase):
             resolve_progress_track(NEW_PROGRESS_TRACK, "", "set")
         with self.assertRaisesRegex(RuntimeError, "Select a progress track"):
             resolve_progress_track(None, "", "add")
+
+    def test_tui_guidance_helpers_explain_empty_notes_and_next_actions(self) -> None:
+        empty = tui_note_empty_guidance("Task Note", "/tmp/task.md")
+        self.assertIn("No note text yet", empty)
+        self.assertIn("Press e", empty)
+        self.assertIn("/tmp/task.md", empty)
+
+        actions = tui_next_actions(
+            scope="task",
+            has_note=True,
+            has_resources=True,
+            has_progress=False,
+            has_chain=True,
+            has_project=True,
+        )
+        self.assertIn("a add to task heading", actions)
+        self.assertIn("c add to chain heading", actions)
+        self.assertIn("p open project workspace", actions)
+        self.assertIn("o open resource", actions)
+        self.assertIn("g start progress tracking", actions)
+        block = tui_actions_block(actions)
+        self.assertTrue(block.startswith("Next actions:"))
+        self.assertIn("- e edit/open note", block)
 
 
 class CommandHelpTests(unittest.TestCase):

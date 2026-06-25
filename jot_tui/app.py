@@ -40,6 +40,52 @@ def resolve_progress_track(
     return normalized
 
 
+def tui_note_empty_guidance(title: str, path: str) -> str:
+    lines = [title, ""]
+    lines.append(f"Path: {path or '(will be created when opened)'}")
+    lines.append("")
+    lines.append("No note text yet.")
+    lines.append("Press e to open this note in your editor.")
+    lines.append("Press a/c to add a timestamped heading entry when available.")
+    lines.append("Press f to attach a file or URL.")
+    return "\n".join(lines)
+
+
+def tui_next_actions(
+    *,
+    scope: str,
+    has_note: bool,
+    has_resources: bool,
+    has_progress: bool,
+    has_chain: bool = False,
+    has_project: bool = False,
+) -> list[str]:
+    actions = ["e edit/open note"]
+    if scope == "task":
+        actions.append("a add to task heading")
+        if has_chain:
+            actions.append("c add to chain heading")
+        if has_project:
+            actions.append("p open project workspace")
+    if scope == "project":
+        actions.append("f attach project resource")
+    elif has_note:
+        actions.append("f attach resource")
+    if has_resources:
+        actions.extend(["o open resource", "x detach resource"])
+    if has_progress:
+        actions.append("g update progress")
+    else:
+        actions.append("g start progress tracking")
+    return actions
+
+
+def tui_actions_block(actions: list[str]) -> str:
+    if not actions:
+        return ""
+    return "Next actions:\n" + "\n".join(f"  - {action}" for action in actions)
+
+
 def run_tui(service: JotService) -> int:
     try:
         from textual.app import App, ComposeResult
@@ -1210,6 +1256,23 @@ def run_tui(service: JotService) -> int:
                 lines.append(f"Chain note: {'present' if chain_note_data.get('body') else 'empty'}")
             if project_note_data.get("path"):
                 lines.append(f"Project note: {'present' if project_note_data.get('body') else 'empty'}")
+            lines.append("")
+            lines.append(
+                tui_actions_block(
+                    tui_next_actions(
+                        scope="task",
+                        has_note=bool(task_note_data.get("path")),
+                        has_resources=self._workspace_has_resources(
+                            [task_note_data, chain_note_data, project_note_data]
+                        ),
+                        has_progress=self._workspace_has_progress(
+                            [task_note_data, chain_note_data, project_note_data]
+                        ),
+                        has_chain=self.current_task_has_chain,
+                        has_project=bool(self.current_task_project),
+                    )
+                )
+            )
             summary.update("\n".join(lines))
             task_note.update(self._render_note_panel("Task Note", task_note_data))
             chain_note.update(self._render_note_panel("Chain Note", chain_note_data))
@@ -1281,6 +1344,23 @@ def run_tui(service: JotService) -> int:
                 lines.append(f"Chain note: {'present' if chain_note_data.get('body') else 'empty'}")
             if project_note_data.get("path"):
                 lines.append(f"Project note: {'present' if project_note_data.get('body') else 'empty'}")
+            lines.append("")
+            lines.append(
+                tui_actions_block(
+                    tui_next_actions(
+                        scope="task",
+                        has_note=bool(task_note_data.get("path")),
+                        has_resources=self._workspace_has_resources(
+                            [task_note_data, chain_note_data, project_note_data]
+                        ),
+                        has_progress=self._workspace_has_progress(
+                            [task_note_data, chain_note_data, project_note_data]
+                        ),
+                        has_chain=self.current_task_has_chain,
+                        has_project=bool(self.current_task_project),
+                    )
+                )
+            )
             summary.update("\n".join(lines))
             task_note.update(self._render_note_panel("Task Note", task_note_data))
             chain_note.update(self._render_note_panel("Chain Note", chain_note_data))
@@ -1323,6 +1403,15 @@ def run_tui(service: JotService) -> int:
                         f"Note: {note.get('path') or ''}",
                         "",
                         f"Status: {'present' if body else 'empty'}",
+                        "",
+                        tui_actions_block(
+                            tui_next_actions(
+                                scope="project",
+                                has_note=bool(note.get("path")),
+                                has_resources=self._workspace_has_resources([note]),
+                                has_progress=self._workspace_has_progress([note]),
+                            )
+                        ),
                     ]
                 )
             )
@@ -1490,17 +1579,31 @@ def run_tui(service: JotService) -> int:
 
         def _update_action_hints(self) -> None:
             hints = ["Actions: ctrl+p palette", "/ search", "r refresh", "u update", "q quit"]
-            if self.current_task_ref or self.current_latest_task_ref or self.current_project_name:
+            active_note = self._active_note_target()
+            task_context = self.current_task_ref or self.current_latest_task_ref
+            if active_note:
                 hints.append("d delete-note")
                 hints.extend(["f attach-resource", "o open-resource", "x detach-resource"])
+            else:
+                hints.append("select row then Enter")
             if self._progress_targets():
                 hints.append("g progress")
+            else:
+                hints.append("select task/project for progress")
             if self.current_task_ref:
                 hints.extend(["e edit-task", "a add-task"])
-            if self.current_task_ref and self.current_task_chain_path:
+            elif self.current_latest_task_ref:
+                hints.extend(["e edit-note", "a add-task"])
+            else:
+                hints.append("select task to edit/add")
+            if task_context and self.current_task_chain_path:
                 hints.append("c add-chain")
+            elif task_context and self.current_task_has_chain:
+                hints.append("open chain tab then c add-chain")
             if self.current_project_name or self.current_task_project:
                 hints.append("p open-project")
+            else:
+                hints.append("select project for project actions")
             self.query_one("#context-hints", Static).update(" | ".join(hints))
 
         def _palette_entries(self) -> list[PaletteEntry]:
@@ -1512,14 +1615,14 @@ def run_tui(service: JotService) -> int:
                 PaletteEntry("refresh-current", "Refresh current", "Reload the active workspace"),
                 PaletteEntry("refresh-all", "Refresh all", "Reload tasks, projects, and recent activity"),
                 PaletteEntry("open-selected", "Open selected row", "Jump into the selected task, project, or recent item"),
-                PaletteEntry("edit-note", "Edit active note", "Open the active note in your editor", bool(self._active_note_target())),
-                PaletteEntry("delete-note", "Delete active note", "Move the active note to trash", bool(self._active_note_target())),
-                PaletteEntry("attach-resource", "Attach resource", "Attach a file path or URL to the active note", bool(self._active_note_target())),
-                PaletteEntry("open-resource", "Open note resource", "Open a resource from the active note", bool(self._active_note_target())),
-                PaletteEntry("detach-resource", "Detach note resource", "Remove a resource from the active note", bool(self._active_note_target())),
-                PaletteEntry("update-progress", "Update progress", "Set or adjust progress for the current task, chain, or project", bool(self._progress_targets())),
-                PaletteEntry("add-task", "Add to task heading", "Add a timestamped entry under the selected task note", bool(self.current_task_ref)),
-                PaletteEntry("add-chain", "Add to chain heading", "Add a timestamped entry under the selected chain note", bool(self.current_task_ref and self.current_task_chain_path)),
+                PaletteEntry("edit-note", "Edit active note", "Open the active note in your editor; saved changes show a diff", bool(self._active_note_target())),
+                PaletteEntry("delete-note", "Delete active note", "Show a confirmation, then move the active note to trash", bool(self._active_note_target())),
+                PaletteEntry("attach-resource", "Attach resource", "Prompt for a file path or URL and store it on the active note", bool(self._active_note_target())),
+                PaletteEntry("open-resource", "Open note resource", "Show resources on the active note and open the selected one", bool(self._active_note_target())),
+                PaletteEntry("detach-resource", "Detach note resource", "Show resources on the active note and remove the selected one", bool(self._active_note_target())),
+                PaletteEntry("update-progress", "Update progress", "Open the progress dialog for task, chain, or project scope", bool(self._progress_targets())),
+                PaletteEntry("add-task", "Add to task heading", "Prompt for heading and text, then add a timestamped task entry", bool(self.current_task_ref)),
+                PaletteEntry("add-chain", "Add to chain heading", "Prompt for heading and text, then add a timestamped chain entry", bool(self.current_task_ref and self.current_task_chain_path)),
                 PaletteEntry("open-project", "Open project workspace", "Open the selected or current project note", bool(self.current_project_name or self.current_task_project)),
             ]
             return entries
@@ -1765,10 +1868,14 @@ def run_tui(service: JotService) -> int:
         def _render_note_panel(self, title: str, note: dict[str, Any]) -> str:
             path = str(note.get("path") or "").strip()
             body = str(note.get("body") or "").strip()
+            if not body:
+                return tui_note_empty_guidance(title, path)
             lines = [title, ""]
             lines.append(f"Path: {path or '(none)'}")
             lines.append("")
-            lines.append(self._note_excerpt(body) or "(empty)")
+            lines.append(self._note_excerpt(body))
+            lines.append("")
+            lines.append("Actions: e edit | f attach resource | g progress")
             return "\n".join(lines)
 
         def _render_events_panel(self, events: list[dict[str, Any]]) -> str:
@@ -1810,7 +1917,9 @@ def run_tui(service: JotService) -> int:
                         lines.append(f"     {target}")
                 lines.append("")
             if not found and len(lines) == 2:
-                lines.append("(none)")
+                lines.append("No resources attached yet.")
+                lines.append("Press f to attach a file path or URL to the active note.")
+                lines.append("After attaching, press o to open or x to detach.")
             lines.append("Actions: f attach | o open | x detach")
             return "\n".join(lines).strip()
 
@@ -1847,10 +1956,24 @@ def run_tui(service: JotService) -> int:
                         lines.append(f"    Updated: {progress.get('updated')}")
                 lines.append("")
             if not found:
-                lines.append("(not set)")
+                lines.append("No progress tracks yet.")
+                lines.append("Press g to set a current/target measurement.")
+                lines.append("Examples: pages read, workout sets, rooms finished, checklist items.")
                 lines.append("")
             lines.append("Action: g set, adjust, change status, or clear")
             return "\n".join(lines).strip()
+
+        def _workspace_has_resources(self, notes: list[dict[str, Any]]) -> bool:
+            return any(bool(note.get("resources") or []) for note in notes)
+
+        def _workspace_has_progress(self, notes: list[dict[str, Any]]) -> bool:
+            for note in notes:
+                tracks = note.get("progress_tracks")
+                if isinstance(tracks, list) and tracks:
+                    return True
+                if isinstance(note.get("progress"), dict):
+                    return True
+            return False
 
         def _progress_bar(self, percentage: str, width: int = 24) -> str:
             try:

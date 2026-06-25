@@ -184,6 +184,8 @@ Task and project browser rows also show compact progress summaries, so tracked
 work is visible without opening its workspace.
 The progress dialog lists tracks already stored for each available note scope,
 infers a sole track, and provides an explicit `New track...` option for `set`.
+Summary and empty panels show context-aware next actions, so a blank note,
+missing resource list, or empty progress view explains which key to press next.
 
 Main shortcuts:
 
