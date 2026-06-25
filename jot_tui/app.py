@@ -641,7 +641,7 @@ def run_tui(service: JotService) -> int:
         #search-bar { height: auto; }
         #search-input { margin: 0 1 0 0; width: 1fr; }
         #context-hints { padding: 0 1; color: $text-muted; }
-        #recent-table, #tasks-table, #projects-table, #search-notes-table, #search-events-table { height: 1fr; }
+        #recent-table, #tasks-table, #projects-table, #notes-table, #search-notes-table, #search-events-table { height: 1fr; }
         """
 
         BINDINGS = [
@@ -670,9 +670,12 @@ def run_tui(service: JotService) -> int:
             self.task_all_rows: list[dict[str, Any]] = []
             self.task_rows: list[dict[str, Any]] = []
             self.project_rows: list[dict[str, Any]] = []
+            self.note_rows: list[dict[str, Any]] = []
             self.search_note_rows: list[dict[str, Any]] = []
             self.search_event_rows: list[dict[str, Any]] = []
             self.current_search_query: str = ""
+            self.note_filter_kind: str = ""
+            self.note_filter_project: str = ""
             self.task_filter_project: str = ""
             self.task_filter_tag: str = ""
             self.task_filter_notes_only: bool = False
@@ -738,6 +741,16 @@ def run_tui(service: JotService) -> int:
                                                 yield Static("No resources loaded.", id="project-resources-preview")
                                             with TabPane("Progress", id="project-progress-pane"):
                                                 yield Static("No progress loaded.", id="project-progress-preview")
+                with TabPane("Notes", id="notes-tab"):
+                    with Vertical(id="notes-pane"):
+                        yield Static("Notes", classes="title")
+                        with Horizontal(id="notes-filter-bar"):
+                            yield Input(placeholder="Kind filter: task, chain, project", id="notes-filter-kind")
+                            yield Input(placeholder="Project filter", id="notes-filter-project")
+                            yield Button("Clear", id="notes-filter-clear")
+                        notes = DataTable(id="notes-table", cursor_type="row")
+                        notes.add_columns("kind", "id", "title", "project", "progress", "resources", "updated")
+                        yield notes
                 with TabPane("Search", id="search-tab"):
                     with Vertical():
                         with Horizontal(id="search-bar"):
@@ -781,12 +794,14 @@ def run_tui(service: JotService) -> int:
             await self._refresh_recent_async()
             await self._refresh_tasks_async()
             await self._refresh_projects_async()
+            await self._refresh_notes_async()
             self._update_action_hints()
 
         async def action_refresh(self) -> None:
             await self._refresh_recent_async()
             await self._refresh_tasks_async()
             await self._refresh_projects_async()
+            await self._refresh_notes_async()
             self._update_action_hints()
 
         async def action_refresh_current(self) -> None:
@@ -834,6 +849,11 @@ def run_tui(service: JotService) -> int:
                     self.current_project_name = project_name
                 if project_name and bool(self.project_rows[row_index].get("selectable")):
                     self._open_project_workspace(project_name)
+                return
+            if table_id == "notes-table":
+                if row_index >= len(self.note_rows):
+                    return
+                self._open_note_inventory_row(self.note_rows[row_index])
                 return
             if table_id == "search-events-table":
                 if row_index >= len(self.search_event_rows):
@@ -891,7 +911,9 @@ def run_tui(service: JotService) -> int:
                 return
             self.notify(f"Opened: {path}")
             main_tab = self.query_one("#main-tabs", TabbedContent).active
-            if main_tab == "latest-tab" and self.current_latest_task_ref:
+            if main_tab == "notes-tab":
+                asyncio.create_task(self._refresh_notes_async())
+            elif main_tab == "latest-tab" and self.current_latest_task_ref:
                 asyncio.create_task(self._load_latest_task_async(self.current_latest_task_ref))
             elif self.current_task_ref:
                 asyncio.create_task(self._load_task_async(self.current_task_ref))
@@ -1055,6 +1077,14 @@ def run_tui(service: JotService) -> int:
             self._run_search(query)
 
         def on_input_changed(self, event: Input.Changed) -> None:
+            if event.input.id == "notes-filter-kind":
+                self.note_filter_kind = event.value.strip()
+                asyncio.create_task(self._refresh_notes_async())
+                return
+            if event.input.id == "notes-filter-project":
+                self.note_filter_project = event.value.strip()
+                asyncio.create_task(self._refresh_notes_async())
+                return
             if event.input.id == "task-filter-project":
                 self.task_filter_project = event.value.strip()
                 self._render_tasks_table()
@@ -1070,6 +1100,13 @@ def run_tui(service: JotService) -> int:
             self._render_tasks_table()
 
         def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "notes-filter-clear":
+                self.note_filter_kind = ""
+                self.note_filter_project = ""
+                self.query_one("#notes-filter-kind", Input).value = ""
+                self.query_one("#notes-filter-project", Input).value = ""
+                asyncio.create_task(self._refresh_notes_async())
+                return
             if event.button.id != "task-filter-clear":
                 return
             self.task_filter_project = ""
@@ -1110,6 +1147,11 @@ def run_tui(service: JotService) -> int:
                 self.current_project_name = project_name or None
                 if self.current_project_name and bool(self.project_rows[row_index].get("selectable")):
                     self._open_project_workspace(self.current_project_name)
+            if event.data_table.id == "notes-table":
+                row_index = event.cursor_row
+                if row_index < 0 or row_index >= len(self.note_rows):
+                    return
+                self._open_note_inventory_row(self.note_rows[row_index])
 
         async def _refresh_recent_async(self) -> None:
             table = self.query_one("#recent-table", DataTable)
@@ -1131,6 +1173,30 @@ def run_tui(service: JotService) -> int:
                     str(item.get("kind") or ""),
                     ident,
                     summary,
+                )
+
+        async def _refresh_notes_async(self) -> None:
+            table = self.query_one("#notes-table", DataTable)
+            table.clear()
+            try:
+                self.note_rows = await asyncio.to_thread(
+                    self.svc.notes,
+                    kind=self.note_filter_kind,
+                    project=self.note_filter_project,
+                )
+            except Exception as exc:
+                self.note_rows = []
+                self.notify(f"Notes refresh failed: {exc}", severity="error")
+                return
+            for item in self.note_rows:
+                table.add_row(
+                    str(item.get("kind") or ""),
+                    str(item.get("id") or ""),
+                    str(item.get("title") or ""),
+                    str(item.get("project") or ""),
+                    str(item.get("progress") or "-") or "-",
+                    str(item.get("resources") or "0"),
+                    str(item.get("updated") or ""),
                 )
 
         async def _refresh_tasks_async(self) -> None:
@@ -1231,6 +1297,9 @@ def run_tui(service: JotService) -> int:
                     await self._refresh_recent_async()
                     await self._load_latest_task_async(self.current_latest_task_ref)
                 return
+            if main_tab == "notes-tab":
+                await self._refresh_notes_async()
+                return
             if main_tab == "search-tab":
                 if self.current_search_query:
                     await self._run_search_async(self.current_search_query)
@@ -1252,6 +1321,11 @@ def run_tui(service: JotService) -> int:
                 self.query_one("#browse-browser-tabs", TabbedContent).active = "project-browser-pane"
                 if self.current_project_name:
                     await self._load_project_async(self.current_project_name)
+                self._update_action_hints()
+                return
+            if command_id == "browse-notes":
+                self.query_one("#main-tabs", TabbedContent).active = "notes-tab"
+                await self._refresh_notes_async()
                 self._update_action_hints()
                 return
             if command_id == "latest-edits":
@@ -1559,6 +1633,7 @@ def run_tui(service: JotService) -> int:
             await self._refresh_recent_async()
             await self._refresh_tasks_async()
             await self._refresh_projects_async()
+            await self._refresh_notes_async()
             main_tab = self.query_one("#main-tabs", TabbedContent).active
             if main_tab == "latest-tab" and self.current_latest_task_ref:
                 await self._load_latest_task_async(self.current_latest_task_ref)
@@ -1628,9 +1703,12 @@ def run_tui(service: JotService) -> int:
             await self._refresh_recent_async()
             await self._refresh_tasks_async()
             await self._refresh_projects_async()
+            await self._refresh_notes_async()
             main_tab = self.query_one("#main-tabs", TabbedContent).active
             if main_tab == "latest-tab" and self.current_latest_task_ref:
                 await self._load_latest_task_async(self.current_latest_task_ref)
+            elif main_tab == "notes-tab":
+                return
             elif self.current_project_name and self.query_one("#browse-browser-tabs", TabbedContent).active == "project-browser-pane":
                 await self._load_project_async(self.current_project_name)
             elif self.current_task_ref:
@@ -1699,6 +1777,7 @@ def run_tui(service: JotService) -> int:
             entries = [
                 PaletteEntry("browse-tasks", "Browse tasks", "Open the task browser workspace"),
                 PaletteEntry("browse-projects", "Browse projects", "Open the project browser workspace"),
+                PaletteEntry("browse-notes", "Browse notes", "Open the all-notes browser with kind and project filters"),
                 PaletteEntry("latest-edits", "Latest edits", "Open the recent activity workspace"),
                 PaletteEntry("search", "Search", "Focus the search tab and input"),
                 PaletteEntry("refresh-current", "Refresh current", "Reload the active workspace"),
@@ -1721,36 +1800,65 @@ def run_tui(service: JotService) -> int:
             progress_targets = self._progress_targets()
             task_ref = self.current_task_ref or self.current_latest_task_ref
             project = self.current_project_name or self.current_task_project
+            main_tab = self.query_one("#main-tabs", TabbedContent).active
+            note_row = self._selected_note_row() if main_tab == "notes-tab" else None
             if target is None and not progress_targets and not task_ref and not project:
                 return []
 
             scope = str((target or {}).get("kind") or ("project" if project and not task_ref else "task"))
+            has_resources = self.current_context_has_resources
+            has_progress = self.current_context_has_progress
+            if note_row:
+                has_resources = int(note_row.get("resources") or 0) > 0
+                has_progress = bool(str(note_row.get("progress") or "").strip())
+                scope = str((target or {}).get("kind") or "").strip() or scope
             entries = tui_context_action_entries(
                 scope=scope,
                 has_note=target is not None,
-                has_resources=self.current_context_has_resources,
-                has_progress=self.current_context_has_progress,
+                has_resources=has_resources,
+                has_progress=has_progress,
                 has_chain=bool(task_ref and self.current_task_has_chain),
                 has_project=bool(project),
             )
             valid: set[str] = set()
             if target is not None:
                 valid.update({"edit-note", "delete-note", "attach-resource"})
-                if self.current_context_has_resources:
+                if has_resources:
                     valid.update({"open-resource", "detach-resource"})
             if progress_targets:
                 valid.add("update-progress")
-            if task_ref:
+            if task_ref and main_tab != "notes-tab":
                 valid.add("add-task")
                 if self.current_task_chain_path:
                     valid.add("add-chain")
-            if project:
+            if project and main_tab != "notes-tab":
                 valid.add("open-project")
             return [entry for entry in entries if entry.id in valid]
 
         def _progress_targets(self) -> list[dict[str, Any]]:
             main_tab = self.query_one("#main-tabs", TabbedContent).active
-            if main_tab not in {"browse-tab", "latest-tab"}:
+            if main_tab not in {"browse-tab", "latest-tab", "notes-tab"}:
+                return []
+            if main_tab == "notes-tab":
+                item = self._selected_note_row()
+                if not item:
+                    return []
+                kind = str(item.get("kind") or "")
+                if kind == "task-note":
+                    task_ref = str(item.get("task_short_uuid") or item.get("id") or "").strip()
+                    return [{"kind": "task", "task_ref": task_ref}] if task_ref else []
+                if kind == "chain-note":
+                    chain_id = str(item.get("chain_id") or item.get("id") or "").strip()
+                    if not chain_id:
+                        return []
+                    try:
+                        task_ref = self.svc.task_ref_for_chain_id(chain_id)
+                    except Exception:
+                        return []
+                    return [{"kind": "chain", "task_ref": task_ref}]
+                if kind == "project-note":
+                    project = str(item.get("project") or item.get("id") or "").strip()
+                    return [{"kind": "project", "project": project}] if project else []
                 return []
             if main_tab == "browse-tab":
                 browse_tab = self.query_one("#browse-browser-tabs", TabbedContent).active
@@ -1769,6 +1877,8 @@ def run_tui(service: JotService) -> int:
 
         def _active_note_target(self) -> dict[str, Any] | None:
             main_tab = self.query_one("#main-tabs", TabbedContent).active
+            if main_tab == "notes-tab":
+                return self._active_note_target_from_note_row()
             if main_tab == "browse-tab":
                 browse_tab = self.query_one("#browse-browser-tabs", TabbedContent).active
                 if browse_tab == "task-browser-pane":
@@ -1851,6 +1961,57 @@ def run_tui(service: JotService) -> int:
                 }
             return None
 
+        def _selected_note_row(self) -> dict[str, Any] | None:
+            try:
+                table = self.query_one("#notes-table", DataTable)
+            except Exception:
+                return None
+            row = table.cursor_row
+            if row < 0 or row >= len(self.note_rows):
+                return None
+            return self.note_rows[row]
+
+        def _active_note_target_from_note_row(self) -> dict[str, Any] | None:
+            item = self._selected_note_row()
+            if not item:
+                return None
+            kind = str(item.get("kind") or "").strip()
+            path = str(item.get("path") or "").strip()
+            if not path:
+                return None
+            if kind == "task-note":
+                task_ref = str(item.get("task_short_uuid") or item.get("id") or "").strip()
+                return {
+                    "kind": "task",
+                    "label": "task note",
+                    "task_ref": task_ref,
+                    "path": path,
+                    "trash_path": str(preview_trash_path(self.svc.config, Path(path))),
+                }
+            if kind == "chain-note":
+                chain_id = str(item.get("chain_id") or item.get("id") or "").strip()
+                try:
+                    task_ref = self.svc.task_ref_for_chain_id(chain_id)
+                except Exception:
+                    return None
+                return {
+                    "kind": "chain",
+                    "label": "chain note",
+                    "task_ref": task_ref,
+                    "path": path,
+                    "trash_path": str(preview_trash_path(self.svc.config, Path(path))),
+                }
+            if kind == "project-note":
+                project = str(item.get("project") or item.get("id") or "").strip()
+                return {
+                    "kind": "project",
+                    "label": "project note",
+                    "project": project,
+                    "path": path,
+                    "trash_path": str(preview_trash_path(self.svc.config, Path(path))),
+                }
+            return None
+
         async def _apply_delete_async(self, target: dict[str, Any]) -> None:
             try:
                 kind = str(target.get("kind") or "")
@@ -1903,8 +2064,45 @@ def run_tui(service: JotService) -> int:
             asyncio.create_task(self._load_project_async(project_name))
             self._update_action_hints()
 
+        def _open_note_inventory_row(self, item: dict[str, Any]) -> None:
+            kind = str(item.get("kind") or "").strip()
+            if kind == "project-note":
+                project = str(item.get("project") or item.get("id") or "").strip()
+                if project:
+                    self._open_project_workspace(project)
+                    return
+            if kind == "task-note":
+                short_uuid = str(item.get("task_short_uuid") or item.get("id") or "").strip()
+                if short_uuid:
+                    self._open_task_workspace(short_uuid)
+                    return
+            if kind == "chain-note":
+                chain_id = str(item.get("chain_id") or item.get("id") or "").strip()
+                if chain_id:
+                    try:
+                        short_uuid = self.svc.task_ref_for_chain_id(chain_id)
+                    except Exception as exc:
+                        self.notify(f"Chain open failed: {exc}", severity="error")
+                        return
+                    self._open_task_workspace(short_uuid)
+                    return
+            self.notify("This note row has no openable workspace target", severity="warning")
+
         def _open_active_note_in_editor(self) -> str:
             main_tab = self.query_one("#main-tabs", TabbedContent).active
+            if main_tab == "notes-tab":
+                target = self._active_note_target_from_note_row()
+                if not target:
+                    raise RuntimeError("select a note row first")
+                kind = str(target.get("kind") or "")
+                with self.suspend():
+                    if kind == "task":
+                        return self.svc.open_task_note_in_editor(str(target.get("task_ref") or ""))
+                    if kind == "chain":
+                        return self.svc.open_chain_note_in_editor(str(target.get("task_ref") or ""))
+                    if kind == "project":
+                        return self.svc.open_project_note_in_editor(str(target.get("project") or ""))
+                raise RuntimeError("unknown note row kind")
             if main_tab == "browse-tab":
                 browse_tab = self.query_one("#browse-browser-tabs", TabbedContent).active
                 if browse_tab == "task-browser-pane":

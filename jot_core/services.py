@@ -20,7 +20,7 @@ from .notes import (
     project_note_path,
     task_note_path,
 )
-from .report import list_project_notes, recent_activity
+from .report import list_notes, list_project_notes, normalize_note_kinds, recent_activity
 from .progress import (
     format_progress_tracks_summary,
     parse_progress_pair,
@@ -61,6 +61,10 @@ class JotService:
 
     def projects(self) -> list[dict[str, Any]]:
         return list_project_notes(self.config)
+
+    def notes(self, *, kind: str = "", project: str = "") -> list[dict[str, Any]]:
+        kinds = normalize_note_kinds([kind]) if str(kind or "").strip() else None
+        return list_notes(self.config, kinds=kinds, project=project or None)
 
     def project_tree_rows(self, limit: int = 1000) -> list[dict[str, Any]]:
         items = self.taskwarrior.list_tasks(limit=limit, status="pending")

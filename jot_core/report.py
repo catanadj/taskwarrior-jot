@@ -5,8 +5,9 @@ from typing import Any
 
 from .frontmatter import read_document
 from .models import AppConfig
-from .notes import find_project_note
+from .notes import find_project_note, list_note_resources
 from .ops import read_ops
+from .progress import format_progress_tracks_summary, read_note_progress_tracks
 from .search import ALLOWED_KINDS
 
 
@@ -90,6 +91,8 @@ def _note_inventory_task_notes(config: AppConfig) -> list[dict[str, Any]]:
         short_uuid = str(metadata.get("task_short_uuid") or "").strip()
         if not short_uuid:
             continue
+        resources = list_note_resources(path).resources
+        progress = read_note_progress_tracks(path)
         items.append(
             {
                 "kind": "task-note",
@@ -102,6 +105,8 @@ def _note_inventory_task_notes(config: AppConfig) -> list[dict[str, Any]]:
                 "updated": str(metadata.get("updated") or "").strip() or None,
                 "path": str(path),
                 "preview": _body_preview(body, max_lines=2),
+                "resources": len(resources),
+                "progress": format_progress_tracks_summary(progress),
             }
         )
     return items
@@ -114,6 +119,8 @@ def _note_inventory_chain_notes(config: AppConfig) -> list[dict[str, Any]]:
         chain_id = str(metadata.get("chain_id") or "").strip()
         if not chain_id:
             continue
+        resources = list_note_resources(path).resources
+        progress = read_note_progress_tracks(path)
         items.append(
             {
                 "kind": "chain-note",
@@ -125,6 +132,8 @@ def _note_inventory_chain_notes(config: AppConfig) -> list[dict[str, Any]]:
                 "updated": str(metadata.get("updated") or "").strip() or None,
                 "path": str(path),
                 "preview": _body_preview(body, max_lines=2),
+                "resources": len(resources),
+                "progress": format_progress_tracks_summary(progress),
             }
         )
     return items
@@ -137,6 +146,8 @@ def _note_inventory_project_notes(config: AppConfig) -> list[dict[str, Any]]:
         project = str(metadata.get("project") or "").strip()
         if not project:
             continue
+        resources = list_note_resources(path).resources
+        progress = read_note_progress_tracks(path)
         items.append(
             {
                 "kind": "project-note",
@@ -146,6 +157,8 @@ def _note_inventory_project_notes(config: AppConfig) -> list[dict[str, Any]]:
                 "updated": str(metadata.get("updated") or "").strip() or None,
                 "path": str(path),
                 "preview": _body_preview(body, max_lines=2),
+                "resources": len(resources),
+                "progress": format_progress_tracks_summary(progress),
             }
         )
     return items

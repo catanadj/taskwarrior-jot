@@ -208,9 +208,10 @@ Main shortcuts:
 - `c` add a timestamped entry under a chain heading
 - `p` open the project workspace
 
-The TUI has three main areas:
+The TUI has four main areas:
 
 - `Browse` for tasks and projects
+- `Notes` for all task, chain, and project notes with kind/project filters
 - `Latest Edits` for recent activity
 - `Search` for finding notes and logged events
 

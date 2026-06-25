@@ -611,6 +611,35 @@ class ServiceProgressRowTests(unittest.TestCase):
             ["chest", "legs"],
         )
 
+    def test_notes_service_lists_inventory_with_progress_and_resources(self) -> None:
+        task_path = self.config.tasks_dir / "2d6d7d7d--workout.md"
+        write_document(
+            task_path,
+            OrderedDict(
+                [
+                    ("kind", "task-note"),
+                    ("task_short_uuid", "2d6d7d7d"),
+                    ("description", "Workout"),
+                    ("project", "fitness"),
+                    ("updated", "2026-06-12T10:00:00Z"),
+                    ("progress_current", "3"),
+                    ("progress_target", "10"),
+                    ("progress_unit", "sets"),
+                ]
+            ),
+            "# Workout\n\n## Resources\n\n- [plan](https://example.com/plan)\n",
+        )
+
+        class FakeTaskwarrior:
+            pass
+
+        service = JotService(config=self.config, taskwarrior=FakeTaskwarrior())  # type: ignore[arg-type]
+        rows = service.notes(kind="task", project="fitness")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["kind"], "task-note")
+        self.assertEqual(rows[0]["resources"], 1)
+        self.assertEqual(rows[0]["progress"], "3/10 sets (30%)")
+
     def test_tui_chain_and_project_editor_paths_finalize_index_and_ops(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
