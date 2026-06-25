@@ -186,6 +186,8 @@ The progress dialog lists tracks already stored for each available note scope,
 infers a sole track, and provides an explicit `New track...` option for `set`.
 Summary and empty panels show context-aware next actions, so a blank note,
 missing resource list, or empty progress view explains which key to press next.
+Press `m` to open a context action menu for the selected task, project, recent
+item, or active note tab.
 
 Main shortcuts:
 
@@ -193,6 +195,7 @@ Main shortcuts:
 - `r` refresh data
 - `u` refresh the current workspace
 - `ctrl+p` open the command palette
+- `m` open context actions for the current selection
 - `/` focus search
 - `Enter` open the selected row
 - `e` open the active note in the editor

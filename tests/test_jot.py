@@ -35,6 +35,7 @@ from jot_tui.app import (
     initial_progress_track,
     resolve_progress_track,
     tui_actions_block,
+    tui_context_action_entries,
     tui_next_actions,
     tui_note_empty_guidance,
 )
@@ -273,6 +274,22 @@ class PaletteTests(unittest.TestCase):
         block = tui_actions_block(actions)
         self.assertTrue(block.startswith("Next actions:"))
         self.assertIn("- e edit/open note", block)
+
+        entries = tui_context_action_entries(
+            scope="task",
+            has_note=True,
+            has_resources=True,
+            has_progress=True,
+            has_chain=True,
+            has_project=True,
+        )
+        ids = [entry.id for entry in entries]
+        self.assertIn("edit-note", ids)
+        self.assertIn("add-task", ids)
+        self.assertIn("add-chain", ids)
+        self.assertIn("open-resource", ids)
+        self.assertIn("detach-resource", ids)
+        self.assertIn("update-progress", ids)
 
 
 class CommandHelpTests(unittest.TestCase):
