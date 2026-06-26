@@ -76,6 +76,7 @@ def _write_fake_task_script(bin_dir: Path, state_path: Path) -> None:
         if args and args[-1] == 'done':
             task_uuid = args[-2]
             state.setdefault('completed_tasks', []).append(task_uuid)
+            state.setdefault('completed_task_args', []).append(args)
             for value in state.values():
                 if not isinstance(value, list):
                     continue
@@ -716,6 +717,8 @@ class CliIntegrationTests(JotCliTestCase):
 
         state = json.loads(self.state_path.read_text(encoding="utf-8"))
         self.assertEqual(state["completed_tasks"], [task["uuid"]])
+        self.assertEqual(state["completed_task_args"], [["rc.verbose=nothing", "rc.confirmation=off", task["uuid"], "done"]])
+        self.assertNotIn("rc.hooks=off", state["completed_task_args"][0])
         self.assertEqual(state["single"][0]["status"], "completed")
 
     def test_no_arguments_prints_command_overview(self) -> None:

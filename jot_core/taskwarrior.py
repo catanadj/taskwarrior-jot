@@ -86,9 +86,10 @@ class TaskwarriorClient:
             raise RuntimeError(proc.stderr.strip() or "task annotate failed")
 
     def complete_task(self, task_uuid: str) -> None:
+        # Keep hooks enabled so hook-driven tools such as Nautical can generate
+        # follow-up chain instances when a task is completed.
         proc = self._run(
             [
-                "rc.hooks=off",
                 "rc.verbose=nothing",
                 "rc.confirmation=off",
                 task_uuid,
