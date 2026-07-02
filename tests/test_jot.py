@@ -197,6 +197,20 @@ class FrontMatterTests(unittest.TestCase):
             self.assertEqual(path.read_text(encoding="utf-8"), "original\n")
             self.assertEqual(list(path.parent.glob(f".{path.name}.*.tmp")), [])
 
+    def test_file_lock_falls_back_when_flock_is_unavailable(self) -> None:
+        import errno
+
+        with tempfile.TemporaryDirectory(prefix="jot-lock-fallback-") as tempdir:
+            path = Path(tempdir) / "note.md"
+            write_document(path, OrderedDict([("kind", "task-note")]), "# Note\n")
+            with mock.patch("jot_core.frontmatter.fcntl.flock", side_effect=OSError(errno.ENOSYS, "Function not implemented")):
+                set_note_progress(path, Decimal("1"), Decimal("2"))
+
+            metadata, body = read_document(path)
+            self.assertEqual(metadata["progress_current"], "1")
+            self.assertIn("## Progress", body)
+            self.assertFalse((path.parent / ".note.md.lock.d").exists())
+
     def test_concurrent_progress_adjustments_are_not_lost(self) -> None:
         with tempfile.TemporaryDirectory(prefix="jot-lock-") as tempdir:
             path = Path(tempdir) / "note.md"

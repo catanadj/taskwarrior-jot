@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import fcntl
+import errno
 import os
 import tempfile
+import time
 from collections import OrderedDict
 from contextlib import contextmanager
 from pathlib import Path
@@ -52,11 +54,36 @@ def exclusive_file_lock(path: Path) -> Iterator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.parent / f".{path.name}.lock"
     with lock_path.open("a+", encoding="utf-8") as lock_handle:
-        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+        except OSError as exc:
+            if exc.errno != errno.ENOSYS:
+                raise
+            with _exclusive_lock_dir(lock_path):
+                yield
+            return
         try:
             yield
         finally:
             fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def _exclusive_lock_dir(lock_path: Path) -> Iterator[None]:
+    lock_dir = lock_path.with_suffix(lock_path.suffix + ".d")
+    while True:
+        try:
+            lock_dir.mkdir()
+            break
+        except FileExistsError:
+            time.sleep(0.05)
+    try:
+        yield
+    finally:
+        try:
+            lock_dir.rmdir()
+        except FileNotFoundError:
+            pass
 
 
 @contextmanager
