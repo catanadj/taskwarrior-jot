@@ -68,6 +68,18 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "timelog-ingest":
         _emit_timelog_ingest(payload)
         return
+    if command == "timelog-start":
+        _emit_timelog_start(payload)
+        return
+    if command == "timelog-stop":
+        _emit_timelog_stop(payload)
+        return
+    if command == "timelog-pending":
+        _emit_timelog_pending(payload)
+        return
+    if command == "timelog-cancel":
+        _emit_timelog_cancel(payload)
+        return
     if command == "headings":
         _emit_headings(payload)
         return
@@ -422,6 +434,47 @@ def _emit_timelog_ingest(payload: dict[str, Any]) -> None:
     if chain_id:
         _emit_field("chain", chain_id, indent=0)
     _emit_field("duration", f"{payload.get('duration_minutes')} minutes", indent=0)
+
+
+def _emit_timelog_start(payload: dict[str, Any]) -> None:
+    if payload.get("already_started"):
+        sys.stdout.write(f"Jot timelog session already pending for task {payload.get('task_short_uuid')}\n")
+    else:
+        sys.stdout.write(f"Started Jot timelog session for task {payload.get('task_short_uuid')}\n")
+    _emit_field("started", payload.get("started"), indent=0)
+    chain_id = str(payload.get("chain_id") or "").strip()
+    if chain_id:
+        _emit_field("chain", chain_id, indent=0)
+
+
+def _emit_timelog_stop(payload: dict[str, Any]) -> None:
+    _emit_timelog_ingest(payload)
+    if payload.get("session_cleared"):
+        sys.stdout.write("Pending session cleared\n")
+
+
+def _emit_timelog_pending(payload: dict[str, Any]) -> None:
+    sessions = payload.get("sessions") or []
+    sys.stdout.write("Pending timelog sessions\n\n")
+    if not sessions:
+        sys.stdout.write("(none)\n")
+        return
+    for item in sessions:
+        sys.stdout.write(f"{item.get('task_short_uuid')}  started {item.get('started')}\n")
+        description = str(item.get("description") or "").strip()
+        if description:
+            _emit_field("description", description, indent=2)
+        project = str(item.get("project") or "").strip()
+        if project:
+            _emit_field("project", project, indent=2)
+        chain_id = str(item.get("chain_id") or "").strip()
+        if chain_id:
+            _emit_field("chain", chain_id, indent=2)
+
+
+def _emit_timelog_cancel(payload: dict[str, Any]) -> None:
+    sys.stdout.write(f"Cancelled Jot timelog session for task {payload.get('task_short_uuid')}\n")
+    _emit_field("started", payload.get("started"), indent=0)
 
 
 def _emit_headings(payload: dict[str, Any]) -> None:

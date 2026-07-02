@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
+from .frontmatter import atomic_write_text, exclusive_file_lock
 from .index import update_chain_note_index, update_task_note_index
 from .models import ResolvedTask, TaskRef
 from .nautical import chain_id_for_task
@@ -26,9 +29,131 @@ def ingest_time_log(config, old: dict[str, Any], new: dict[str, Any], *, scope: 
     if stopped < started:
         raise RuntimeError("stop time is before start time")
 
-    note_kind = _resolve_scope(scope, new)
+    return write_time_log(config, task, started=started, stopped=stopped, scope=scope)
+
+
+def start_time_session(config, task: ResolvedTask, *, started_at: str = "") -> dict[str, Any]:
+    started = _parse_datetime(started_at) if started_at else datetime.now(timezone.utc)
+    path = _session_store_path(config)
+    with exclusive_file_lock(path):
+        sessions = _read_sessions_unlocked(path)
+        existing = sessions.get(task.task_uuid)
+        if isinstance(existing, dict):
+            return {
+                "task_uuid": task.task_uuid,
+                "task_short_uuid": task.task_short_uuid,
+                "chain_id": existing.get("chain_id") or chain_id_for_task(task.task) or None,
+                "started": existing.get("started"),
+                "path": str(path),
+                "already_started": True,
+            }
+        sessions[task.task_uuid] = {
+            "task_uuid": task.task_uuid,
+            "task_short_uuid": task.task_short_uuid,
+            "description": task.description,
+            "project": task.project,
+            "chain_id": chain_id_for_task(task.task) or None,
+            "started": _iso_z(started),
+        }
+        _write_sessions_unlocked(path, sessions)
+    append_op(
+        config,
+        "timelog_session_start",
+        task_short_uuid=task.task_short_uuid,
+        task_uuid=task.task_uuid,
+        chain_id=chain_id_for_task(task.task) or None,
+        started=_iso_z(started),
+    )
+    return {
+        "task_uuid": task.task_uuid,
+        "task_short_uuid": task.task_short_uuid,
+        "chain_id": chain_id_for_task(task.task) or None,
+        "started": _iso_z(started),
+        "path": str(path),
+    }
+
+
+def stop_time_session(config, task: ResolvedTask, *, stopped_at: str = "", scope: str = "auto") -> dict[str, Any]:
+    stopped = _parse_datetime(stopped_at) if stopped_at else datetime.now(timezone.utc)
+    path = _session_store_path(config)
+    with exclusive_file_lock(path):
+        sessions = _read_sessions_unlocked(path)
+        session = sessions.get(task.task_uuid)
+        if not isinstance(session, dict):
+            raise RuntimeError(f"no pending timelog session for {task.task_short_uuid}")
+        started = _parse_datetime(str(session.get("started") or ""))
+        if stopped < started:
+            raise RuntimeError("stop time is before start time")
+        result = write_time_log(config, task, started=started, stopped=stopped, scope=scope)
+        sessions.pop(task.task_uuid, None)
+        _write_sessions_unlocked(path, sessions)
+    append_op(
+        config,
+        "timelog_session_stop",
+        task_short_uuid=task.task_short_uuid,
+        task_uuid=task.task_uuid,
+        chain_id=chain_id_for_task(task.task) or None,
+        started=_iso_z(started),
+        stopped=_iso_z(stopped),
+        written=bool(result.get("written")),
+        duplicate=bool(result.get("duplicate")),
+        timelog_key=result.get("timelog_key"),
+    )
+    return {
+        **result,
+        "session_cleared": True,
+        "session_path": str(path),
+    }
+
+
+def list_time_sessions(config) -> list[dict[str, Any]]:
+    path = _session_store_path(config)
+    with exclusive_file_lock(path):
+        sessions = _read_sessions_unlocked(path)
+    return sorted(
+        [item for item in sessions.values() if isinstance(item, dict)],
+        key=lambda item: str(item.get("started") or ""),
+    )
+
+
+def cancel_time_session(config, task: ResolvedTask) -> dict[str, Any]:
+    path = _session_store_path(config)
+    with exclusive_file_lock(path):
+        sessions = _read_sessions_unlocked(path)
+        session = sessions.pop(task.task_uuid, None)
+        if not isinstance(session, dict):
+            raise RuntimeError(f"no pending timelog session for {task.task_short_uuid}")
+        _write_sessions_unlocked(path, sessions)
+    append_op(
+        config,
+        "timelog_session_cancel",
+        task_short_uuid=task.task_short_uuid,
+        task_uuid=task.task_uuid,
+        chain_id=chain_id_for_task(task.task) or None,
+        started=session.get("started"),
+    )
+    return {
+        "task_uuid": task.task_uuid,
+        "task_short_uuid": task.task_short_uuid,
+        "chain_id": chain_id_for_task(task.task) or None,
+        "started": session.get("started"),
+        "path": str(path),
+    }
+
+
+def write_time_log(
+    config,
+    task: ResolvedTask,
+    *,
+    started: datetime,
+    stopped: datetime,
+    scope: str = "auto",
+) -> dict[str, Any]:
+    if stopped < started:
+        raise RuntimeError("stop time is before start time")
+    note_kind = _resolve_scope(scope, task.task)
     guard_key = _time_log_key(task.task_uuid, started, stopped)
-    text = _format_time_entry(task, started, stopped, new, guard_key=guard_key)
+    text = _format_time_entry(task, started, stopped, task.task, guard_key=guard_key)
     if note_kind == "chain":
         note = ensure_chain_note(config, task)
         result = append_under_heading_once(
@@ -46,7 +171,7 @@ def ingest_time_log(config, old: dict[str, Any], new: dict[str, Any], *, scope: 
                 "chain_note_timelog",
                 task_short_uuid=task.task_short_uuid,
                 task_uuid=task.task_uuid,
-                chain_id=chain_id_for_task(new) or None,
+                chain_id=chain_id_for_task(task.task) or None,
                 path=str(note.note_path),
                 timelog_key=guard_key,
             )
@@ -80,7 +205,7 @@ def ingest_time_log(config, old: dict[str, Any], new: dict[str, Any], *, scope: 
             "path": str(note.note_path),
             "task_short_uuid": task.task_short_uuid,
             "task_uuid": task.task_uuid,
-            "chain_id": chain_id_for_task(new) or None,
+            "chain_id": chain_id_for_task(task.task) or None,
             "started": _iso_z(started),
             "stopped": _iso_z(stopped),
             "duration_minutes": round((stopped - started).total_seconds() / 60, 2),
@@ -94,7 +219,7 @@ def ingest_time_log(config, old: dict[str, Any], new: dict[str, Any], *, scope: 
         "heading": result["heading"],
         "task_short_uuid": task.task_short_uuid,
         "task_uuid": task.task_uuid,
-        "chain_id": chain_id_for_task(new) or None,
+        "chain_id": chain_id_for_task(task.task) or None,
         "started": _iso_z(started),
         "stopped": _iso_z(stopped),
         "duration_minutes": round((stopped - started).total_seconds() / 60, 2),
@@ -194,3 +319,31 @@ def _parse_datetime(value: str) -> datetime:
 
 def _iso_z(value: datetime) -> str:
     return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _session_store_path(config) -> Path:
+    return config.root_dir / "timelog-pending.json"
+
+
+def _read_sessions_unlocked(path: Path) -> dict[str, dict[str, Any]]:
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8") or "{}")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"invalid timelog session store: {path}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(f"invalid timelog session store: {path}")
+    sessions = data.get("sessions", data)
+    if not isinstance(sessions, dict):
+        raise RuntimeError(f"invalid timelog session store: {path}")
+    return {str(key): value for key, value in sessions.items() if isinstance(value, dict)}
+
+
+def _write_sessions_unlocked(path: Path, sessions: dict[str, dict[str, Any]]) -> None:
+    payload = {
+        "version": 1,
+        "sessions": sessions,
+        "updated": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    }
+    atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n")

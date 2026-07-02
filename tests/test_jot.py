@@ -809,6 +809,68 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), new)
 
+    def test_timelog_start_stop_records_session_and_writes_note(self) -> None:
+        task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+        task = {
+            "uuid": task_uuid,
+            "description": "Read chapter",
+            "project": "reading",
+            "tags": ["book"],
+            "chainID": "2d6d7d7d",
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+
+        started = self.run_jot("--json", "timelog", "start", "1", "--at", "20260703T060000Z")
+        self.assertEqual(started.returncode, 0, started.stderr)
+        start_payload = json.loads(started.stdout)
+        self.assertEqual(start_payload["started"], "2026-07-03T06:00:00Z")
+
+        duplicate_start = self.run_jot("--json", "timelog", "start", "1", "--at", "20260703T070000Z")
+        self.assertEqual(duplicate_start.returncode, 0, duplicate_start.stderr)
+        duplicate_payload = json.loads(duplicate_start.stdout)
+        self.assertTrue(duplicate_payload["already_started"])
+        self.assertEqual(duplicate_payload["started"], "2026-07-03T06:00:00Z")
+
+        pending = self.run_jot("--json", "timelog", "pending")
+        self.assertEqual(pending.returncode, 0, pending.stderr)
+        pending_payload = json.loads(pending.stdout)
+        self.assertEqual(len(pending_payload["sessions"]), 1)
+
+        stopped = self.run_jot("--json", "timelog", "stop", "1", "--at", "20260703T064500Z")
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        stop_payload = json.loads(stopped.stdout)
+        self.assertTrue(stop_payload["written"])
+        self.assertTrue(stop_payload["session_cleared"])
+        self.assertEqual(stop_payload["duration_minutes"], 45)
+
+        note_text = Path(stop_payload["path"]).read_text(encoding="utf-8")
+        self.assertIn("45m spent", note_text)
+        self.assertIn("timelog:", note_text)
+
+        pending_after = self.run_jot("--json", "timelog", "pending")
+        self.assertEqual(json.loads(pending_after.stdout)["sessions"], [])
+
+    def test_timelog_cancel_removes_pending_session(self) -> None:
+        task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+        task = {
+            "uuid": task_uuid,
+            "description": "Read chapter",
+            "project": "reading",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+
+        self.assertEqual(self.run_jot("timelog", "start", "1", "--at", "20260703T060000Z").returncode, 0)
+        cancelled = self.run_jot("--json", "timelog", "cancel", "1")
+
+        self.assertEqual(cancelled.returncode, 0, cancelled.stderr)
+        payload = json.loads(cancelled.stdout)
+        self.assertEqual(payload["task_short_uuid"], "2d6d7d7d")
+        pending = self.run_jot("--json", "timelog", "pending")
+        self.assertEqual(json.loads(pending.stdout)["sessions"], [])
+
     def test_taskwarrior_completion_uses_task_uuid(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",

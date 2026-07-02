@@ -71,7 +71,13 @@ from .storage import (
     record_event_add,
 )
 from .taskwarrior import INTEGER_RE, SHORT_UUID_RE, UUID_RE
-from .timelog import ingest_time_log
+from .timelog import (
+    cancel_time_session,
+    ingest_time_log,
+    list_time_sessions,
+    start_time_session,
+    stop_time_session,
+)
 from .trash import list_trash, restore_trash_item
 
 
@@ -432,6 +438,36 @@ def build_parser() -> argparse.ArgumentParser:
         "--stopped-at",
         default="",
         help="override stop time for backfills/tests; accepts Taskwarrior or ISO timestamps",
+    )
+    timelog_start = timelog_subparsers.add_parser(
+        "start",
+        help="record a pending Jot-managed timelog session",
+        description="Record a start timestamp for a task. Useful when Taskwarrior hooks cannot run.",
+    )
+    timelog_start.add_argument("task_ref", help="task ID, full UUID, or unique short UUID")
+    timelog_start.add_argument("--at", default="", help="override start time; accepts Taskwarrior or ISO timestamps")
+    timelog_stop = timelog_subparsers.add_parser(
+        "stop",
+        help="stop a pending Jot-managed timelog session and write the note entry",
+        description="Use the pending start timestamp and current task metadata to append a time expenditure entry.",
+    )
+    timelog_stop.add_argument("task_ref", help="task ID, full UUID, or unique short UUID")
+    timelog_stop.add_argument("--at", default="", help="override stop time; accepts Taskwarrior or ISO timestamps")
+    timelog_stop.add_argument(
+        "--scope",
+        choices=("auto", "task", "chain"),
+        default="auto",
+        help="write to chain notes when chainID exists, otherwise task notes",
+    )
+    timelog_cancel = timelog_subparsers.add_parser(
+        "cancel",
+        help="remove a pending Jot-managed timelog session without writing a note",
+    )
+    timelog_cancel.add_argument("task_ref", help="task ID, full UUID, or unique short UUID")
+    timelog_subparsers.add_parser(
+        "pending",
+        help="list pending Jot-managed timelog sessions",
+        description="Show sessions created by 'jot timelog start' that have not been stopped or cancelled.",
     )
 
     headings = subparsers.add_parser(
@@ -1599,6 +1635,29 @@ def _run_add_to(ctx, args) -> CommandResult:
 
 
 def _run_timelog(ctx, args) -> CommandResult:
+    if args.timelog_command == "start":
+        task = ctx.taskwarrior.resolve_task(args.task_ref)
+        return CommandResult(
+            command="timelog-start",
+            payload=start_time_session(ctx.config, task, started_at=args.at),
+        )
+    if args.timelog_command == "stop":
+        task = ctx.taskwarrior.resolve_task(args.task_ref)
+        return CommandResult(
+            command="timelog-stop",
+            payload=stop_time_session(ctx.config, task, stopped_at=args.at, scope=args.scope),
+        )
+    if args.timelog_command == "pending":
+        return CommandResult(
+            command="timelog-pending",
+            payload={"sessions": list_time_sessions(ctx.config)},
+        )
+    if args.timelog_command == "cancel":
+        task = ctx.taskwarrior.resolve_task(args.task_ref)
+        return CommandResult(
+            command="timelog-cancel",
+            payload=cancel_time_session(ctx.config, task),
+        )
     if args.timelog_command != "ingest":
         raise RuntimeError(f"unknown timelog command '{args.timelog_command}'")
     old_line = sys.stdin.readline()

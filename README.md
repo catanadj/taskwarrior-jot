@@ -136,6 +136,16 @@ Install Jot and enable the hook when prompted, or use:
 After that, `task 42 start` followed by `task 42 stop` appends an entry under
 `## Time log`.
 
+If hooks cannot run, for example from Android Tasker/Termux automation, use
+Jot-managed sessions instead:
+
+```bash
+jot timelog start 42
+jot timelog stop 42
+jot timelog pending
+jot timelog cancel 42
+```
+
 For manual testing or backfills:
 
 ```bash
