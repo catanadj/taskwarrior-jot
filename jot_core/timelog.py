@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from typing import Any
 
+from .index import update_chain_note_index, update_task_note_index
 from .models import ResolvedTask, TaskRef
 from .nautical import chain_id_for_task
-from .storage import add_to_chain_heading_storage, add_to_task_heading_storage
+from .notes import append_under_heading_once, ensure_chain_note, ensure_task_note
+from .ops import append_op
 
 
 TIME_LOG_HEADING = "Time log"
@@ -24,30 +27,70 @@ def ingest_time_log(config, old: dict[str, Any], new: dict[str, Any], *, scope: 
         raise RuntimeError("stop time is before start time")
 
     note_kind = _resolve_scope(scope, new)
-    text = _format_time_entry(task, started, stopped, new)
+    guard_key = _time_log_key(task.task_uuid, started, stopped)
+    text = _format_time_entry(task, started, stopped, new, guard_key=guard_key)
     if note_kind == "chain":
-        result = add_to_chain_heading_storage(
-            config,
-            task,
+        note = ensure_chain_note(config, task)
+        result = append_under_heading_once(
+            note.note_path,
             heading=TIME_LOG_HEADING,
             text=text,
+            guard_key=guard_key,
             create_heading=True,
             exact=True,
         )
+        if result is not None:
+            update_chain_note_index(config, task, note.note_path)
+            append_op(
+                config,
+                "chain_note_timelog",
+                task_short_uuid=task.task_short_uuid,
+                task_uuid=task.task_uuid,
+                chain_id=chain_id_for_task(new) or None,
+                path=str(note.note_path),
+                timelog_key=guard_key,
+            )
     else:
-        result = add_to_task_heading_storage(
-            config,
-            task,
+        note = ensure_task_note(config, task)
+        result = append_under_heading_once(
+            note.note_path,
             heading=TIME_LOG_HEADING,
             text=text,
+            guard_key=guard_key,
             create_heading=True,
             exact=True,
         )
+        if result is not None:
+            update_task_note_index(config, task, note.note_path)
+            append_op(
+                config,
+                "task_note_timelog",
+                task_short_uuid=task.task_short_uuid,
+                task_uuid=task.task_uuid,
+                path=str(note.note_path),
+                timelog_key=guard_key,
+            )
+
+    if result is None:
+        return {
+            "written": False,
+            "reason": "duplicate time log",
+            "duplicate": True,
+            "note_kind": note_kind,
+            "path": str(note.note_path),
+            "task_short_uuid": task.task_short_uuid,
+            "task_uuid": task.task_uuid,
+            "chain_id": chain_id_for_task(new) or None,
+            "started": _iso_z(started),
+            "stopped": _iso_z(stopped),
+            "duration_minutes": round((stopped - started).total_seconds() / 60, 2),
+            "timelog_key": guard_key,
+        }
 
     return {
         "written": True,
         "note_kind": note_kind,
-        "path": str(result["note_path"]),
+        "path": str(note.note_path),
         "heading": result["heading"],
         "task_short_uuid": task.task_short_uuid,
         "task_uuid": task.task_uuid,
@@ -55,6 +98,7 @@ def ingest_time_log(config, old: dict[str, Any], new: dict[str, Any], *, scope: 
         "started": _iso_z(started),
         "stopped": _iso_z(stopped),
         "duration_minutes": round((stopped - started).total_seconds() / 60, 2),
+        "timelog_key": guard_key,
         "entry": result["entry"],
     }
 
@@ -87,7 +131,14 @@ def _resolve_scope(scope: str, task_json: dict[str, Any]) -> str:
     return normalized
 
 
-def _format_time_entry(task: ResolvedTask, started: datetime, stopped: datetime, task_json: dict[str, Any]) -> str:
+def _format_time_entry(
+    task: ResolvedTask,
+    started: datetime,
+    stopped: datetime,
+    task_json: dict[str, Any],
+    *,
+    guard_key: str,
+) -> str:
     minutes = round((stopped - started).total_seconds() / 60, 2)
     duration = _duration_text(minutes)
     parts = [
@@ -105,7 +156,13 @@ def _format_time_entry(task: ResolvedTask, started: datetime, stopped: datetime,
     if task.tags:
         parts.append("tags " + ", ".join(task.tags))
     parts.append(f"uuid {task.task_uuid}")
+    parts.append(f"timelog:{guard_key}")
     return "; ".join(parts)
+
+
+def _time_log_key(task_uuid: str, started: datetime, stopped: datetime) -> str:
+    raw = "|".join([str(task_uuid), _iso_z(started), _iso_z(stopped)])
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 
 
 def _duration_text(minutes: float) -> str:

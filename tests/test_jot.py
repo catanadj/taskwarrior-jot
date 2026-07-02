@@ -740,6 +740,25 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("45m spent", note_text)
         self.assertIn("task 2d6d7d7d", note_text)
         self.assertIn("chain 2d6d7d7d", note_text)
+        self.assertIn("timelog:", note_text)
+
+        replay = self.run_jot(
+            "--json",
+            "timelog",
+            "ingest",
+            "--stopped-at",
+            "20260703T064500Z",
+            input_text=json.dumps(old) + "\n" + json.dumps(new) + "\n",
+        )
+
+        self.assertEqual(replay.returncode, 0, replay.stderr)
+        replay_payload = json.loads(replay.stdout)
+        self.assertFalse(replay_payload["written"])
+        self.assertTrue(replay_payload["duplicate"])
+        self.assertEqual(replay_payload["reason"], "duplicate time log")
+        replayed_note_text = note_path.read_text(encoding="utf-8")
+        self.assertEqual(replayed_note_text.count("45m spent"), 1)
+        self.assertEqual(replayed_note_text.count("timelog:"), 1)
 
     def test_timelog_ingest_skips_non_stop_changes(self) -> None:
         old = {"uuid": "2d6d7d7d-1111-2222-3333-444444444444", "description": "Read"}

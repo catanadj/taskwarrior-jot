@@ -8,7 +8,7 @@ from pathlib import Path
 import shutil
 import re
 
-from .frontmatter import read_document, update_metadata, write_document
+from .frontmatter import exclusive_file_lock, read_document, update_metadata, write_document
 from .models import AppConfig, AppendResult, DeleteResult, NotePaths, ResolvedTask
 from .nautical import chain_id_for_task
 from .ops import iso_now
@@ -226,6 +226,33 @@ def add_to_chain_heading(
     )
     touch_updated(note.note_path)
     return HeadingInsertResult(note_path=note.note_path, existed=note.existed, **result)
+
+
+def append_under_heading_once(
+    note_path: Path,
+    heading: str,
+    text: str,
+    *,
+    guard_key: str,
+    create_heading: bool = False,
+    exact: bool = False,
+) -> dict[str, str] | None:
+    key = str(guard_key or "").strip()
+    if not key:
+        raise RuntimeError("guard key is empty")
+    with exclusive_file_lock(note_path):
+        _metadata, body = read_document(note_path)
+        if key in body:
+            return None
+        result = _append_under_heading(
+            note_path,
+            heading,
+            text,
+            create_heading=create_heading,
+            exact=exact,
+        )
+        touch_updated(note_path)
+        return result
 
 
 def add_to_project_heading(
