@@ -65,6 +65,9 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "add-to":
         _emit_add_to(payload)
         return
+    if command == "timelog-ingest":
+        _emit_timelog_ingest(payload)
+        return
     if command == "headings":
         _emit_headings(payload)
         return
@@ -407,6 +410,18 @@ def _emit_add_to(payload: dict[str, Any]) -> None:
     _emit_field("match", match, indent=0)
     _emit_field("path", path, indent=0)
     _emit_field("entry", entry, indent=0)
+
+
+def _emit_timelog_ingest(payload: dict[str, Any]) -> None:
+    if not payload.get("written"):
+        sys.stdout.write(f"Time log skipped: {payload.get('reason') or 'no entry'}\n")
+        return
+    sys.stdout.write(f"Time log written to {payload.get('note_kind')} note: {payload.get('path')}\n")
+    _emit_field("task", payload.get("task_short_uuid"), indent=0)
+    chain_id = str(payload.get("chain_id") or "").strip()
+    if chain_id:
+        _emit_field("chain", chain_id, indent=0)
+    _emit_field("duration", f"{payload.get('duration_minutes')} minutes", indent=0)
 
 
 def _emit_headings(payload: dict[str, Any]) -> None:

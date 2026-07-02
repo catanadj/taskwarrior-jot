@@ -55,6 +55,7 @@ COMMAND_EXAMPLES = {
     "report recent": "jot report recent --limit 10 --kind event",
     "recent": "jot recent --limit 10 --kind event",
     "search": "jot search vendor --kind task-note",
+    "timelog ingest": "jot timelog ingest --scope auto < old-new-task-json-lines.txt",
     "tui": "jot tui",
     "doctor": "jot doctor",
     "paths": "jot paths",
@@ -148,7 +149,7 @@ def _command_category(path: tuple[str, ...]) -> str:
         return "Projects"
     if name in {"attach", "resources", "open-resource", "detach-resource"}:
         return "Resources"
-    if name in {"add-to", "headings", "section", "progress", "open", "edit", "cat", "notes"}:
+    if name in {"add-to", "headings", "section", "progress", "open", "edit", "cat", "notes", "timelog"}:
         return "Notes"
     if name in {"search", "report", "recent"}:
         return "Search & Reports"

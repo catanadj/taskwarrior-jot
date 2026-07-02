@@ -112,6 +112,30 @@ jot headings chain 42
 jot chain-cat 42
 ```
 
+### For time expenditure notes
+
+Jot can record Taskwarrior start/stop intervals as note entries. This is meant
+for planning memory: how much time a task or recurring chain actually consumed.
+If the task has a Nautical `chainID`, the entry goes to the chain note;
+otherwise it goes to the task note.
+
+Install Jot first, then explicitly enable the hook:
+
+```bash
+mkdir -p ~/.task/hooks
+cp ~/.local/lib/jot/hooks/on-modify_jot_timelog.py ~/.task/hooks/
+chmod +x ~/.task/hooks/on-modify_jot_timelog.py
+```
+
+After that, `task 42 start` followed by `task 42 stop` appends an entry under
+`## Time log`.
+
+For manual testing or backfills:
+
+```bash
+jot timelog ingest --scope auto < old-new-task-json-lines.txt
+```
+
 ### For project-wide context
 
 Keep shared notes for a project namespace:

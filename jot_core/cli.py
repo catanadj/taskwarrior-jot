@@ -71,6 +71,7 @@ from .storage import (
     record_event_add,
 )
 from .taskwarrior import INTEGER_RE, SHORT_UUID_RE, UUID_RE
+from .timelog import ingest_time_log
 from .trash import list_trash, restore_trash_item
 
 
@@ -407,6 +408,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="entry text; if omitted, read stdin",
     )
 
+    timelog = subparsers.add_parser(
+        "timelog",
+        help="record time expenditure from Taskwarrior hook JSON",
+        description="Record task stop intervals as time expenditure entries in task or chain notes.",
+    )
+    timelog_subparsers = timelog.add_subparsers(dest="timelog_command", required=True)
+    timelog_ingest = timelog_subparsers.add_parser(
+        "ingest",
+        help="read old/new Taskwarrior JSON from stdin and append a time log entry",
+        description=(
+            "Read two JSON lines from stdin, as provided to an on-modify hook. "
+            "When a task stop is detected, append a time expenditure entry under the Time log heading."
+        ),
+    )
+    timelog_ingest.add_argument(
+        "--scope",
+        choices=("auto", "task", "chain"),
+        default="auto",
+        help="write to chain notes when chainID exists, otherwise task notes",
+    )
+    timelog_ingest.add_argument(
+        "--stopped-at",
+        default="",
+        help="override stop time for backfills/tests; accepts Taskwarrior or ISO timestamps",
+    )
+
     headings = subparsers.add_parser(
         "headings",
         help="list headings in a task, chain, or project note",
@@ -693,6 +720,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _run_project_append(ctx, args.project_name, _text_from_args(args.text))
         elif args.command == "add-to":
             result = _run_add_to(ctx, args)
+        elif args.command == "timelog":
+            result = _run_timelog(ctx, args)
         elif args.command == "headings":
             result = _run_headings(ctx, args)
         elif args.command == "section":
@@ -1566,6 +1595,32 @@ def _run_add_to(ctx, args) -> CommandResult:
             "timestamp": result["timestamp"],
             "entry": result["entry"],
         },
+    )
+
+
+def _run_timelog(ctx, args) -> CommandResult:
+    if args.timelog_command != "ingest":
+        raise RuntimeError(f"unknown timelog command '{args.timelog_command}'")
+    old_line = sys.stdin.readline()
+    new_line = sys.stdin.readline()
+    if not old_line or not new_line:
+        raise RuntimeError("timelog ingest requires two JSON lines on stdin")
+    import json
+
+    try:
+        old = json.loads(old_line)
+        new = json.loads(new_line)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"invalid hook JSON: {exc}") from exc
+    return CommandResult(
+        command="timelog-ingest",
+        payload=ingest_time_log(
+            ctx.config,
+            old,
+            new,
+            scope=args.scope,
+            stopped_at=args.stopped_at,
+        ),
     )
 
 

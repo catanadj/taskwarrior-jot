@@ -702,6 +702,94 @@ class ServiceProgressRowTests(unittest.TestCase):
 
 
 class CliIntegrationTests(JotCliTestCase):
+    def test_timelog_ingest_writes_chain_note_for_chain_task_stop(self) -> None:
+        task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+        old = {
+            "uuid": task_uuid,
+            "description": "Read chapter",
+            "project": "reading",
+            "tags": ["book"],
+            "chainID": "2d6d7d7d",
+            "start": "20260703T060000Z",
+        }
+        new = {
+            "uuid": task_uuid,
+            "description": "Read chapter",
+            "project": "reading",
+            "tags": ["book"],
+            "chainID": "2d6d7d7d",
+        }
+
+        result = self.run_jot(
+            "--json",
+            "timelog",
+            "ingest",
+            "--stopped-at",
+            "20260703T064500Z",
+            input_text=json.dumps(old) + "\n" + json.dumps(new) + "\n",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["written"])
+        self.assertEqual(payload["note_kind"], "chain")
+        self.assertEqual(payload["duration_minutes"], 45)
+        note_path = Path(payload["path"])
+        note_text = note_path.read_text(encoding="utf-8")
+        self.assertIn("## Time log", note_text)
+        self.assertIn("45m spent", note_text)
+        self.assertIn("task 2d6d7d7d", note_text)
+        self.assertIn("chain 2d6d7d7d", note_text)
+
+    def test_timelog_ingest_skips_non_stop_changes(self) -> None:
+        old = {"uuid": "2d6d7d7d-1111-2222-3333-444444444444", "description": "Read"}
+        new = {**old, "start": "20260703T060000Z"}
+
+        result = self.run_jot(
+            "--json",
+            "timelog",
+            "ingest",
+            input_text=json.dumps(old) + "\n" + json.dumps(new) + "\n",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["written"])
+        self.assertEqual(payload["reason"], "not a task stop")
+
+    def test_jot_timelog_hook_preserves_task_json_stdout(self) -> None:
+        task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+        old = {
+            "uuid": task_uuid,
+            "description": "Read chapter",
+            "project": "reading",
+            "chainID": "2d6d7d7d",
+            "start": "20260703T060000Z",
+        }
+        new = {
+            "uuid": task_uuid,
+            "description": "Read chapter",
+            "project": "reading",
+            "chainID": "2d6d7d7d",
+        }
+        env = os.environ.copy()
+        env["HOME"] = str(self.home)
+        env["PATH"] = f"{PROJECT_ROOT}:{env['PATH']}"
+        env["EDITOR"] = "true"
+
+        result = subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py")],
+            cwd=PROJECT_ROOT,
+            env=env,
+            input=json.dumps(old) + "\n" + json.dumps(new) + "\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), new)
+
     def test_taskwarrior_completion_uses_task_uuid(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",

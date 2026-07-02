@@ -100,6 +100,7 @@ mkdir -p "$CONFIG_DIR"
 mkdir -p "$TEMPLATES_DIR"
 rm -rf "$LIB_DIR/jot_core"
 rm -rf "$LIB_DIR/jot_tui"
+rm -rf "$LIB_DIR/hooks"
 rm -rf "$LIB_DIR/templates"
 
 install -m 755 "$SCRIPT_DIR/jot" "$LIB_DIR/jot"
@@ -115,6 +116,8 @@ tar -C "$SCRIPT_DIR" \
 install -m 644 "$SCRIPT_DIR/config-jot.toml" "$LIB_DIR/config-jot.toml"
 mkdir -p "$LIB_DIR/templates"
 cp -R "$SCRIPT_DIR/templates/." "$LIB_DIR/templates/"
+mkdir -p "$LIB_DIR/hooks"
+cp -R "$SCRIPT_DIR/hooks/." "$LIB_DIR/hooks/"
 ln -sfn "$LIB_DIR/jot" "$BIN_DIR/jot"
 
 if [[ ! -e "$CONFIG_PATH" ]]; then
@@ -130,6 +133,7 @@ templates = "$CONFIG_DIR/templates"
 command = ""
 show_diff_on_save = true
 diff_color = "auto"
+post_save_actions = true
 
 [display]
 color = "auto"
@@ -166,6 +170,8 @@ Command link:
 $CONFIG_NOTE
 Templates installed: $installed_templates
 Templates kept: $kept_templates
+Hook examples:
+  $LIB_DIR/hooks
 
 If '$BIN_DIR' is not on your PATH, add this to your shell profile:
   export PATH="$BIN_DIR:\$PATH"
