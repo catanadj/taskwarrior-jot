@@ -21,6 +21,14 @@ From the repo root:
 ./install.sh
 ```
 
+In an interactive terminal, the installer asks whether to enable the optional
+Taskwarrior time expenditure hook. For scripted installs, use:
+
+```bash
+./install.sh --with-timelog-hook
+./install.sh --no-timelog-hook
+```
+
 That installs `jot` into:
 
 - `~/.local/bin/jot`
@@ -119,12 +127,10 @@ for planning memory: how much time a task or recurring chain actually consumed.
 If the task has a Nautical `chainID`, the entry goes to the chain note;
 otherwise it goes to the task note.
 
-Install Jot first, then explicitly enable the hook:
+Install Jot and enable the hook when prompted, or use:
 
 ```bash
-mkdir -p ~/.task/hooks
-cp ~/.local/lib/jot/hooks/on-modify_jot_timelog.py ~/.task/hooks/
-chmod +x ~/.task/hooks/on-modify_jot_timelog.py
+./install.sh --with-timelog-hook
 ```
 
 After that, `task 42 start` followed by `task 42 stop` appends an entry under

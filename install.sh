@@ -5,6 +5,7 @@ set -euo pipefail
 PREFIX="${PREFIX:-$HOME/.local}"
 BIN_DIR="$PREFIX/bin"
 LIB_DIR="$PREFIX/lib/jot"
+INSTALL_TIMELOG_HOOK="ask"
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -50,7 +51,7 @@ TEMPLATES_DIR="$CONFIG_DIR/templates"
 
 usage() {
   cat <<'EOF'
-Usage: ./install.sh [--prefix DIR]
+Usage: ./install.sh [--prefix DIR] [--with-timelog-hook|--no-timelog-hook]
 
 Installs jot without pip by copying the launcher and jot_core package into:
   <prefix>/lib/jot
@@ -67,6 +68,10 @@ Default prefix:
 
 Task data directory is resolved from TASKDATA, then TASKRC/~/.taskrc
 data.location, then ~/.task. Set JOT_HOME to override the jot data directory.
+
+Timelog hook:
+  --with-timelog-hook  copy the Jot time expenditure hook into Taskwarrior hooks
+  --no-timelog-hook    do not prompt; leave the hook packaged but disabled
 EOF
 }
 
@@ -82,6 +87,14 @@ while (($#)); do
       LIB_DIR="$PREFIX/lib/jot"
       shift 2
       ;;
+    --with-timelog-hook)
+      INSTALL_TIMELOG_HOOK="yes"
+      shift
+      ;;
+    --no-timelog-hook)
+      INSTALL_TIMELOG_HOOK="no"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -93,6 +106,33 @@ while (($#)); do
       ;;
   esac
 done
+
+should_install_timelog_hook() {
+  case "$INSTALL_TIMELOG_HOOK" in
+    yes)
+      return 0
+      ;;
+    no)
+      return 1
+      ;;
+  esac
+
+  if [[ ! -t 0 ]]; then
+    return 1
+  fi
+
+  local answer
+  printf 'Install Taskwarrior time expenditure hook? [y/N] '
+  read -r answer
+  case "$answer" in
+    y|Y|yes|YES|Yes)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
 
 mkdir -p "$BIN_DIR"
 mkdir -p "$LIB_DIR"
@@ -119,6 +159,17 @@ cp -R "$SCRIPT_DIR/templates/." "$LIB_DIR/templates/"
 mkdir -p "$LIB_DIR/hooks"
 cp -R "$SCRIPT_DIR/hooks/." "$LIB_DIR/hooks/"
 ln -sfn "$LIB_DIR/jot" "$BIN_DIR/jot"
+
+TIMELOG_HOOK_SRC="$LIB_DIR/hooks/on-modify_jot_timelog.py"
+TIMELOG_HOOK_DIR="$TASKDATA_DIR/hooks"
+TIMELOG_HOOK_DST="$TIMELOG_HOOK_DIR/on-modify_jot_timelog.py"
+if should_install_timelog_hook; then
+  mkdir -p "$TIMELOG_HOOK_DIR"
+  install -m 755 "$TIMELOG_HOOK_SRC" "$TIMELOG_HOOK_DST"
+  TIMELOG_HOOK_NOTE="Installed Taskwarrior timelog hook: $TIMELOG_HOOK_DST"
+else
+  TIMELOG_HOOK_NOTE="Timelog hook not enabled. To enable later: install -m 755 \"$TIMELOG_HOOK_SRC\" \"$TIMELOG_HOOK_DST\""
+fi
 
 if [[ ! -e "$CONFIG_PATH" ]]; then
   cat > "$CONFIG_PATH" <<EOF
@@ -172,6 +223,7 @@ Templates installed: $installed_templates
 Templates kept: $kept_templates
 Hook examples:
   $LIB_DIR/hooks
+$TIMELOG_HOOK_NOTE
 
 If '$BIN_DIR' is not on your PATH, add this to your shell profile:
   export PATH="$BIN_DIR:\$PATH"
