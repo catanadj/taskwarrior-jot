@@ -157,7 +157,7 @@ install -m 644 "$SCRIPT_DIR/config-jot.toml" "$LIB_DIR/config-jot.toml"
 mkdir -p "$LIB_DIR/templates"
 cp -R "$SCRIPT_DIR/templates/." "$LIB_DIR/templates/"
 mkdir -p "$LIB_DIR/hooks"
-cp -R "$SCRIPT_DIR/hooks/." "$LIB_DIR/hooks/"
+install -m 755 "$SCRIPT_DIR/hooks/on-modify_jot_timelog.py" "$LIB_DIR/hooks/on-modify_jot_timelog.py"
 ln -sfn "$LIB_DIR/jot" "$BIN_DIR/jot"
 
 TIMELOG_HOOK_SRC="$LIB_DIR/hooks/on-modify_jot_timelog.py"
