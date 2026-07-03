@@ -106,12 +106,41 @@ def stop_time_session(config, task: ResolvedTask, *, stopped_at: str = "", scope
     }
 
 
-def list_time_sessions(config) -> list[dict[str, Any]]:
+def stop_all_time_sessions(config, taskwarrior, *, stopped_at: str = "", scope: str = "auto") -> dict[str, Any]:
+    stopped = _parse_datetime(stopped_at) if stopped_at else datetime.now(timezone.utc)
+    sessions = list_time_sessions(config, now=stopped)
+    results: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    for session in sessions:
+        task_uuid = str(session.get("task_uuid") or "").strip()
+        if not task_uuid:
+            continue
+        try:
+            task = taskwarrior.resolve_task(task_uuid)
+            results.append(stop_time_session(config, task, stopped_at=_iso_z(stopped), scope=scope))
+        except Exception as exc:
+            errors.append({"task_uuid": task_uuid, "error": str(exc)})
+    return {
+        "stopped": _iso_z(stopped),
+        "count": len(results),
+        "error_count": len(errors),
+        "items": results,
+        "errors": errors,
+    }
+
+
+def list_time_sessions(config, *, now: datetime | None = None) -> list[dict[str, Any]]:
+    current = now or datetime.now(timezone.utc)
     path = _session_store_path(config)
     with exclusive_file_lock(path):
         sessions = _read_sessions_unlocked(path)
+    enriched = []
+    for item in sessions.values():
+        if not isinstance(item, dict):
+            continue
+        enriched.append(_session_with_elapsed(item, current))
     return sorted(
-        [item for item in sessions.values() if isinstance(item, dict)],
+        enriched,
         key=lambda item: str(item.get("started") or ""),
     )
 
@@ -295,6 +324,18 @@ def _duration_text(minutes: float) -> str:
         return f"{minutes:g}m"
     hours = minutes / 60
     return f"{hours:.2f}h"
+
+
+def _session_with_elapsed(session: dict[str, Any], now: datetime) -> dict[str, Any]:
+    item = dict(session)
+    try:
+        started = _parse_datetime(str(item.get("started") or ""))
+    except RuntimeError:
+        return item
+    minutes = max(0.0, round((now - started).total_seconds() / 60, 2))
+    item["elapsed_minutes"] = minutes
+    item["elapsed"] = _duration_text(minutes)
+    return item
 
 
 def _display_time(value: datetime) -> str:

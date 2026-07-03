@@ -850,6 +850,8 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(pending.returncode, 0, pending.stderr)
         pending_payload = json.loads(pending.stdout)
         self.assertEqual(len(pending_payload["sessions"]), 1)
+        self.assertIn("elapsed", pending_payload["sessions"][0])
+        self.assertIn("elapsed_minutes", pending_payload["sessions"][0])
 
         stopped = self.run_jot("--json", "timelog", "stop", "1", "--at", "20260703T064500Z")
         self.assertEqual(stopped.returncode, 0, stopped.stderr)
@@ -864,6 +866,50 @@ class CliIntegrationTests(JotCliTestCase):
 
         pending_after = self.run_jot("--json", "timelog", "pending")
         self.assertEqual(json.loads(pending_after.stdout)["sessions"], [])
+
+    def test_timelog_stop_all_closes_all_pending_sessions(self) -> None:
+        first_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+        second_uuid = "986e9d97-1111-2222-3333-444444444444"
+        first = {
+            "uuid": first_uuid,
+            "description": "Read chapter",
+            "project": "reading",
+            "tags": ["book"],
+            "chainID": "2d6d7d7d",
+            "status": "pending",
+        }
+        second = {
+            "uuid": second_uuid,
+            "description": "Draft notes",
+            "project": "writing",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state(
+            {
+                "version": "2.6.2",
+                "single": [first],
+                "1": [first],
+                "2": [second],
+                f"uuid:{first_uuid}": [first],
+                f"uuid:{second_uuid}": [second],
+            }
+        )
+
+        self.assertEqual(self.run_jot("timelog", "start", "1", "--at", "20260703T060000Z").returncode, 0)
+        self.assertEqual(self.run_jot("timelog", "start", "2", "--at", "20260703T061500Z").returncode, 0)
+
+        stopped = self.run_jot("--json", "timelog", "stop", "--all", "--at", "20260703T070000Z")
+
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        payload = json.loads(stopped.stdout)
+        self.assertEqual(payload["count"], 2)
+        self.assertEqual(payload["error_count"], 0)
+        durations = sorted(item["duration_minutes"] for item in payload["items"])
+        self.assertEqual(durations, [45, 60])
+        self.assertTrue(all(item["session_cleared"] for item in payload["items"]))
+        pending = self.run_jot("--json", "timelog", "pending")
+        self.assertEqual(json.loads(pending.stdout)["sessions"], [])
 
     def test_timelog_cancel_removes_pending_session(self) -> None:
         task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"

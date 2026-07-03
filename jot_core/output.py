@@ -74,6 +74,9 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "timelog-stop":
         _emit_timelog_stop(payload)
         return
+    if command == "timelog-stop-all":
+        _emit_timelog_stop_all(payload)
+        return
     if command == "timelog-pending":
         _emit_timelog_pending(payload)
         return
@@ -453,6 +456,19 @@ def _emit_timelog_stop(payload: dict[str, Any]) -> None:
         sys.stdout.write("Pending session cleared\n")
 
 
+def _emit_timelog_stop_all(payload: dict[str, Any]) -> None:
+    sys.stdout.write(f"Stopped {payload.get('count', 0)} pending timelog sessions\n")
+    errors = payload.get("errors") or []
+    if errors:
+        sys.stdout.write(f"Errors: {len(errors)}\n")
+        for item in errors:
+            sys.stdout.write(f"  {item.get('task_uuid')}: {item.get('error')}\n")
+    items = payload.get("items") or []
+    for item in items:
+        status = "written" if item.get("written") else str(item.get("reason") or "skipped")
+        sys.stdout.write(f"  {item.get('task_short_uuid')}  {item.get('duration_minutes')}m  {status}\n")
+
+
 def _emit_timelog_pending(payload: dict[str, Any]) -> None:
     sessions = payload.get("sessions") or []
     sys.stdout.write("Pending timelog sessions\n\n")
@@ -460,7 +476,9 @@ def _emit_timelog_pending(payload: dict[str, Any]) -> None:
         sys.stdout.write("(none)\n")
         return
     for item in sessions:
-        sys.stdout.write(f"{item.get('task_short_uuid')}  started {item.get('started')}\n")
+        elapsed = str(item.get("elapsed") or "").strip()
+        suffix = f"  elapsed {elapsed}" if elapsed else ""
+        sys.stdout.write(f"{item.get('task_short_uuid')}  started {item.get('started')}{suffix}\n")
         description = str(item.get("description") or "").strip()
         if description:
             _emit_field("description", description, indent=2)

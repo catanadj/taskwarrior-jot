@@ -146,6 +146,13 @@ jot timelog pending
 jot timelog cancel 42
 ```
 
+`jot timelog pending` shows elapsed time for open sessions. If several
+sessions need to be closed at once, use:
+
+```bash
+jot timelog stop --all
+```
+
 For manual testing or backfills:
 
 ```bash

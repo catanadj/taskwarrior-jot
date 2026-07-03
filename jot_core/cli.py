@@ -75,6 +75,7 @@ from .timelog import (
     cancel_time_session,
     ingest_time_log,
     list_time_sessions,
+    stop_all_time_sessions,
     start_time_session,
     stop_time_session,
 )
@@ -451,7 +452,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="stop a pending Jot-managed timelog session and write the note entry",
         description="Use the pending start timestamp and current task metadata to append a time expenditure entry.",
     )
-    timelog_stop.add_argument("task_ref", help="task ID, full UUID, or unique short UUID")
+    timelog_stop.add_argument("task_ref", nargs="?", help="task ID, full UUID, or unique short UUID")
+    timelog_stop.add_argument("--all", action="store_true", help="stop all pending Jot-managed timelog sessions")
     timelog_stop.add_argument("--at", default="", help="override stop time; accepts Taskwarrior or ISO timestamps")
     timelog_stop.add_argument(
         "--scope",
@@ -1642,6 +1644,15 @@ def _run_timelog(ctx, args) -> CommandResult:
             payload=start_time_session(ctx.config, task, started_at=args.at),
         )
     if args.timelog_command == "stop":
+        if args.all:
+            if args.task_ref:
+                raise RuntimeError("timelog stop --all does not accept a task reference")
+            return CommandResult(
+                command="timelog-stop-all",
+                payload=stop_all_time_sessions(ctx.config, ctx.taskwarrior, stopped_at=args.at, scope=args.scope),
+            )
+        if not args.task_ref:
+            raise RuntimeError("timelog stop requires a task reference or --all")
         task = ctx.taskwarrior.resolve_task(args.task_ref)
         return CommandResult(
             command="timelog-stop",
