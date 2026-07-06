@@ -330,9 +330,16 @@ def _session_with_elapsed(session: dict[str, Any], now: datetime) -> dict[str, A
 def _time_range(started: datetime, stopped: datetime) -> str:
     local_start = started.astimezone()
     local_stop = stopped.astimezone()
+    start_zone = _zone_label(local_start)
+    stop_zone = _zone_label(local_stop)
     if local_start.date() == local_stop.date():
-        return f"{local_start:%H:%M}-{local_stop:%H:%M}"
-    return f"{local_start:%Y-%m-%d %H:%M} -> {local_stop:%Y-%m-%d %H:%M}"
+        suffix = start_zone if start_zone == stop_zone else f"{start_zone}->{stop_zone}"
+        return f"{local_start:%H:%M}-{local_stop:%H:%M} {suffix}".strip()
+    return f"{local_start:%Y-%m-%d %H:%M} {start_zone} -> {local_stop:%Y-%m-%d %H:%M} {stop_zone}".strip()
+
+
+def _zone_label(value: datetime) -> str:
+    return value.tzname() or value.strftime("%z")
 
 
 def _parse_datetime(value: str) -> datetime:

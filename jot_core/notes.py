@@ -593,7 +593,7 @@ def _append_under_heading(
         if selected is None:
             raise RuntimeError(f"failed to create heading '{query}'")
 
-    timestamp = iso_now()
+    timestamp = _local_note_timestamp()
     entry = f"- [{timestamp}] {chunk}"
     lines = _insert_entry(lines, selected, entry)
     write_document(path, metadata, "\n".join(lines))
@@ -603,6 +603,12 @@ def _append_under_heading(
         "timestamp": timestamp,
         "entry": entry,
     }
+
+
+def _local_note_timestamp() -> str:
+    local = datetime.now().astimezone().replace(microsecond=0)
+    zone = local.tzname() or local.strftime("%z")
+    return f"{local:%Y-%m-%d %H:%M:%S} {zone}".strip()
 
 
 def _collect_headings(lines: list[str]) -> list[dict[str, object]]:

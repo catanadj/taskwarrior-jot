@@ -752,6 +752,7 @@ class CliIntegrationTests(JotCliTestCase):
         note_text = note_path.read_text(encoding="utf-8")
         self.assertIn("## Time log", note_text)
         self.assertIn("45m, ", note_text)
+        self.assertRegex(note_text, r"45m, \d{2}:\d{2}-\d{2}:\d{2} [^;]+")
         self.assertIn("reading", note_text)
         self.assertIn("#book", note_text)
         self.assertIn("timelog:", note_text)
@@ -1490,7 +1491,7 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         note_text = list((self.home / ".task" / "jot" / "tasks").glob("*.md"))[0].read_text(encoding="utf-8")
         self.assertIn("## Next steps", note_text)
-        self.assertRegex(note_text, r"- \[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\] call vendor monday")
+        self.assertRegex(note_text, r"- \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [^\]]+\] call vendor monday")
 
     def test_add_to_chain_heading_exact_can_fail_cleanly(self) -> None:
         task = {
@@ -1533,7 +1534,7 @@ class CliIntegrationTests(JotCliTestCase):
         note_path = self.home / ".task" / "jot" / "projects" / "finance" / "audit" / "index.md"
         note_text = note_path.read_text(encoding="utf-8")
         self.assertIn("## Risks", note_text)
-        self.assertRegex(note_text, r"- \[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\] vendor dependency")
+        self.assertRegex(note_text, r"- \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [^\]]+\] vendor dependency")
 
     def test_headings_and_section_commands_read_note_structure(self) -> None:
         task = {
