@@ -751,10 +751,12 @@ class CliIntegrationTests(JotCliTestCase):
         note_path = Path(payload["path"])
         note_text = note_path.read_text(encoding="utf-8")
         self.assertIn("## Time log", note_text)
-        self.assertIn("45m spent", note_text)
-        self.assertIn("task 2d6d7d7d", note_text)
-        self.assertIn("chain 2d6d7d7d", note_text)
+        self.assertIn("45m, ", note_text)
+        self.assertIn("reading", note_text)
+        self.assertIn("#book", note_text)
         self.assertIn("timelog:", note_text)
+        self.assertNotIn("uuid 2d6d7d7d-1111-2222-3333-444444444444", note_text)
+        self.assertNotIn("task 2d6d7d7d", note_text)
 
         replay = self.run_jot(
             "--json",
@@ -771,7 +773,7 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertTrue(replay_payload["duplicate"])
         self.assertEqual(replay_payload["reason"], "duplicate time log")
         replayed_note_text = note_path.read_text(encoding="utf-8")
-        self.assertEqual(replayed_note_text.count("45m spent"), 1)
+        self.assertEqual(replayed_note_text.count("45m, "), 1)
         self.assertEqual(replayed_note_text.count("timelog:"), 1)
 
     def test_timelog_ingest_skips_non_stop_changes(self) -> None:
@@ -861,7 +863,7 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(stop_payload["duration_minutes"], 45)
 
         note_text = Path(stop_payload["path"]).read_text(encoding="utf-8")
-        self.assertIn("45m spent", note_text)
+        self.assertIn("45m, ", note_text)
         self.assertIn("timelog:", note_text)
 
         pending_after = self.run_jot("--json", "timelog", "pending")

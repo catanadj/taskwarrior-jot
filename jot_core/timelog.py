@@ -182,7 +182,7 @@ def write_time_log(
         raise RuntimeError("stop time is before start time")
     note_kind = _resolve_scope(scope, task.task)
     guard_key = _time_log_key(task.task_uuid, started, stopped)
-    text = _format_time_entry(task, started, stopped, task.task, guard_key=guard_key)
+    text = _format_time_entry(task, started, stopped, guard_key=guard_key)
     if note_kind == "chain":
         note = ensure_chain_note(config, task)
         result = append_under_heading_once(
@@ -289,28 +289,17 @@ def _format_time_entry(
     task: ResolvedTask,
     started: datetime,
     stopped: datetime,
-    task_json: dict[str, Any],
     *,
     guard_key: str,
 ) -> str:
     minutes = round((stopped - started).total_seconds() / 60, 2)
     duration = _duration_text(minutes)
-    parts = [
-        f"{duration} spent",
-        f"from {_display_time(started)} to {_display_time(stopped)}",
-        f"task {task.task_short_uuid}",
-    ]
-    if task.description:
-        parts.append(task.description)
+    parts = [f"{duration}, {_time_range(started, stopped)}"]
     if task.project:
-        parts.append(f"project {task.project}")
-    chain_id = chain_id_for_task(task_json)
-    if chain_id:
-        parts.append(f"chain {chain_id}")
+        parts.append(task.project)
     if task.tags:
-        parts.append("tags " + ", ".join(task.tags))
-    parts.append(f"uuid {task.task_uuid}")
-    parts.append(f"timelog:{guard_key}")
+        parts.append(" ".join(f"#{tag}" for tag in task.tags))
+    parts.append(f"<!-- timelog:{guard_key} -->")
     return "; ".join(parts)
 
 
@@ -338,8 +327,12 @@ def _session_with_elapsed(session: dict[str, Any], now: datetime) -> dict[str, A
     return item
 
 
-def _display_time(value: datetime) -> str:
-    return value.astimezone().strftime("%Y-%m-%d %H:%M")
+def _time_range(started: datetime, stopped: datetime) -> str:
+    local_start = started.astimezone()
+    local_stop = stopped.astimezone()
+    if local_start.date() == local_stop.date():
+        return f"{local_start:%H:%M}-{local_stop:%H:%M}"
+    return f"{local_start:%Y-%m-%d %H:%M} -> {local_stop:%Y-%m-%d %H:%M}"
 
 
 def _parse_datetime(value: str) -> datetime:
