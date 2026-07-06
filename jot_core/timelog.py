@@ -192,6 +192,7 @@ def write_time_log(
             guard_key=guard_key,
             create_heading=True,
             exact=True,
+            compact=True,
         )
         if result is not None:
             update_chain_note_index(config, task, note.note_path)
@@ -213,6 +214,7 @@ def write_time_log(
             guard_key=guard_key,
             create_heading=True,
             exact=True,
+            compact=True,
         )
         if result is not None:
             update_task_note_index(config, task, note.note_path)

@@ -867,6 +867,15 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("45m, ", note_text)
         self.assertIn("timelog:", note_text)
 
+        second_started = self.run_jot("--json", "timelog", "start", "1", "--at", "20260703T070000Z")
+        self.assertEqual(second_started.returncode, 0, second_started.stderr)
+        second_stopped = self.run_jot("--json", "timelog", "stop", "1", "--at", "20260703T073000Z")
+        self.assertEqual(second_stopped.returncode, 0, second_stopped.stderr)
+        updated_note_text = Path(stop_payload["path"]).read_text(encoding="utf-8")
+        timelog_lines = [line for line in updated_note_text.splitlines() if "timelog:" in line]
+        self.assertEqual(len(timelog_lines), 2)
+        self.assertIn("\n".join(timelog_lines), updated_note_text)
+
         pending_after = self.run_jot("--json", "timelog", "pending")
         self.assertEqual(json.loads(pending_after.stdout)["sessions"], [])
 

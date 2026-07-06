@@ -236,6 +236,7 @@ def append_under_heading_once(
     guard_key: str,
     create_heading: bool = False,
     exact: bool = False,
+    compact: bool = False,
 ) -> dict[str, str] | None:
     key = str(guard_key or "").strip()
     if not key:
@@ -250,6 +251,7 @@ def append_under_heading_once(
             text,
             create_heading=create_heading,
             exact=exact,
+            compact=compact,
         )
         touch_updated(note_path)
         return result
@@ -570,6 +572,7 @@ def _append_under_heading(
     *,
     create_heading: bool,
     exact: bool,
+    compact: bool = False,
 ) -> dict[str, str]:
     metadata, body = read_document(path)
     chunk = text.strip()
@@ -595,7 +598,7 @@ def _append_under_heading(
 
     timestamp = _local_note_timestamp()
     entry = f"- [{timestamp}] {chunk}"
-    lines = _insert_entry(lines, selected, entry)
+    lines = _insert_entry(lines, selected, entry, compact=compact)
     write_document(path, metadata, "\n".join(lines))
     return {
         "heading": str(selected["title"]),
@@ -704,7 +707,7 @@ def _append_new_heading(lines: list[str], title: str) -> list[str]:
     return normalized
 
 
-def _insert_entry(lines: list[str], heading: dict[str, object], entry: str) -> list[str]:
+def _insert_entry(lines: list[str], heading: dict[str, object], entry: str, *, compact: bool = False) -> list[str]:
     heading_index = int(heading["index"])
     heading_level = int(heading["level"])
     next_index = len(lines)
@@ -721,7 +724,7 @@ def _insert_entry(lines: list[str], heading: dict[str, object], entry: str) -> l
     while section and not section[-1].strip():
         section.pop()
     if section:
-        section.extend(["", entry])
+        section.extend([entry] if compact else ["", entry])
     else:
         section.extend(["", entry])
     new_lines = list(lines[: heading_index + 1]) + section + list(lines[next_index:])
