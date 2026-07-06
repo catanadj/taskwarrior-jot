@@ -58,7 +58,7 @@ COMMAND_EXAMPLES = {
     "timelog cancel": "jot timelog cancel 42",
     "timelog ingest": "jot timelog ingest --scope auto < old-new-task-json-lines.txt",
     "timelog pending": "jot timelog pending",
-    "timelog report": "jot timelog report week --project reading",
+    "timelog report": "jot timelog report week --project reading --details",
     "timelog start": "jot timelog start 42",
     "timelog stop": "jot timelog stop 42",
     "tui": "jot tui",

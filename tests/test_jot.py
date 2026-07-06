@@ -954,8 +954,12 @@ class CliIntegrationTests(JotCliTestCase):
         payload = json.loads(report.stdout)
         self.assertEqual(payload["total_minutes"], 105)
         self.assertEqual(payload["entry_count"], 2)
+        self.assertFalse(payload["details"])
+        self.assertEqual(payload["entries"], [])
         self.assertEqual({item["name"]: item["minutes"] for item in payload["by_project"]}, {"writing": 60.0, "reading": 45.0})
         self.assertEqual({item["name"]: item["minutes"] for item in payload["by_chain"]}, {"(no chain)": 60.0, "2d6d7d7d": 45.0})
+        self.assertEqual(payload["by_day"][0]["name"], "2026-07-03")
+        self.assertEqual(payload["by_day"][0]["minutes"], 105)
 
         filtered = self.run_jot("--json", "timelog", "report", "all", "--project", "reading")
         self.assertEqual(filtered.returncode, 0, filtered.stderr)
@@ -963,10 +967,20 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(filtered_payload["total_minutes"], 45)
         self.assertEqual(filtered_payload["entry_count"], 1)
 
-        human = self.run_jot("timelog", "report")
+        detailed = self.run_jot("--json", "timelog", "report", "--details")
+        self.assertEqual(detailed.returncode, 0, detailed.stderr)
+        detailed_payload = json.loads(detailed.stdout)
+        self.assertTrue(detailed_payload["details"])
+        self.assertEqual(len(detailed_payload["entries"]), 2)
+        self.assertIn("display_range", detailed_payload["entries"][0])
+        self.assertIn("duration", detailed_payload["entries"][0])
+
+        human = self.run_jot("timelog", "report", "--details")
         self.assertEqual(human.returncode, 0, human.stderr)
         self.assertIn("Timelog report: all", human.stdout)
+        self.assertIn("By day", human.stdout)
         self.assertIn("By project", human.stdout)
+        self.assertIn("Details", human.stdout)
         self.assertIn("reading", human.stdout)
 
     def test_timelog_cancel_removes_pending_session(self) -> None:

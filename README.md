@@ -154,6 +154,17 @@ jot timelog stop --all
 Time goes to the chain note when `chainID` exists. Otherwise it goes to the
 task note.
 
+To see where time went:
+
+```bash
+jot timelog report today
+jot timelog report week
+jot timelog report week --project reading --details
+```
+
+Reports group time by day, project, chain, and task. `--details` shows the
+individual intervals behind the totals.
+
 ## Finding Things Again
 
 ```bash

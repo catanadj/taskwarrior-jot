@@ -506,9 +506,12 @@ def _emit_timelog_report(payload: dict[str, Any]) -> None:
     active_filters = [f"{key}={value}" for key, value in filters.items() if value]
     if active_filters:
         sys.stdout.write(f"Filters: {', '.join(active_filters)}\n")
+    _emit_time_log_group("By day", payload.get("by_day") or [])
     _emit_time_log_group("By project", payload.get("by_project") or [])
     _emit_time_log_group("By chain", payload.get("by_chain") or [])
     _emit_time_log_group("By task", payload.get("by_task") or [])
+    if payload.get("details"):
+        _emit_time_log_details(payload.get("entries") or [])
 
 
 def _emit_time_log_group(title: str, items: list[object]) -> None:
@@ -523,6 +526,25 @@ def _emit_time_log_group(title: str, items: list[object]) -> None:
         duration = str(raw.get("duration") or "")
         count = raw.get("entry_count", 0)
         sys.stdout.write(f"  {name:<24} {duration:>8}  {count} entries\n")
+
+
+def _emit_time_log_details(items: list[object]) -> None:
+    sys.stdout.write("\nDetails\n")
+    if not items:
+        sys.stdout.write("  (none)\n")
+        return
+    for raw in items:
+        if not isinstance(raw, dict):
+            continue
+        duration = str(raw.get("duration") or "")
+        timerange = str(raw.get("display_range") or "")
+        project = str(raw.get("project") or "").strip() or "(no project)"
+        task = str(raw.get("task_short_uuid") or "").strip()
+        chain = str(raw.get("chain_id") or "").strip()
+        suffix = f"  task {task}" if task else ""
+        if chain:
+            suffix += f"  chain {chain}"
+        sys.stdout.write(f"  {raw.get('day') or ''}  {duration:>8}  {timerange}  {project}{suffix}\n")
 
 
 def _emit_headings(payload: dict[str, Any]) -> None:

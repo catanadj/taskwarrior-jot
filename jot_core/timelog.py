@@ -268,6 +268,7 @@ def report_time_logs(
     project: str = "",
     task_ref: str = "",
     chain_id: str = "",
+    details: bool = False,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     window_start, window_end = _report_window(period, now=now)
@@ -289,10 +290,12 @@ def report_time_logs(
     if chain_id:
         normalized_chain = chain_id.strip()
         records = [item for item in records if str(item.get("chain_id") or "") == normalized_chain]
+    records = [_time_log_report_record(item) for item in records]
 
     total_minutes = round(sum(float(item.get("minutes") or 0) for item in records), 2)
     return {
         "period": period,
+        "details": bool(details),
         "window_start": _iso_z(window_start) if window_start else None,
         "window_end": _iso_z(window_end) if window_end else None,
         "filters": {
@@ -306,7 +309,8 @@ def report_time_logs(
         "by_project": _time_log_groups(records, "project", fallback="(no project)"),
         "by_chain": _time_log_groups(records, "chain_id", fallback="(no chain)"),
         "by_task": _time_log_groups(records, "task_short_uuid", fallback="(no task)"),
-        "entries": records,
+        "by_day": _time_log_day_groups(records),
+        "entries": records if details else [],
     }
 
 
@@ -463,6 +467,34 @@ def _time_log_groups(records: list[dict[str, Any]], key: str, *, fallback: str) 
     for item in groups.values():
         item["duration"] = _duration_text(float(item["minutes"]))
     return sorted(groups.values(), key=lambda item: (-float(item["minutes"]), str(item["name"])))
+
+
+def _time_log_day_groups(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for record in records:
+        day = str(record.get("day") or "").strip() or "(unknown)"
+        item = groups.setdefault(day, {"name": day, "minutes": 0.0, "entry_count": 0})
+        item["minutes"] = round(float(item["minutes"]) + float(record.get("minutes") or 0), 2)
+        item["entry_count"] = int(item["entry_count"]) + 1
+    for item in groups.values():
+        item["duration"] = _duration_text(float(item["minutes"]))
+    return sorted(groups.values(), key=lambda item: str(item["name"]))
+
+
+def _time_log_report_record(record: dict[str, Any]) -> dict[str, Any]:
+    item = dict(record)
+    try:
+        started = _parse_datetime(str(item.get("started") or ""))
+        stopped = _parse_datetime(str(item.get("stopped") or ""))
+    except RuntimeError:
+        item.setdefault("display_range", "")
+        item.setdefault("day", "")
+        item.setdefault("duration", _duration_text(float(item.get("minutes") or 0)))
+        return item
+    item["display_range"] = _time_range(started, stopped)
+    item["day"] = stopped.astimezone().strftime("%Y-%m-%d")
+    item["duration"] = _duration_text(float(item.get("minutes") or 0))
+    return item
 
 
 def _time_log_key(task_uuid: str, started: datetime, stopped: datetime) -> str:

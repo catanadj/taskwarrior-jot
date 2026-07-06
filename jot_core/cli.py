@@ -487,6 +487,7 @@ def build_parser() -> argparse.ArgumentParser:
     timelog_report.add_argument("--project", default="", help="only include entries for this project")
     timelog_report.add_argument("--task", default="", help="only include entries for this task UUID or short UUID")
     timelog_report.add_argument("--chain", default="", help="only include entries for this chainID")
+    timelog_report.add_argument("--details", action="store_true", help="show individual time log entries")
 
     headings = subparsers.add_parser(
         "headings",
@@ -1694,6 +1695,7 @@ def _run_timelog(ctx, args) -> CommandResult:
                 project=args.project,
                 task_ref=args.task,
                 chain_id=args.chain,
+                details=bool(args.details),
             ),
         )
     if args.timelog_command != "ingest":
