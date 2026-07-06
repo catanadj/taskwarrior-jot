@@ -75,6 +75,7 @@ from .timelog import (
     cancel_time_session,
     ingest_time_log,
     list_time_sessions,
+    report_time_logs,
     stop_all_time_sessions,
     start_time_session,
     stop_time_session,
@@ -471,6 +472,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="list pending Jot-managed timelog sessions",
         description="Show sessions created by 'jot timelog start' that have not been stopped or cancelled.",
     )
+    timelog_report = timelog_subparsers.add_parser(
+        "report",
+        help="summarize recorded time expenditure",
+        description="Summarize structured Jot timelog entries stored in task and chain notes.",
+    )
+    timelog_report.add_argument(
+        "period",
+        nargs="?",
+        choices=("all", "today", "week", "month"),
+        default="all",
+        help="time window based on the local stop date",
+    )
+    timelog_report.add_argument("--project", default="", help="only include entries for this project")
+    timelog_report.add_argument("--task", default="", help="only include entries for this task UUID or short UUID")
+    timelog_report.add_argument("--chain", default="", help="only include entries for this chainID")
 
     headings = subparsers.add_parser(
         "headings",
@@ -1668,6 +1684,17 @@ def _run_timelog(ctx, args) -> CommandResult:
         return CommandResult(
             command="timelog-cancel",
             payload=cancel_time_session(ctx.config, task),
+        )
+    if args.timelog_command == "report":
+        return CommandResult(
+            command="timelog-report",
+            payload=report_time_logs(
+                ctx.config,
+                period=args.period,
+                project=args.project,
+                task_ref=args.task,
+                chain_id=args.chain,
+            ),
         )
     if args.timelog_command != "ingest":
         raise RuntimeError(f"unknown timelog command '{args.timelog_command}'")

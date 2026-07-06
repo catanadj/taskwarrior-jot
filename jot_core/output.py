@@ -83,6 +83,9 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "timelog-cancel":
         _emit_timelog_cancel(payload)
         return
+    if command == "timelog-report":
+        _emit_timelog_report(payload)
+        return
     if command == "headings":
         _emit_headings(payload)
         return
@@ -493,6 +496,33 @@ def _emit_timelog_pending(payload: dict[str, Any]) -> None:
 def _emit_timelog_cancel(payload: dict[str, Any]) -> None:
     sys.stdout.write(f"Cancelled Jot timelog session for task {payload.get('task_short_uuid')}\n")
     _emit_field("started", payload.get("started"), indent=0)
+
+
+def _emit_timelog_report(payload: dict[str, Any]) -> None:
+    period = str(payload.get("period") or "all")
+    sys.stdout.write(f"Timelog report: {period}\n\n")
+    sys.stdout.write(f"Total: {payload.get('total')} across {payload.get('entry_count', 0)} entries\n")
+    filters = payload.get("filters") if isinstance(payload.get("filters"), dict) else {}
+    active_filters = [f"{key}={value}" for key, value in filters.items() if value]
+    if active_filters:
+        sys.stdout.write(f"Filters: {', '.join(active_filters)}\n")
+    _emit_time_log_group("By project", payload.get("by_project") or [])
+    _emit_time_log_group("By chain", payload.get("by_chain") or [])
+    _emit_time_log_group("By task", payload.get("by_task") or [])
+
+
+def _emit_time_log_group(title: str, items: list[object]) -> None:
+    sys.stdout.write(f"\n{title}\n")
+    if not items:
+        sys.stdout.write("  (none)\n")
+        return
+    for raw in items:
+        if not isinstance(raw, dict):
+            continue
+        name = str(raw.get("name") or "(unknown)")
+        duration = str(raw.get("duration") or "")
+        count = raw.get("entry_count", 0)
+        sys.stdout.write(f"  {name:<24} {duration:>8}  {count} entries\n")
 
 
 def _emit_headings(payload: dict[str, Any]) -> None:

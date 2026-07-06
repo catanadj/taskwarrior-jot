@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .frontmatter import atomic_write_text, exclusive_file_lock
+from .frontmatter import atomic_write_text, exclusive_file_lock, read_document
 from .index import update_chain_note_index, update_task_note_index
 from .models import ResolvedTask, TaskRef
 from .nautical import chain_id_for_task
@@ -15,6 +16,7 @@ from .ops import append_op
 
 
 TIME_LOG_HEADING = "Time log"
+TIME_LOG_DATA_RE = re.compile(r"<!--\s*jot-time-log\s+({.*?})\s*-->")
 
 
 def ingest_time_log(config, old: dict[str, Any], new: dict[str, Any], *, scope: str = "auto", stopped_at: str = "") -> dict[str, Any]:
@@ -182,7 +184,7 @@ def write_time_log(
         raise RuntimeError("stop time is before start time")
     note_kind = _resolve_scope(scope, task.task)
     guard_key = _time_log_key(task.task_uuid, started, stopped)
-    text = _format_time_entry(task, started, stopped, guard_key=guard_key)
+    text = _format_time_entry(task, started, stopped, note_kind=note_kind, guard_key=guard_key)
     if note_kind == "chain":
         note = ensure_chain_note(config, task)
         result = append_under_heading_once(
@@ -259,6 +261,55 @@ def write_time_log(
     }
 
 
+def report_time_logs(
+    config,
+    *,
+    period: str = "all",
+    project: str = "",
+    task_ref: str = "",
+    chain_id: str = "",
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    window_start, window_end = _report_window(period, now=now)
+    records = [
+        item
+        for item in _read_time_log_records(config)
+        if _record_in_report(item, window_start=window_start, window_end=window_end)
+    ]
+    if project:
+        normalized_project = project.strip().casefold()
+        records = [item for item in records if str(item.get("project") or "").casefold() == normalized_project]
+    if task_ref:
+        normalized_task = task_ref.strip()
+        records = [
+            item
+            for item in records
+            if str(item.get("task_short_uuid") or "") == normalized_task or str(item.get("task_uuid") or "") == normalized_task
+        ]
+    if chain_id:
+        normalized_chain = chain_id.strip()
+        records = [item for item in records if str(item.get("chain_id") or "") == normalized_chain]
+
+    total_minutes = round(sum(float(item.get("minutes") or 0) for item in records), 2)
+    return {
+        "period": period,
+        "window_start": _iso_z(window_start) if window_start else None,
+        "window_end": _iso_z(window_end) if window_end else None,
+        "filters": {
+            "project": project or None,
+            "task": task_ref or None,
+            "chain": chain_id or None,
+        },
+        "total_minutes": total_minutes,
+        "total": _duration_text(total_minutes),
+        "entry_count": len(records),
+        "by_project": _time_log_groups(records, "project", fallback="(no project)"),
+        "by_chain": _time_log_groups(records, "chain_id", fallback="(no chain)"),
+        "by_task": _time_log_groups(records, "task_short_uuid", fallback="(no task)"),
+        "entries": records,
+    }
+
+
 def _resolved_task_from_json(task_json: dict[str, Any]) -> ResolvedTask:
     uuid = str(task_json.get("uuid") or "").strip()
     if not uuid:
@@ -292,6 +343,7 @@ def _format_time_entry(
     started: datetime,
     stopped: datetime,
     *,
+    note_kind: str,
     guard_key: str,
 ) -> str:
     minutes = round((stopped - started).total_seconds() / 60, 2)
@@ -302,7 +354,115 @@ def _format_time_entry(
     if task.tags:
         parts.append(" ".join(f"#{tag}" for tag in task.tags))
     parts.append(f"<!-- timelog:{guard_key} -->")
+    parts.append(_time_log_data_comment(task, started, stopped, note_kind=note_kind, guard_key=guard_key))
     return "; ".join(parts)
+
+
+def _time_log_data_comment(
+    task: ResolvedTask,
+    started: datetime,
+    stopped: datetime,
+    *,
+    note_kind: str,
+    guard_key: str,
+) -> str:
+    payload = {
+        "v": 1,
+        "key": guard_key,
+        "note_kind": note_kind,
+        "task_uuid": task.task_uuid,
+        "task_short_uuid": task.task_short_uuid,
+        "chain_id": chain_id_for_task(task.task) or "",
+        "project": task.project,
+        "tags": list(task.tags),
+        "started": _iso_z(started),
+        "stopped": _iso_z(stopped),
+        "minutes": round((stopped - started).total_seconds() / 60, 2),
+    }
+    return f"<!-- jot-time-log {json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(',', ':'))} -->"
+
+
+def _read_time_log_records(config) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for note_kind, root in (("task", config.tasks_dir), ("chain", config.chains_dir)):
+        if not root.exists():
+            continue
+        for note_path in sorted(root.rglob("*.md")):
+            _metadata, body = read_document(note_path)
+            for match in TIME_LOG_DATA_RE.finditer(body):
+                try:
+                    record = json.loads(match.group(1))
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(record, dict):
+                    continue
+                key = str(record.get("key") or "").strip()
+                if key and key in seen_keys:
+                    continue
+                if key:
+                    seen_keys.add(key)
+                record.setdefault("note_kind", note_kind)
+                record["path"] = str(note_path)
+                records.append(record)
+    return sorted(records, key=lambda item: str(item.get("stopped") or item.get("started") or ""))
+
+
+def _record_in_report(
+    record: dict[str, Any],
+    *,
+    window_start: datetime | None,
+    window_end: datetime | None,
+) -> bool:
+    if window_start is None and window_end is None:
+        return True
+    try:
+        stopped = _parse_datetime(str(record.get("stopped") or ""))
+    except RuntimeError:
+        return False
+    if window_start is not None and stopped < window_start:
+        return False
+    if window_end is not None and stopped >= window_end:
+        return False
+    return True
+
+
+def _report_window(period: str, *, now: datetime | None = None) -> tuple[datetime | None, datetime | None]:
+    normalized = str(period or "all").strip().casefold()
+    if normalized not in {"all", "today", "week", "month"}:
+        raise RuntimeError("timelog report period must be all, today, week, or month")
+    if normalized == "all":
+        return None, None
+    local_now = (now or datetime.now(timezone.utc)).astimezone()
+    if normalized == "today":
+        start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif normalized == "week":
+        day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+        start = day_start - timedelta(days=day_start.weekday())
+    else:
+        start = local_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if normalized == "month":
+        if start.month == 12:
+            end = start.replace(year=start.year + 1, month=1)
+        else:
+            end = start.replace(month=start.month + 1)
+    elif normalized == "week":
+        end = start + timedelta(days=7)
+    else:
+        end = start + timedelta(days=1)
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+
+
+def _time_log_groups(records: list[dict[str, Any]], key: str, *, fallback: str) -> list[dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    for record in records:
+        label = str(record.get(key) or "").strip() or fallback
+        item = groups.setdefault(label, {"name": label, "minutes": 0.0, "entry_count": 0})
+        item["minutes"] = round(float(item["minutes"]) + float(record.get("minutes") or 0), 2)
+        item["entry_count"] = int(item["entry_count"]) + 1
+    for item in groups.values():
+        item["duration"] = _duration_text(float(item["minutes"]))
+    return sorted(groups.values(), key=lambda item: (-float(item["minutes"]), str(item["name"])))
 
 
 def _time_log_key(task_uuid: str, started: datetime, stopped: datetime) -> str:

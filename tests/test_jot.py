@@ -756,6 +756,7 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("reading", note_text)
         self.assertIn("#book", note_text)
         self.assertIn("timelog:", note_text)
+        self.assertIn("jot-time-log", note_text)
         self.assertNotIn("uuid 2d6d7d7d-1111-2222-3333-444444444444", note_text)
         self.assertNotIn("task 2d6d7d7d", note_text)
 
@@ -922,6 +923,51 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertTrue(all(item["session_cleared"] for item in payload["items"]))
         pending = self.run_jot("--json", "timelog", "pending")
         self.assertEqual(json.loads(pending.stdout)["sessions"], [])
+
+    def test_timelog_report_summarizes_structured_entries(self) -> None:
+        first_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+        second_uuid = "986e9d97-1111-2222-3333-444444444444"
+        first = {
+            "uuid": first_uuid,
+            "description": "Read chapter",
+            "project": "reading",
+            "tags": ["book"],
+            "chainID": "2d6d7d7d",
+            "status": "pending",
+        }
+        second = {
+            "uuid": second_uuid,
+            "description": "Draft notes",
+            "project": "writing",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [first], "1": [first], "2": [second]})
+
+        self.assertEqual(self.run_jot("timelog", "start", "1", "--at", "20260703T060000Z").returncode, 0)
+        self.assertEqual(self.run_jot("timelog", "stop", "1", "--at", "20260703T064500Z").returncode, 0)
+        self.assertEqual(self.run_jot("timelog", "start", "2", "--at", "20260703T070000Z").returncode, 0)
+        self.assertEqual(self.run_jot("timelog", "stop", "2", "--at", "20260703T080000Z").returncode, 0)
+
+        report = self.run_jot("--json", "timelog", "report")
+        self.assertEqual(report.returncode, 0, report.stderr)
+        payload = json.loads(report.stdout)
+        self.assertEqual(payload["total_minutes"], 105)
+        self.assertEqual(payload["entry_count"], 2)
+        self.assertEqual({item["name"]: item["minutes"] for item in payload["by_project"]}, {"writing": 60.0, "reading": 45.0})
+        self.assertEqual({item["name"]: item["minutes"] for item in payload["by_chain"]}, {"(no chain)": 60.0, "2d6d7d7d": 45.0})
+
+        filtered = self.run_jot("--json", "timelog", "report", "all", "--project", "reading")
+        self.assertEqual(filtered.returncode, 0, filtered.stderr)
+        filtered_payload = json.loads(filtered.stdout)
+        self.assertEqual(filtered_payload["total_minutes"], 45)
+        self.assertEqual(filtered_payload["entry_count"], 1)
+
+        human = self.run_jot("timelog", "report")
+        self.assertEqual(human.returncode, 0, human.stderr)
+        self.assertIn("Timelog report: all", human.stdout)
+        self.assertIn("By project", human.stdout)
+        self.assertIn("reading", human.stdout)
 
     def test_timelog_cancel_removes_pending_session(self) -> None:
         task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
