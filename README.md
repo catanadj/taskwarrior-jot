@@ -175,9 +175,12 @@ Forgot to start the timer, or entered the wrong time?
 jot timelog add 42 --from 2026-07-14T09:00 --to 2026-07-14T10:30
 jot timelog amend a1b2c3d4 --to 2026-07-14T10:45
 jot timelog delete a1b2c3d4 --yes
+jot timelog trash
+jot timelog restore '#1'
 ```
 
-Amended and deleted entries are archived under `.jot_trash/timelog/`.
+Amended and deleted entries are archived under `.jot_trash/timelog/`. Deleted
+entries remain restorable by key or by the `#ID` shown in `timelog trash`.
 
 ## Finding Things Again
 
@@ -254,6 +257,7 @@ jot progress task 42 show
 jot timelog start 42
 jot timelog stop 42
 jot timelog pending
+jot timelog trash
 
 jot paths
 jot stats

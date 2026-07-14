@@ -104,6 +104,12 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "timelog-delete":
         _emit_timelog_delete(payload)
         return
+    if command == "timelog-trash":
+        _emit_timelog_trash(payload)
+        return
+    if command == "timelog-restore":
+        _emit_timelog_restore(payload)
+        return
     if command == "timelog-report":
         _emit_timelog_report(payload)
         return
@@ -575,6 +581,27 @@ def _emit_timelog_amend(payload: dict[str, Any]) -> None:
 def _emit_timelog_delete(payload: dict[str, Any]) -> None:
     sys.stdout.write(f"Deleted time log {payload.get('timelog_key')}\n")
     _emit_field("archive", payload.get("archive_path"), indent=0)
+
+
+def _emit_timelog_trash(payload: dict[str, Any]) -> None:
+    items = payload.get("items") or []
+    if not items:
+        sys.stdout.write("No deleted time logs available for restoration.\n")
+        return
+    sys.stdout.write("Deleted time logs\n\n")
+    for item in items:
+        identity = str(item.get("chain_id") or item.get("task_short_uuid") or "")
+        project = str(item.get("project") or "").strip()
+        suffix = f"  {project}" if project else ""
+        sys.stdout.write(
+            f"  #{item.get('id')}  {item.get('key')}  {item.get('duration')}  {identity}{suffix}\n"
+        )
+        _emit_field("archived", item.get("archived_at"), indent=4)
+
+
+def _emit_timelog_restore(payload: dict[str, Any]) -> None:
+    sys.stdout.write(f"Restored time log {payload.get('timelog_key')}\n")
+    _emit_field("path", payload.get("path"), indent=0)
 
 
 def _emit_timelog_report(payload: dict[str, Any]) -> None:

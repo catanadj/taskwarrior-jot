@@ -1229,6 +1229,34 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(empty.returncode, 0, empty.stderr)
         self.assertEqual(json.loads(empty.stdout)["entry_count"], 0)
 
+        trash = self.run_jot_with_env("--json", "timelog", "trash", extra_env=env)
+        self.assertEqual(trash.returncode, 0, trash.stderr)
+        trash_items = json.loads(trash.stdout)["items"]
+        self.assertEqual(len(trash_items), 1)
+        self.assertEqual(trash_items[0]["key"], new_key)
+        self.assertNotIn("record", trash_items[0])
+        self.assertNotIn("line", trash_items[0])
+
+        restored = self.run_jot_with_env("--json", "timelog", "restore", "#1", extra_env=env)
+        self.assertEqual(restored.returncode, 0, restored.stderr)
+        restored_payload = json.loads(restored.stdout)
+        self.assertEqual(restored_payload["timelog_key"], new_key)
+        restored_note = Path(restored_payload["path"]).read_text(encoding="utf-8")
+        archived_line = json.loads(delete_archive.read_text(encoding="utf-8"))["line"]
+        self.assertIn(archived_line, restored_note)
+
+        restored_report = self.run_jot_with_env("--json", "timelog", "report", "--details", extra_env=env)
+        self.assertEqual(restored_report.returncode, 0, restored_report.stderr)
+        restored_report_payload = json.loads(restored_report.stdout)
+        self.assertEqual(restored_report_payload["total_minutes"], 90)
+        self.assertEqual(restored_report_payload["entries"][0]["key"], new_key)
+
+        empty_trash = self.run_jot_with_env("--json", "timelog", "trash", extra_env=env)
+        self.assertEqual(json.loads(empty_trash.stdout)["items"], [])
+        repeated_restore = self.run_jot_with_env("timelog", "restore", new_key[:8], extra_env=env)
+        self.assertEqual(repeated_restore.returncode, 1)
+        self.assertIn("not found", repeated_restore.stderr)
+
         short_key = self.run_jot_with_env("timelog", "delete", "abc", "--yes", extra_env=env)
         self.assertEqual(short_key.returncode, 1)
         self.assertIn("at least 4", short_key.stderr)

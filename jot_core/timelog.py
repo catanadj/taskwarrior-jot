@@ -12,12 +12,14 @@ from .index import update_chain_note_index, update_task_note_index
 from .models import ResolvedTask, TaskRef
 from .nautical import chain_id_for_task
 from .notes import append_under_heading_once, ensure_chain_note, ensure_task_note
-from .ops import append_op, iso_now
+from .ops import append_op, iso_now, read_ops
 
 
 TIME_LOG_HEADING = "Time log"
 TIME_LOG_DATA_RE = re.compile(r"<!--\s*jot-time-log\s+({.*?})\s*-->")
 DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+TIME_LOG_HEADING_RE = re.compile(r"^##\s+Time log\s*$", re.IGNORECASE)
+SECTION_END_RE = re.compile(r"^#{1,2}\s+")
 
 
 def ingest_time_log(config, old: dict[str, Any], new: dict[str, Any], *, scope: str = "auto", stopped_at: str = "") -> dict[str, Any]:
@@ -386,6 +388,104 @@ def delete_time_log(config, key: str) -> dict[str, Any]:
     }
 
 
+def list_deleted_time_logs(config, *, include_internal: bool = False) -> list[dict[str, Any]]:
+    restored = {
+        str(item.get("archive_path") or "").strip()
+        for item in read_ops(config)
+        if str(item.get("op") or "") == "timelog_restore"
+    }
+    archive_root = config.trash_dir / "timelog"
+    items: list[dict[str, Any]] = []
+    if not archive_root.exists():
+        return items
+    for archive_path in sorted(archive_root.rglob("*.json")):
+        if str(archive_path) in restored:
+            continue
+        try:
+            payload = json.loads(archive_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict) or str(payload.get("action") or "") != "delete":
+            continue
+        record = payload.get("record")
+        if not isinstance(record, dict):
+            continue
+        key = str(record.get("key") or "").strip()
+        line = str(payload.get("line") or "")
+        note_path = str(payload.get("path") or "").strip()
+        if not key or not line or not note_path:
+            continue
+        item = {
+            "key": key,
+            "task_short_uuid": str(record.get("task_short_uuid") or ""),
+            "chain_id": str(record.get("chain_id") or ""),
+            "project": str(record.get("project") or ""),
+            "started": str(record.get("started") or ""),
+            "stopped": str(record.get("stopped") or ""),
+            "minutes": float(record.get("minutes") or 0),
+            "duration": _duration_text(float(record.get("minutes") or 0)),
+            "archived_at": str(payload.get("archived_at") or ""),
+            "path": note_path,
+            "archive_path": str(archive_path),
+        }
+        if include_internal:
+            item["line"] = line
+            item["record"] = record
+        items.append(item)
+    items.sort(key=lambda item: str(item.get("archived_at") or ""), reverse=True)
+    for item_id, item in enumerate(items, start=1):
+        item["id"] = item_id
+    return items
+
+
+def restore_deleted_time_log(config, reference: str) -> dict[str, Any]:
+    archive = _select_deleted_time_log(
+        list_deleted_time_logs(config, include_internal=True),
+        reference,
+    )
+    record = dict(archive["record"])
+    note_kind = str(record.get("note_kind") or "task").strip().casefold()
+    if note_kind not in {"task", "chain"}:
+        raise RuntimeError(f"cannot restore timelog entry with note kind '{note_kind}'")
+    note_path = Path(str(archive["path"])).expanduser()
+    expected_root = config.chains_dir if note_kind == "chain" else config.tasks_dir
+    try:
+        note_path.resolve().relative_to(expected_root.resolve())
+    except ValueError as exc:
+        raise RuntimeError("timelog archive target is outside the configured note directory") from exc
+    if not note_path.exists():
+        raise RuntimeError(f"timelog restore target note does not exist: {note_path}")
+
+    key = str(record.get("key") or "")
+    with exclusive_file_lock(note_path):
+        metadata, body = read_document(note_path)
+        if key in body:
+            raise RuntimeError(f"timelog entry {key} already exists in {note_path}")
+        restored_body = _insert_restored_time_log_line(body, str(archive["line"]))
+        metadata["updated"] = iso_now()
+        write_document(note_path, metadata, restored_body)
+
+    task = _resolved_task_from_record(record)
+    _update_time_log_index(config, task, note_kind, note_path)
+    append_op(
+        config,
+        "timelog_restore",
+        timelog_key=key,
+        task_uuid=task.task_uuid,
+        task_short_uuid=task.task_short_uuid,
+        chain_id=chain_id_for_task(task.task) or None,
+        path=str(note_path),
+        archive_path=str(archive["archive_path"]),
+    )
+    return {
+        "restored": True,
+        "timelog_key": key,
+        "task_short_uuid": task.task_short_uuid,
+        "path": str(note_path),
+        "archive_path": str(archive["archive_path"]),
+    }
+
+
 def report_time_logs(
     config,
     *,
@@ -615,6 +715,32 @@ def _find_time_log_location(config, key: str) -> dict[str, Any]:
     return matches[0]
 
 
+def _select_deleted_time_log(items: list[dict[str, Any]], reference: str) -> dict[str, Any]:
+    query = str(reference or "").strip()
+    if query.startswith("#"):
+        try:
+            item_id = int(query[1:])
+        except ValueError as exc:
+            raise RuntimeError(f"invalid timelog trash ID '{reference}'") from exc
+        selected = next((item for item in items if int(item.get("id") or 0) == item_id), None)
+        if selected is None:
+            raise RuntimeError(f"timelog trash item {query} does not exist")
+        return selected
+    normalized = query.casefold()
+    if len(normalized) < 4:
+        raise RuntimeError("timelog key prefix must contain at least 4 characters")
+    matches = [item for item in items if str(item.get("key") or "").casefold().startswith(normalized)]
+    if not matches:
+        raise RuntimeError(f"deleted timelog entry not found for key '{reference}'")
+    exact = [item for item in matches if str(item.get("key") or "").casefold() == normalized]
+    if len(exact) == 1:
+        return exact[0]
+    if len(matches) > 1:
+        refs = ", ".join(f"#{item.get('id')} {item.get('key')}" for item in matches)
+        raise RuntimeError(f"deleted timelog key prefix '{reference}' is ambiguous: {refs}")
+    return matches[0]
+
+
 def _find_time_log_line(body: str, key: str) -> tuple[int, str]:
     for line_index, line in enumerate(body.splitlines()):
         match = TIME_LOG_DATA_RE.search(line)
@@ -633,6 +759,35 @@ def _replace_time_log_line(original_line: str, replacement: str) -> str:
     prefix_match = re.match(r"^(\s*-\s+\[[^\]]+\]\s+)", original_line)
     prefix = prefix_match.group(1) if prefix_match else "- "
     return f"{prefix}{replacement}"
+
+
+def _insert_restored_time_log_line(body: str, line: str) -> str:
+    restored_line = str(line or "").rstrip("\n")
+    if not restored_line:
+        raise RuntimeError("timelog archive does not include the original note line")
+    lines = body.splitlines()
+    heading_index = next(
+        (index for index, value in enumerate(lines) if TIME_LOG_HEADING_RE.match(value.strip())),
+        None,
+    )
+    if heading_index is None:
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if lines:
+            lines.append("")
+        lines.extend(["## Time log", restored_line])
+        return "\n".join(lines)
+
+    section_end = len(lines)
+    for index in range(heading_index + 1, len(lines)):
+        if SECTION_END_RE.match(lines[index].strip()):
+            section_end = index
+            break
+    insertion_index = section_end
+    while insertion_index > heading_index + 1 and not lines[insertion_index - 1].strip():
+        insertion_index -= 1
+    lines.insert(insertion_index, restored_line)
+    return "\n".join(lines)
 
 
 def _archive_time_log_record(

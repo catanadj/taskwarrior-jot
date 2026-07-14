@@ -78,8 +78,10 @@ from .timelog import (
     cancel_time_session,
     delete_time_log,
     ingest_time_log,
+    list_deleted_time_logs,
     list_time_sessions,
     report_time_logs,
+    restore_deleted_time_log,
     stop_all_time_sessions,
     start_time_session,
     stop_time_session,
@@ -522,6 +524,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     timelog_delete.add_argument("key", help="full timelog key or unique prefix of at least 4 characters")
     timelog_delete.add_argument("--yes", action="store_true", help="confirm removal of the interval")
+    timelog_subparsers.add_parser(
+        "trash",
+        help="list deleted intervals available for restoration",
+        description="List deletion archives that have not already been restored.",
+    )
+    timelog_restore = timelog_subparsers.add_parser(
+        "restore",
+        help="restore a deleted interval from its archive",
+        description="Restore an archived interval by unique key prefix or the #ID shown by timelog trash.",
+    )
+    timelog_restore.add_argument("reference", help="full key, unique key prefix, or trash ID such as #1")
     timelog_subparsers.add_parser(
         "pending",
         help="list pending Jot-managed timelog sessions",
@@ -1790,6 +1803,16 @@ def _run_timelog(ctx, args) -> CommandResult:
         return CommandResult(
             command="timelog-delete",
             payload=delete_time_log(ctx.config, args.key),
+        )
+    if args.timelog_command == "trash":
+        return CommandResult(
+            command="timelog-trash",
+            payload={"items": list_deleted_time_logs(ctx.config)},
+        )
+    if args.timelog_command == "restore":
+        return CommandResult(
+            command="timelog-restore",
+            payload=restore_deleted_time_log(ctx.config, args.reference),
         )
     if args.timelog_command == "report":
         if args.csv and args.json:

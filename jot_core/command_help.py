@@ -59,6 +59,8 @@ COMMAND_EXAMPLES = {
     "timelog add": "jot timelog add 42 --from 2026-07-14T09:00 --to 2026-07-14T10:30",
     "timelog amend": "jot timelog amend a1b2c3d4 --to 2026-07-14T10:45",
     "timelog delete": "jot timelog delete a1b2c3d4 --yes",
+    "timelog trash": "jot timelog trash",
+    "timelog restore": "jot timelog restore a1b2c3d4",
     "timelog ingest": "jot timelog ingest --scope auto < old-new-task-json-lines.txt",
     "timelog pending": "jot timelog pending",
     "timelog report": "jot timelog report week --project reading --details",
