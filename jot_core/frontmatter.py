@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import fcntl
 import errno
+import json
 import os
+import shutil
 import tempfile
 import time
 from collections import OrderedDict
@@ -12,6 +14,10 @@ from typing import Any, Iterator
 
 
 FrontMatter = OrderedDict[str, Any]
+
+DEFAULT_LOCK_TIMEOUT_SECONDS = 10.0
+DEFAULT_STALE_LOCK_SECONDS = 300.0
+LOCK_POLL_SECONDS = 0.05
 
 
 def read_document(path: Path) -> tuple[FrontMatter, str]:
@@ -54,11 +60,7 @@ def exclusive_file_lock(path: Path) -> Iterator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.parent / f".{path.name}.lock"
     with lock_path.open("a+", encoding="utf-8") as lock_handle:
-        try:
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-        except OSError as exc:
-            if exc.errno != errno.ENOSYS:
-                raise
+        if not _acquire_flock(lock_handle, lock_path):
             with _exclusive_lock_dir(lock_path):
                 yield
             return
@@ -71,19 +73,135 @@ def exclusive_file_lock(path: Path) -> Iterator[None]:
 @contextmanager
 def _exclusive_lock_dir(lock_path: Path) -> Iterator[None]:
     lock_dir = lock_path.with_suffix(lock_path.suffix + ".d")
+    timeout = _lock_duration("JOT_LOCK_TIMEOUT", DEFAULT_LOCK_TIMEOUT_SECONDS)
+    stale_after = _lock_duration("JOT_LOCK_STALE_AFTER", DEFAULT_STALE_LOCK_SECONDS)
+    deadline = time.monotonic() + timeout
     while True:
         try:
             lock_dir.mkdir()
+            _write_lock_owner(lock_dir)
             break
         except FileExistsError:
-            time.sleep(0.05)
+            if _lock_dir_is_stale(lock_dir, stale_after=stale_after):
+                _remove_stale_lock_dir(lock_dir)
+                continue
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"timed out waiting for file lock: {lock_path}")
+            time.sleep(LOCK_POLL_SECONDS)
+        except Exception:
+            if lock_dir.exists():
+                shutil.rmtree(lock_dir, ignore_errors=True)
+            raise
     try:
         yield
     finally:
         try:
+            (lock_dir / "owner.json").unlink(missing_ok=True)
             lock_dir.rmdir()
         except FileNotFoundError:
             pass
+
+
+def find_stale_lock_dirs(root: Path) -> list[Path]:
+    if not root.exists():
+        return []
+    stale_after = _lock_duration("JOT_LOCK_STALE_AFTER", DEFAULT_STALE_LOCK_SECONDS)
+    return [
+        path
+        for path in sorted(root.rglob(".*.lock.d"))
+        if path.is_dir() and _lock_dir_is_stale(path, stale_after=stale_after)
+    ]
+
+
+def repair_stale_lock_dirs(root: Path) -> list[Path]:
+    repaired: list[Path] = []
+    for path in find_stale_lock_dirs(root):
+        if _remove_stale_lock_dir(path):
+            repaired.append(path)
+    return repaired
+
+
+def _acquire_flock(lock_handle, lock_path: Path) -> bool:
+    timeout = _lock_duration("JOT_LOCK_TIMEOUT", DEFAULT_LOCK_TIMEOUT_SECONDS)
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError as exc:
+            if exc.errno == errno.ENOSYS:
+                return False
+            if exc.errno not in {errno.EACCES, errno.EAGAIN}:
+                raise
+            if time.monotonic() >= deadline:
+                raise RuntimeError(f"timed out waiting for file lock: {lock_path}") from exc
+            time.sleep(LOCK_POLL_SECONDS)
+
+
+def _write_lock_owner(lock_dir: Path) -> None:
+    payload = {
+        "pid": os.getpid(),
+        "created": time.time(),
+    }
+    owner_path = lock_dir / "owner.json"
+    with owner_path.open("x", encoding="utf-8") as handle:
+        json.dump(payload, handle, separators=(",", ":"))
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _lock_dir_is_stale(lock_dir: Path, *, stale_after: float) -> bool:
+    try:
+        fallback_created = lock_dir.stat().st_mtime
+    except FileNotFoundError:
+        return False
+    owner_path = lock_dir / "owner.json"
+    try:
+        payload = json.loads(owner_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return time.time() - fallback_created >= stale_after
+
+    try:
+        pid = int(payload.get("pid") or 0)
+        created = float(payload.get("created") or fallback_created)
+    except (TypeError, ValueError, AttributeError):
+        return time.time() - fallback_created >= stale_after
+    if pid > 0 and not _process_exists(pid):
+        return True
+    if pid > 0:
+        return False
+    return time.time() - created >= stale_after
+
+
+def _process_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _remove_stale_lock_dir(lock_dir: Path) -> bool:
+    quarantine = lock_dir.with_name(f"{lock_dir.name}.stale-{os.getpid()}-{time.time_ns()}")
+    try:
+        os.replace(lock_dir, quarantine)
+    except FileNotFoundError:
+        return False
+    shutil.rmtree(quarantine, ignore_errors=True)
+    return True
+
+
+def _lock_duration(name: str, default: float) -> float:
+    raw = str(os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
 
 
 @contextmanager

@@ -211,6 +211,50 @@ class FrontMatterTests(unittest.TestCase):
             self.assertIn("## Progress", body)
             self.assertFalse((path.parent / ".note.md.lock.d").exists())
 
+    def test_fallback_lock_recovers_a_dead_owner(self) -> None:
+        import errno
+
+        with tempfile.TemporaryDirectory(prefix="jot-stale-lock-") as tempdir:
+            path = Path(tempdir) / "note.md"
+            write_document(path, OrderedDict([("kind", "task-note")]), "# Note\n")
+            lock_dir = path.parent / ".note.md.lock.d"
+            lock_dir.mkdir()
+            (lock_dir / "owner.json").write_text(
+                json.dumps({"pid": 999999, "created": 0}),
+                encoding="utf-8",
+            )
+            with mock.patch(
+                "jot_core.frontmatter.fcntl.flock",
+                side_effect=OSError(errno.ENOSYS, "Function not implemented"),
+            ), mock.patch("jot_core.frontmatter._process_exists", return_value=False):
+                set_note_progress(path, Decimal("1"), Decimal("2"))
+
+            metadata, _body = read_document(path)
+            self.assertEqual(metadata["progress_current"], "1")
+            self.assertFalse(lock_dir.exists())
+
+    def test_fallback_lock_times_out_for_an_active_owner(self) -> None:
+        import errno
+
+        with tempfile.TemporaryDirectory(prefix="jot-active-lock-") as tempdir:
+            path = Path(tempdir) / "note.md"
+            write_document(path, OrderedDict([("kind", "task-note")]), "# Note\n")
+            lock_dir = path.parent / ".note.md.lock.d"
+            lock_dir.mkdir()
+            (lock_dir / "owner.json").write_text(
+                json.dumps({"pid": os.getpid(), "created": 0}),
+                encoding="utf-8",
+            )
+            with mock.patch(
+                "jot_core.frontmatter.fcntl.flock",
+                side_effect=OSError(errno.ENOSYS, "Function not implemented"),
+            ), mock.patch.dict(os.environ, {"JOT_LOCK_TIMEOUT": "0.05"}):
+                with self.assertRaisesRegex(RuntimeError, "timed out waiting for file lock"):
+                    set_note_progress(path, Decimal("1"), Decimal("2"))
+
+            (lock_dir / "owner.json").unlink()
+            lock_dir.rmdir()
+
     def test_concurrent_progress_adjustments_are_not_lost(self) -> None:
         with tempfile.TemporaryDirectory(prefix="jot-lock-") as tempdir:
             path = Path(tempdir) / "note.md"
@@ -826,6 +870,53 @@ class CliIntegrationTests(JotCliTestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), new)
+
+    def test_jot_timelog_hook_fails_open_when_jot_cannot_start(self) -> None:
+        old = {"uuid": "2d6d7d7d-1111-2222-3333-444444444444", "start": "20260703T060000Z"}
+        new = {"uuid": old["uuid"], "description": "Read chapter"}
+        env = os.environ.copy()
+        env["JOT_BIN"] = str(self.root / "missing-jot")
+
+        result = subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py")],
+            cwd=PROJECT_ROOT,
+            env=env,
+            input=json.dumps(old) + "\n" + json.dumps(new) + "\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), new)
+        self.assertIn("could not run jot", result.stderr)
+
+    def test_jot_timelog_hook_fails_open_on_timeout(self) -> None:
+        old = {"uuid": "2d6d7d7d-1111-2222-3333-444444444444", "start": "20260703T060000Z"}
+        new = {"uuid": old["uuid"], "description": "Read chapter"}
+        slow_jot = self.root / "slow-jot"
+        slow_jot.write_text(
+            "#!/usr/bin/env python3\nimport time\ntime.sleep(1)\n",
+            encoding="utf-8",
+        )
+        slow_jot.chmod(0o755)
+        env = os.environ.copy()
+        env["JOT_BIN"] = str(slow_jot)
+        env["JOT_TIMELOG_TIMEOUT"] = "0.05"
+
+        result = subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py")],
+            cwd=PROJECT_ROOT,
+            env=env,
+            input=json.dumps(old) + "\n" + json.dumps(new) + "\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), new)
+        self.assertIn("ingest timed out", result.stderr)
 
     def test_timelog_start_stop_records_session_and_writes_note(self) -> None:
         task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
