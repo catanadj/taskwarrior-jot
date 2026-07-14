@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import os
 import re
@@ -1074,6 +1075,61 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("Details", human.stdout)
         self.assertIn("reading", human.stdout)
 
+    def test_timelog_report_clips_and_splits_cross_midnight_intervals(self) -> None:
+        task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+        task = {
+            "uuid": task_uuid,
+            "description": "Overnight maintenance",
+            "project": "operations",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        env = {"TZ": "UTC"}
+        started = self.run_jot_with_env(
+            "timelog", "start", "1", "--at", "2026-07-03T23:30:00Z", extra_env=env
+        )
+        stopped = self.run_jot_with_env(
+            "timelog", "stop", "1", "--at", "2026-07-04T00:30:00Z", extra_env=env
+        )
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+
+        report = self.run_jot_with_env(
+            "--json",
+            "timelog",
+            "report",
+            "--since",
+            "2026-07-03T23:45:00Z",
+            "--until",
+            "2026-07-04T00:15:00Z",
+            "--details",
+            extra_env=env,
+        )
+        self.assertEqual(report.returncode, 0, report.stderr)
+        payload = json.loads(report.stdout)
+        self.assertEqual(payload["period"], "custom")
+        self.assertEqual(payload["total_minutes"], 30)
+        self.assertEqual(
+            {item["name"]: item["minutes"] for item in payload["by_day"]},
+            {"2026-07-03": 15.0, "2026-07-04": 15.0},
+        )
+        self.assertTrue(payload["entries"][0]["clipped"])
+        self.assertEqual(payload["entries"][0]["stored_minutes"], 60)
+
+        csv_result = self.run_jot_with_env("timelog", "report", "--csv", extra_env=env)
+        self.assertEqual(csv_result.returncode, 0, csv_result.stderr)
+        rows = list(csv.DictReader(csv_result.stdout.splitlines()))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["task_short_uuid"], "2d6d7d7d")
+        self.assertEqual(rows[0]["minutes"], "60.0")
+
+        invalid = self.run_jot_with_env(
+            "timelog", "report", "week", "--since", "2026-07-01", extra_env=env
+        )
+        self.assertEqual(invalid.returncode, 1)
+        self.assertIn("cannot be combined", invalid.stderr)
+
     def test_timelog_cancel_removes_pending_session(self) -> None:
         task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
         task = {
@@ -1666,8 +1722,12 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(self.run_jot("note-append", "1", "task baseline").returncode, 0)
         self.assertEqual(self.run_jot("chain-append", "1", "chain baseline").returncode, 0)
         self.assertEqual(self.run_jot("add", "--type", "status", "1", "waiting").returncode, 0)
+        self.assertEqual(self.run_jot("timelog", "start", "1", "--at", "20260703T060000Z").returncode, 0)
+        self.assertEqual(self.run_jot("timelog", "stop", "1", "--at", "20260703T064500Z").returncode, 0)
 
-        result = self.run_jot("--json", "project-report", "finance.audit", "--limit", "10")
+        result = self.run_jot(
+            "--json", "project-report", "finance.audit", "--limit", "10", "--timelog-period", "all"
+        )
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["project"], "finance.audit")
@@ -1675,12 +1735,16 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual([item["short_uuid"] for item in payload["tasks"]], ["2d6d7d7d"])
         self.assertEqual(payload["chains"][0]["chain_id"], "a4bf5egh")
         self.assertTrue(any(item["kind"] == "event" for item in payload["recent"]))
+        self.assertEqual(payload["timelog"]["total_minutes"], 45)
 
-        text_result = self.run_jot("project-report", "finance.audit", "--limit", "5")
+        text_result = self.run_jot(
+            "project-report", "finance.audit", "--limit", "5", "--timelog-period", "all"
+        )
         self.assertEqual(text_result.returncode, 0, text_result.stderr)
         self.assertIn("Project finance.audit", text_result.stdout)
         self.assertIn("Tasks:", text_result.stdout)
         self.assertIn("Chains:", text_result.stdout)
+        self.assertIn("Time (all):", text_result.stdout)
 
     def test_delete_commands_move_notes_to_trash_and_update_index(self) -> None:
         task = {

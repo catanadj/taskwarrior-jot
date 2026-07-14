@@ -354,6 +354,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=20,
         help="maximum number of recent activity items to show",
     )
+    project_report.add_argument(
+        "--timelog-period",
+        choices=("all", "today", "week", "month"),
+        default="week",
+        help="time window for the project time summary (default: week)",
+    )
 
     project_delete = subparsers.add_parser(
         "project-delete",
@@ -499,12 +505,15 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="?",
         choices=("all", "today", "week", "month"),
         default="all",
-        help="time window based on the local stop date",
+        help="local time window; intervals are clipped to its boundaries",
     )
     timelog_report.add_argument("--project", default="", help="only include entries for this project")
     timelog_report.add_argument("--task", default="", help="only include entries for this task UUID or short UUID")
     timelog_report.add_argument("--chain", default="", help="only include entries for this chainID")
+    timelog_report.add_argument("--since", default="", help="inclusive local date or ISO datetime boundary")
+    timelog_report.add_argument("--until", default="", help="inclusive local date or exclusive ISO datetime boundary")
     timelog_report.add_argument("--details", action="store_true", help="show individual time log entries")
+    timelog_report.add_argument("--csv", action="store_true", help="write detailed entries as CSV")
 
     headings = subparsers.add_parser(
         "headings",
@@ -789,7 +798,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "project-cat":
             result = _run_project_cat(ctx, args.project_name)
         elif args.command == "project-report":
-            result = _run_project_report(ctx, args.project_name, args.limit)
+            result = _run_project_report(ctx, args.project_name, args.limit, args.timelog_period)
         elif args.command == "project-delete":
             result = _run_project_delete(ctx, args.project_name)
         elif args.command == "add":
@@ -1174,11 +1183,17 @@ def _run_project_cat(ctx, project_name: str) -> CommandResult:
     return _cat_result("project-cat", note_path, project=project_name)
 
 
-def _run_project_report(ctx, project_name: str, limit: int) -> CommandResult:
+def _run_project_report(ctx, project_name: str, limit: int, timelog_period: str) -> CommandResult:
     tasks = ctx.taskwarrior.list_tasks(limit=1000, status="pending")
     return CommandResult(
         command="project-report",
-        payload=project_rollup(ctx.config, tasks, project_name, limit=limit),
+        payload=project_rollup(
+            ctx.config,
+            tasks,
+            project_name,
+            limit=limit,
+            timelog_period=timelog_period,
+        ),
     )
 
 
@@ -1716,15 +1731,19 @@ def _run_timelog(ctx, args) -> CommandResult:
             payload=cancel_time_session(ctx.config, task),
         )
     if args.timelog_command == "report":
+        if args.csv and args.json:
+            raise RuntimeError("timelog report --csv cannot be combined with --json")
         return CommandResult(
-            command="timelog-report",
+            command="timelog-report-csv" if args.csv else "timelog-report",
             payload=report_time_logs(
                 ctx.config,
                 period=args.period,
                 project=args.project,
                 task_ref=args.task,
                 chain_id=args.chain,
-                details=bool(args.details),
+                details=bool(args.details or args.csv),
+                since=args.since,
+                until=args.until,
             ),
         )
     if args.timelog_command != "ingest":

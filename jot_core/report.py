@@ -9,6 +9,7 @@ from .notes import find_project_note, list_note_resources
 from .ops import read_ops
 from .progress import format_progress_tracks_summary, read_note_progress_tracks
 from .search import ALLOWED_KINDS
+from .timelog import report_time_logs
 
 
 NOTE_KIND_ALIASES = {
@@ -193,6 +194,7 @@ def project_rollup(
     project_name: str,
     *,
     limit: int = 20,
+    timelog_period: str = "week",
 ) -> dict[str, Any]:
     if limit <= 0:
         raise RuntimeError("limit must be greater than zero")
@@ -213,6 +215,7 @@ def project_rollup(
         "tasks": exact_tasks,
         "recent": recent,
         "chains": chains,
+        "timelog": report_time_logs(config, period=timelog_period, project=project),
     }
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import os
 import shutil
@@ -96,6 +97,9 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
         return
     if command == "timelog-report":
         _emit_timelog_report(payload)
+        return
+    if command == "timelog-report-csv":
+        _emit_timelog_report_csv(payload)
         return
     if command == "headings":
         _emit_headings(payload)
@@ -444,6 +448,12 @@ def _emit_project_report(payload: dict[str, Any]) -> None:
             line += f"  updated: {chain.get('updated')}"
         sys.stdout.write(line + "\n")
 
+    timelog = payload.get("timelog") or {}
+    sys.stdout.write(f"\nTime ({timelog.get('period') or 'week'}):\n")
+    sys.stdout.write(
+        f"  {timelog.get('total') or '0m'} across {timelog.get('entry_count', 0)} entries\n"
+    )
+
 
 def _emit_cat(payload: dict[str, Any]) -> None:
     sys.stdout.write(str(payload.get("content") or ""))
@@ -554,6 +564,29 @@ def _emit_timelog_report(payload: dict[str, Any]) -> None:
     _emit_time_log_group("By task", payload.get("by_task") or [])
     if payload.get("details"):
         _emit_time_log_details(payload.get("entries") or [])
+
+
+def _emit_timelog_report_csv(payload: dict[str, Any]) -> None:
+    fields = (
+        "key",
+        "task_uuid",
+        "task_short_uuid",
+        "chain_id",
+        "project",
+        "started",
+        "stopped",
+        "report_started",
+        "report_stopped",
+        "minutes",
+        "duration",
+        "note_kind",
+        "path",
+    )
+    writer = csv.DictWriter(sys.stdout, fieldnames=fields, extrasaction="ignore")
+    writer.writeheader()
+    for item in payload.get("entries") or []:
+        if isinstance(item, dict):
+            writer.writerow(item)
 
 
 def _emit_time_log_group(title: str, items: list[object]) -> None:
