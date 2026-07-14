@@ -243,8 +243,15 @@ jot timelog pending
 jot paths
 jot stats
 jot doctor
+jot migrate --dry-run
 jot rebuild-index
 ```
+
+Jot notes carry a small schema version so upgrades remain predictable. Inspect
+an upgrade with `jot migrate --dry-run`, then run `jot migrate`; changed notes
+are copied under `.jot_backups/` before their metadata is updated. `jot doctor
+--repair` also removes stale fallback locks, applies safe migrations, and
+rebuilds the derived index.
 
 ## Templates
 

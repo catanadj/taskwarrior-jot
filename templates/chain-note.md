@@ -1,4 +1,5 @@
 ---
+schema_version: 1
 kind: chain-note
 chain_id: "{{chain_id}}"
 description: "{{description}}"

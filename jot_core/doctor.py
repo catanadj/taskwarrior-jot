@@ -7,19 +7,25 @@ import tempfile
 
 from .editor import resolve_editor_executable, split_editor_command
 from .config import ensure_app_dirs
-from .index import read_index_status
+from .frontmatter import find_stale_lock_dirs, repair_stale_lock_dirs
+from .index import read_index_status, rebuild_index, save_index
+from .migrations import migrate_notes
 from .models import AppConfig, CommandResult, DoctorCheck
 from .ops import ops_log_path, read_ops
+from .schema import inspect_note_schemas
 from .taskwarrior import TaskwarriorClient
 
 
-def run_doctor(config: AppConfig, client: TaskwarriorClient) -> CommandResult:
+def run_doctor(config: AppConfig, client: TaskwarriorClient, *, repair: bool = False) -> CommandResult:
     checks: list[DoctorCheck] = []
+    repairs: list[dict[str, object]] = []
     checks.append(_config_check(config))
 
     try:
         ensure_app_dirs(config)
         checks.append(DoctorCheck(name="storage", ok=True, detail=f"root={config.root_dir}"))
+        if repair:
+            repairs.extend(_repair_local_state(config))
     except Exception as exc:
         checks.append(DoctorCheck(name="storage", ok=False, detail=str(exc)))
 
@@ -35,6 +41,8 @@ def run_doctor(config: AppConfig, client: TaskwarriorClient) -> CommandResult:
 
     checks.append(_editor_check(config.editor_command))
     checks.append(_tui_check())
+    checks.append(_locks_check(config))
+    checks.append(_schema_check(config))
     checks.append(_ops_check(config))
     checks.append(_index_check(config))
 
@@ -51,7 +59,7 @@ def run_doctor(config: AppConfig, client: TaskwarriorClient) -> CommandResult:
 
     return CommandResult(
         command="doctor",
-        payload={"checks": [asdict(check) for check in checks]},
+        payload={"checks": [asdict(check) for check in checks], "repairs": repairs},
     )
 
 
@@ -116,6 +124,51 @@ def _tui_check() -> DoctorCheck:
             detail="optional dependency missing; CLI available, install textual to use `jot tui`",
         )
     return DoctorCheck(name="tui", ok=True, detail="textual available")
+
+
+def _locks_check(config: AppConfig) -> DoctorCheck:
+    stale = find_stale_lock_dirs(config.root_dir)
+    if stale:
+        return DoctorCheck(
+            name="locks",
+            ok=False,
+            detail=f"{len(stale)} stale fallback lock(s); run `jot doctor --repair`",
+        )
+    return DoctorCheck(name="locks", ok=True, detail="no stale fallback locks")
+
+
+def _schema_check(config: AppConfig) -> DoctorCheck:
+    inspection = inspect_note_schemas(config)
+    counts = inspection["counts"]
+    ok = not any(counts.get(key, 0) for key in ("legacy", "future", "invalid"))
+    detail = (
+        f"v{inspection['schema_version']} "
+        f"(current={counts.get('current', 0)}, legacy={counts.get('legacy', 0)}, "
+        f"future={counts.get('future', 0)}, invalid={counts.get('invalid', 0)})"
+    )
+    if counts.get("legacy"):
+        detail += "; run `jot migrate --dry-run`"
+    return DoctorCheck(name="note_schema", ok=ok, detail=detail)
+
+
+def _repair_local_state(config: AppConfig) -> list[dict[str, object]]:
+    repaired_locks = repair_stale_lock_dirs(config.root_dir)
+    repairs: list[dict[str, object]] = [
+        {
+            "action": "stale-locks",
+            "detail": f"removed {len(repaired_locks)} stale fallback lock(s)",
+            "count": len(repaired_locks),
+        }
+    ]
+    migration = migrate_notes(config, dry_run=False)
+    if migration.get("blocked"):
+        detail = f"blocked by {migration['blocked']} invalid or future note(s)"
+    else:
+        detail = f"migrated {migration['migrated']} note(s)"
+    repairs.append({"action": "note-schema", "detail": detail, **migration})
+    save_index(config, rebuild_index(config))
+    repairs.append({"action": "index", "detail": "rebuilt index.json"})
+    return repairs
 
 
 def _ops_check(config: AppConfig) -> DoctorCheck:

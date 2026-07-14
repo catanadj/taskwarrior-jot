@@ -13,6 +13,7 @@ from .models import AppConfig, AppendResult, DeleteResult, NotePaths, ResolvedTa
 from .nautical import chain_id_for_task
 from .ops import iso_now
 from .resources import format_resource_line, parse_resource_bullets
+from .schema import NOTE_SCHEMA_VERSION
 from .templates import apply_template
 
 
@@ -385,7 +386,9 @@ def _build_task_note_document(config: AppConfig, task: ResolvedTask) -> tuple[Or
     link_value = str(task.task.get("link") or "").strip()
     metadata: OrderedDict[str, object] = OrderedDict(
         [
+            ("schema_version", NOTE_SCHEMA_VERSION),
             ("kind", "task-note"),
+            ("task_uuid", task.task_uuid),
             ("task_short_uuid", task.task_short_uuid),
             ("description", task.description or ""),
             ("project", task.project or ""),
@@ -437,6 +440,7 @@ def _build_chain_note_document(config: AppConfig, task: ResolvedTask) -> tuple[O
     )
     metadata: OrderedDict[str, object] = OrderedDict(
         [
+            ("schema_version", NOTE_SCHEMA_VERSION),
             ("kind", "chain-note"),
             ("chain_id", chain_id),
             ("description", task.description or ""),
@@ -487,6 +491,7 @@ def _build_project_note_document(config: AppConfig, project_name: str) -> tuple[
     )
     metadata: OrderedDict[str, object] = OrderedDict(
         [
+            ("schema_version", NOTE_SCHEMA_VERSION),
             ("kind", "project-note"),
             ("project", project_name),
             ("project_path", project_path),

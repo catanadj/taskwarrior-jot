@@ -10,6 +10,9 @@ from .nautical import chain_id_for_task
 from .ops import iso_now, read_ops
 
 
+INDEX_VERSION = 1
+
+
 def index_path(config: AppConfig) -> Path:
     return config.root_dir / "index.json"
 
@@ -220,7 +223,7 @@ def remove_project_note_index(config: AppConfig, project_name: str) -> None:
 
 def _empty_index() -> dict[str, Any]:
     return {
-        "version": 1,
+        "version": INDEX_VERSION,
         "updated": iso_now(),
         "tasks": {},
         "chains": {},
@@ -342,6 +345,7 @@ def _relative_note_path(config: AppConfig, path: Path) -> str:
 def _valid_index_shape(data: Any) -> bool:
     return (
         isinstance(data, dict)
+        and data.get("version") == INDEX_VERSION
         and isinstance(data.get("tasks"), dict)
         and isinstance(data.get("chains"), dict)
         and isinstance(data.get("projects"), dict)

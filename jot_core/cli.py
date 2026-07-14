@@ -13,6 +13,7 @@ from .editor import open_in_editor
 from .events import collect_event_text, format_event_text, validate_event_type
 from .frontmatter import read_document
 from .index import rebuild_index, read_index_status, save_index
+from .migrations import migrate_notes
 from .models import CommandResult
 from .nautical import chain_id_for_task, nautical_summary
 from .notes import (
@@ -123,6 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  jot section task 42 \"Next steps\"\n"
             "  jot trash-list\n"
             "  jot trash-restore 1\n"
+            "  jot migrate --dry-run\n"
             "  jot stats\n"
             "  jot paths\n"
             "  jot tui\n"
@@ -144,10 +146,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser(
+    doctor = subparsers.add_parser(
         "doctor",
         help="check configuration, storage paths, and Taskwarrior availability",
         description="Validate jot configuration, storage paths, and Taskwarrior access.",
+    )
+    doctor.add_argument(
+        "--repair",
+        action="store_true",
+        help="repair stale locks, migrate safe notes, and rebuild the index",
+    )
+    migrate = subparsers.add_parser(
+        "migrate",
+        help="upgrade note metadata to the current schema",
+        description="Inspect and upgrade Jot note metadata, backing up every changed note first.",
+    )
+    migrate.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="show planned and blocked migrations without changing files",
     )
     subparsers.add_parser(
         "paths",
@@ -723,7 +740,12 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if args.command == "doctor":
-            result = run_doctor(ctx.config, ctx.taskwarrior)
+            result = run_doctor(ctx.config, ctx.taskwarrior, repair=bool(args.repair))
+        elif args.command == "migrate":
+            result = CommandResult(
+                command="migrate",
+                payload=migrate_notes(ctx.config, dry_run=bool(args.dry_run)),
+            )
         elif args.command == "paths":
             result = _run_paths(ctx)
         elif args.command == "rebuild-index":
@@ -818,6 +840,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     emit_result(result, json_mode=args.json or ctx.config.default_format == "json")
+    if result.command == "migrate" and result.payload.get("blocked"):
+        return 1
     return 0
 
 

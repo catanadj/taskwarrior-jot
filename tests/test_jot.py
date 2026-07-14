@@ -1154,6 +1154,9 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("task note", result.stdout)
         self.assertEqual(len(list((self.home / ".task" / "jot" / "tasks").glob("*.md"))), 1)
         self.assertEqual(len(list((self.home / ".task" / "jot" / "chains").glob("*.md"))), 0)
+        metadata, _body = read_document(next((self.home / ".task" / "jot" / "tasks").glob("*.md")))
+        self.assertEqual(metadata["schema_version"], "1")
+        self.assertEqual(metadata["task_uuid"], task["uuid"])
 
     def test_task_ref_shorthand_opens_chain_note_when_chain_exists(self) -> None:
         task = {
@@ -1278,6 +1281,8 @@ class CliIntegrationTests(JotCliTestCase):
             "templates_dir",
             "editor",
             "tui",
+            "locks",
+            "note_schema",
             "ops",
             "index",
             "taskwarrior",
@@ -1341,6 +1346,108 @@ class CliIntegrationTests(JotCliTestCase):
         checks = {item["name"]: item for item in payload["checks"]}
         self.assertFalse(checks["config"]["ok"])
         self.assertIn("invalid display.color value", checks["config"]["detail"])
+
+    def test_migrate_dry_run_then_apply_backs_up_legacy_notes(self) -> None:
+        jot_root = self.home / ".task" / "jot"
+        note_path = jot_root / "tasks" / "2d6d7d7d--legacy.md"
+        original_body = "# Legacy\n\nKeep this body exactly.\n"
+        write_document(
+            note_path,
+            OrderedDict(
+                [
+                    ("kind", "task-note"),
+                    ("task_short_uuid", "2d6d7d7d"),
+                    ("description", "Legacy"),
+                ]
+            ),
+            original_body,
+        )
+        _original_metadata, original_body = read_document(note_path)
+
+        dry_run = self.run_jot("--json", "migrate", "--dry-run")
+        self.assertEqual(dry_run.returncode, 0, dry_run.stderr)
+        dry_payload = json.loads(dry_run.stdout)
+        self.assertEqual(dry_payload["planned"], 1)
+        self.assertEqual(dry_payload["migrated"], 0)
+        metadata, body = read_document(note_path)
+        self.assertNotIn("schema_version", metadata)
+        self.assertEqual(body, original_body)
+
+        applied = self.run_jot("--json", "migrate")
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        payload = json.loads(applied.stdout)
+        self.assertEqual(payload["planned"], 1)
+        self.assertEqual(payload["migrated"], 1)
+        backup_root = Path(payload["backup_path"])
+        backup_path = backup_root / "tasks" / note_path.name
+        self.assertTrue(backup_path.exists())
+        backup_metadata, backup_body = read_document(backup_path)
+        self.assertNotIn("schema_version", backup_metadata)
+        self.assertEqual(backup_body, original_body)
+        metadata, body = read_document(note_path)
+        self.assertEqual(metadata["schema_version"], "1")
+        self.assertEqual(body, original_body)
+
+        stats = self.run_jot("--json", "stats")
+        self.assertEqual(stats.returncode, 0, stats.stderr)
+        self.assertFalse(json.loads(stats.stdout)["index"]["stale"])
+
+    def test_migrate_blocks_future_note_schemas_without_writing(self) -> None:
+        note_path = self.home / ".task" / "jot" / "tasks" / "2d6d7d7d--future.md"
+        write_document(
+            note_path,
+            OrderedDict(
+                [
+                    ("schema_version", "99"),
+                    ("kind", "task-note"),
+                    ("task_short_uuid", "2d6d7d7d"),
+                ]
+            ),
+            "# Future\n",
+        )
+        before = note_path.read_text(encoding="utf-8")
+
+        result = self.run_jot("--json", "migrate")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["blocked"], 1)
+        self.assertEqual(payload["migrated"], 0)
+        self.assertIsNone(payload["backup_path"])
+        self.assertEqual(note_path.read_text(encoding="utf-8"), before)
+
+    def test_doctor_repair_migrates_notes_removes_stale_locks_and_rebuilds_index(self) -> None:
+        jot_root = self.home / ".task" / "jot"
+        note_path = jot_root / "projects" / "reading" / "index.md"
+        write_document(
+            note_path,
+            OrderedDict([("kind", "project-note"), ("project", "reading")]),
+            "# Reading\n",
+        )
+        stale_lock = jot_root / ".orphan.lock.d"
+        stale_lock.mkdir(parents=True)
+        (stale_lock / "owner.json").write_text(
+            json.dumps({"pid": 999999, "created": 0}),
+            encoding="utf-8",
+        )
+
+        before = self.run_jot("--json", "doctor")
+        self.assertEqual(before.returncode, 0, before.stderr)
+        before_checks = {item["name"]: item for item in json.loads(before.stdout)["checks"]}
+        self.assertFalse(before_checks["locks"]["ok"])
+        self.assertFalse(before_checks["note_schema"]["ok"])
+
+        repaired = self.run_jot("--json", "doctor", "--repair")
+        self.assertEqual(repaired.returncode, 0, repaired.stderr)
+        payload = json.loads(repaired.stdout)
+        actions = {item["action"] for item in payload["repairs"]}
+        self.assertEqual(actions, {"stale-locks", "note-schema", "index"})
+        checks = {item["name"]: item for item in payload["checks"]}
+        self.assertTrue(checks["locks"]["ok"])
+        self.assertTrue(checks["note_schema"]["ok"])
+        self.assertFalse(stale_lock.exists())
+        metadata, _body = read_document(note_path)
+        self.assertEqual(metadata["schema_version"], "1")
+        self.assertTrue((jot_root / "index.json").exists())
 
     def test_paths_default_to_taskrc_data_location(self) -> None:
         taskdata = self.root / "taskrc-taskdata"

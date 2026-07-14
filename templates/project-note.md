@@ -1,4 +1,5 @@
 ---
+schema_version: 1
 kind: project-note
 project: "{{project}}"
 created: "{{created}}"

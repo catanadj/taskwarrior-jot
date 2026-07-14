@@ -63,6 +63,7 @@ COMMAND_EXAMPLES = {
     "timelog stop": "jot timelog stop 42",
     "tui": "jot tui",
     "doctor": "jot doctor",
+    "migrate": "jot migrate --dry-run",
     "paths": "jot paths",
     "rebuild-index": "jot rebuild-index",
     "stats": "jot stats",

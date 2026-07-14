@@ -26,7 +26,10 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     command = result.command
     payload = result.payload
     if command == "doctor":
-        _emit_doctor(payload.get("checks", []))
+        _emit_doctor(payload)
+        return
+    if command == "migrate":
+        _emit_migrate(payload)
         return
     if command == "paths":
         _emit_paths(payload)
@@ -133,12 +136,43 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
 
-def _emit_doctor(checks: list[dict[str, Any]]) -> None:
+def _emit_doctor(payload: dict[str, Any]) -> None:
+    repairs = payload.get("repairs") or []
+    if repairs:
+        sys.stdout.write("Repairs\n")
+        for item in repairs:
+            action = str(item.get("action") or "repair")
+            detail = str(item.get("detail") or "")
+            sys.stdout.write(f"  {action}: {detail}\n")
+        sys.stdout.write("\nChecks\n")
+    checks = payload.get("checks") or []
     for item in checks:
         label = "OK" if item.get("ok") else "FAIL"
         name = str(item.get("name") or "check")
         detail = str(item.get("detail") or "")
         sys.stdout.write(f"[{label}] {name}: {detail}\n")
+
+
+def _emit_migrate(payload: dict[str, Any]) -> None:
+    mode = "Migration plan" if payload.get("dry_run") else "Migration"
+    sys.stdout.write(f"{mode}\n\n")
+    _emit_field("schema", payload.get("schema_version"), indent=0)
+    _emit_field("notes", payload.get("total"), indent=0)
+    _emit_field("planned", payload.get("planned"), indent=0)
+    _emit_field("migrated", payload.get("migrated"), indent=0)
+    _emit_field("blocked", payload.get("blocked"), indent=0)
+    if payload.get("backup_path"):
+        _emit_field("backup", payload.get("backup_path"), indent=0)
+    blocked = [
+        item
+        for item in payload.get("items") or []
+        if item.get("status") in {"future", "invalid"}
+    ]
+    if blocked:
+        sys.stdout.write("\nBlocked notes:\n")
+        for item in blocked:
+            errors = "; ".join(str(value) for value in item.get("errors") or [])
+            sys.stdout.write(f"  {item.get('path')}: {errors}\n")
 
 
 def _emit_paths(payload: dict[str, Any]) -> None:
