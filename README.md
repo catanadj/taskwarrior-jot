@@ -206,7 +206,8 @@ jot tui
 
 Use the TUI when you want to browse instead of remember commands.
 The Time tab provides period totals, day/project/task rollups, and the
-individual intervals behind them; open an interval to jump to its task.
+individual intervals behind them. Add or amend intervals directly, archive
+mistakes, restore them from trash, or open an interval to jump to its task.
 
 Main areas:
 

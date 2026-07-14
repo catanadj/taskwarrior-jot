@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import asdict
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,25 @@ from jot_tui.palette import PaletteEntry, filter_palette_entries
 
 
 NEW_PROGRESS_TRACK = "__new_progress_track__"
+
+
+def tui_time_input_value(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return raw
+    if parsed.tzinfo is None:
+        parsed = parsed.astimezone()
+    return parsed.astimezone().isoformat(timespec="minutes")
+
+
+def tui_default_time_range(now: datetime | None = None) -> tuple[str, str]:
+    stopped = (now or datetime.now().astimezone()).astimezone()
+    started = stopped - timedelta(hours=1)
+    return started.isoformat(timespec="minutes"), stopped.isoformat(timespec="minutes")
 
 
 def initial_progress_track(tracks: list[str]) -> str | None:
@@ -459,6 +479,209 @@ def run_tui(service: JotService) -> int:
                 }
             )
 
+    class TimeEntryModal(ModalScreen[dict[str, str] | None]):
+        CSS = """
+        #dialog {
+            width: 82;
+            height: auto;
+            border: round $accent;
+            padding: 1 2;
+            background: $surface;
+        }
+        #dialog Input, #dialog Select { margin: 1 0; }
+        #time-entry-help { color: $text-muted; }
+        #buttons { height: auto; }
+        """
+
+        BINDINGS = [("escape", "cancel", "Cancel")]
+
+        def __init__(
+            self,
+            *,
+            mode: str,
+            item: dict[str, Any] | None = None,
+            initial_task_ref: str = "",
+        ) -> None:
+            super().__init__()
+            self.mode = mode
+            self.item = dict(item or {})
+            self.initial_task_ref = initial_task_ref
+
+        def compose(self) -> ComposeResult:
+            if self.mode == "amend":
+                title = f"Amend interval {self.item.get('key') or ''}"
+                task_ref = str(self.item.get("task_short_uuid") or "")
+                started = tui_time_input_value(str(self.item.get("started") or ""))
+                stopped = tui_time_input_value(str(self.item.get("stopped") or ""))
+            else:
+                title = "Add completed time interval"
+                task_ref = self.initial_task_ref
+                started, stopped = tui_default_time_range()
+            with Vertical(id="dialog"):
+                yield Label(title)
+                yield Static(
+                    "Timezone-less values use the local timezone. Explicit offsets are preserved.",
+                    id="time-entry-help",
+                )
+                yield Input(
+                    value=task_ref,
+                    placeholder="Task ID or UUID",
+                    id="time-entry-task",
+                    disabled=self.mode == "amend",
+                )
+                yield Input(value=started, placeholder="Start datetime", id="time-entry-from")
+                yield Input(value=stopped, placeholder="Stop datetime", id="time-entry-to")
+                if self.mode == "add":
+                    yield Select(
+                        [("Automatic scope", "auto"), ("Task note", "task"), ("Chain note", "chain")],
+                        value="auto",
+                        allow_blank=False,
+                        id="time-entry-scope",
+                    )
+                with Horizontal(id="buttons"):
+                    yield Button("Cancel", id="cancel-btn")
+                    yield Button("Amend" if self.mode == "amend" else "Add", id="save-btn", variant="primary")
+
+        def action_cancel(self) -> None:
+            self.dismiss(None)
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "save-btn":
+                self._submit()
+                return
+            self.dismiss(None)
+
+        def on_input_submitted(self, event: Input.Submitted) -> None:
+            order = {
+                "time-entry-task": "#time-entry-from",
+                "time-entry-from": "#time-entry-to",
+            }
+            next_id = order.get(event.input.id or "")
+            if next_id:
+                self.query_one(next_id, Input).focus()
+                return
+            self._submit()
+
+        def _submit(self) -> None:
+            task_ref = self.query_one("#time-entry-task", Input).value.strip()
+            started_at = self.query_one("#time-entry-from", Input).value.strip()
+            stopped_at = self.query_one("#time-entry-to", Input).value.strip()
+            if not task_ref:
+                self.app.notify("Task reference is required", severity="warning")
+                return
+            if not started_at or not stopped_at:
+                self.app.notify("Start and stop times are required", severity="warning")
+                return
+            scope = "auto"
+            if self.mode == "add":
+                scope = str(self.query_one("#time-entry-scope", Select).value or "auto")
+            self.dismiss(
+                {
+                    "task_ref": task_ref,
+                    "started_at": started_at,
+                    "stopped_at": stopped_at,
+                    "scope": scope,
+                }
+            )
+
+    class ConfirmTimeDeleteModal(ModalScreen[bool]):
+        CSS = """
+        #dialog {
+            width: 76;
+            height: auto;
+            border: round $error;
+            padding: 1 2;
+            background: $surface;
+        }
+        #details { margin: 1 0; color: $text-muted; }
+        #buttons { height: auto; }
+        """
+
+        BINDINGS = [("escape", "cancel", "Cancel")]
+
+        def __init__(self, item: dict[str, Any]) -> None:
+            super().__init__()
+            self.item = item
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id="dialog"):
+                yield Label(f"Delete interval {self.item.get('key') or ''}?")
+                yield Static(
+                    f"{self.item.get('duration') or ''} for task {self.item.get('task_short_uuid') or ''}\n"
+                    f"{self.item.get('display_range') or ''}\n\n"
+                    "The original entry will remain available in timelog trash.",
+                    id="details",
+                )
+                with Horizontal(id="buttons"):
+                    yield Button("Cancel", id="cancel-btn")
+                    yield Button("Delete", id="delete-btn", variant="error")
+
+        def action_cancel(self) -> None:
+            self.dismiss(False)
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            self.dismiss(event.button.id == "delete-btn")
+
+    class TimeTrashModal(ModalScreen[dict[str, Any] | None]):
+        CSS = """
+        #dialog {
+            width: 108;
+            height: 30;
+            border: round $panel;
+            padding: 1 2;
+            background: $surface;
+        }
+        #time-trash-table { height: 1fr; }
+        #buttons { height: auto; }
+        """
+
+        BINDINGS = [("escape", "cancel", "Cancel")]
+
+        def __init__(self, items: list[dict[str, Any]]) -> None:
+            super().__init__()
+            self.items = items
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id="dialog"):
+                yield Label("Restore deleted time interval")
+                table = DataTable(id="time-trash-table", cursor_type="row")
+                table.add_columns("id", "key", "time", "task/chain", "project", "archived")
+                yield table
+                with Horizontal(id="buttons"):
+                    yield Button("Cancel", id="cancel-btn")
+                    yield Button("Restore", id="restore-btn", variant="primary")
+
+        def on_mount(self) -> None:
+            table = self.query_one("#time-trash-table", DataTable)
+            for item in self.items:
+                table.add_row(
+                    f"#{item.get('id')}",
+                    str(item.get("key") or ""),
+                    str(item.get("duration") or ""),
+                    str(item.get("chain_id") or item.get("task_short_uuid") or ""),
+                    str(item.get("project") or ""),
+                    str(item.get("archived_at") or ""),
+                )
+            table.focus()
+
+        def action_cancel(self) -> None:
+            self.dismiss(None)
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "restore-btn":
+                self._submit(self.query_one("#time-trash-table", DataTable).cursor_row)
+                return
+            self.dismiss(None)
+
+        def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+            if event.data_table.id == "time-trash-table":
+                self._submit(event.cursor_row)
+
+        def _submit(self, row: int) -> None:
+            if row < 0 or row >= len(self.items):
+                return
+            self.dismiss(dict(self.items[row]))
+
     class ResourcePickerModal(ModalScreen[dict[str, Any] | None]):
         CSS = """
         #dialog {
@@ -642,7 +865,9 @@ def run_tui(service: JotService) -> int:
         #search-input { margin: 0 1 0 0; width: 1fr; }
         #time-pane { padding: 0 1; }
         #time-controls { height: auto; margin: 0 0 1 0; }
+        #time-filter-controls, #time-action-controls { height: auto; }
         #time-period { width: 24; margin: 0 1 0 0; }
+        #time-controls Button { margin: 0 1 0 0; }
         #time-summary { height: auto; padding: 0 1 1 1; }
         #time-groups { height: 2fr; }
         #time-groups > Vertical { width: 1fr; border: round $panel; }
@@ -753,14 +978,20 @@ def run_tui(service: JotService) -> int:
                                                 yield Static("No progress loaded.", id="project-progress-preview")
                 with TabPane("Time", id="time-tab"):
                     with Vertical(id="time-pane"):
-                        with Horizontal(id="time-controls"):
-                            yield Select(
-                                [("Today", "today"), ("This week", "week"), ("This month", "month"), ("All time", "all")],
-                                value="week",
-                                allow_blank=False,
-                                id="time-period",
-                            )
-                            yield Button("Refresh time", id="time-refresh", variant="primary")
+                        with Vertical(id="time-controls"):
+                            with Horizontal(id="time-filter-controls"):
+                                yield Select(
+                                    [("Today", "today"), ("This week", "week"), ("This month", "month"), ("All time", "all")],
+                                    value="week",
+                                    allow_blank=False,
+                                    id="time-period",
+                                )
+                                yield Button("Refresh time", id="time-refresh", variant="primary")
+                            with Horizontal(id="time-action-controls"):
+                                yield Button("Add", id="time-add")
+                                yield Button("Amend", id="time-amend")
+                                yield Button("Delete", id="time-delete", variant="error")
+                                yield Button("Trash / Restore", id="time-trash")
                         yield Static("Loading time expenditure...", id="time-summary")
                         with Horizontal(id="time-groups"):
                             with Vertical():
@@ -955,6 +1186,9 @@ def run_tui(service: JotService) -> int:
             )
 
         def action_edit_selected_task_note(self) -> None:
+            if self.query_one("#main-tabs", TabbedContent).active == "time-tab":
+                self.action_time_amend()
+                return
             target = self._active_note_target()
             try:
                 path = self._open_active_note_in_editor()
@@ -1010,6 +1244,9 @@ def run_tui(service: JotService) -> int:
             await self._refresh_current_context_async()
 
         def action_delete_selected_note(self) -> None:
+            if self.query_one("#main-tabs", TabbedContent).active == "time-tab":
+                self.action_time_delete()
+                return
             target = self._active_note_target()
             if target is None:
                 self.notify("Select a note tab first", severity="warning")
@@ -1079,6 +1316,9 @@ def run_tui(service: JotService) -> int:
             )
 
         def action_add_to_selected_task(self) -> None:
+            if self.query_one("#main-tabs", TabbedContent).active == "time-tab":
+                self.action_time_add()
+                return
             if not self.current_task_ref:
                 self.notify("Select a task row in Recent first", severity="warning")
                 return
@@ -1106,6 +1346,37 @@ def run_tui(service: JotService) -> int:
                 return
             self._open_project_workspace(project)
 
+        def action_time_add(self) -> None:
+            selected = self._selected_time_row()
+            initial_task = str((selected or {}).get("task_short_uuid") or self.current_task_ref or "")
+            self.push_screen(
+                TimeEntryModal(mode="add", initial_task_ref=initial_task),
+                lambda payload: self._on_time_entry_payload("add", None, payload),
+            )
+
+        def action_time_amend(self) -> None:
+            selected = self._selected_time_row()
+            if selected is None:
+                self.notify("Select an interval row to amend", severity="warning")
+                return
+            self.push_screen(
+                TimeEntryModal(mode="amend", item=selected),
+                lambda payload: self._on_time_entry_payload("amend", selected, payload),
+            )
+
+        def action_time_delete(self) -> None:
+            selected = self._selected_time_row()
+            if selected is None:
+                self.notify("Select an interval row to delete", severity="warning")
+                return
+            self.push_screen(
+                ConfirmTimeDeleteModal(selected),
+                lambda confirmed: self._on_time_delete_confirmed(selected, confirmed),
+            )
+
+        def action_time_trash(self) -> None:
+            asyncio.create_task(self._open_time_trash_async())
+
         def _on_palette_selected(self, payload: dict[str, Any] | None) -> None:
             if not payload:
                 return
@@ -1120,6 +1391,24 @@ def run_tui(service: JotService) -> int:
             if not payload:
                 return
             asyncio.create_task(self._apply_add_to_async(kind, payload))
+
+        def _on_time_entry_payload(
+            self,
+            mode: str,
+            item: dict[str, Any] | None,
+            payload: dict[str, str] | None,
+        ) -> None:
+            if not payload:
+                return
+            asyncio.create_task(self._apply_time_entry_async(mode, item, payload))
+
+        def _on_time_delete_confirmed(self, item: dict[str, Any], confirmed: bool) -> None:
+            if confirmed:
+                asyncio.create_task(self._apply_time_delete_async(item))
+
+        def _on_time_restore_selected(self, item: dict[str, Any] | None) -> None:
+            if item:
+                asyncio.create_task(self._apply_time_restore_async(item))
 
         def _on_delete_confirmed(self, target: dict[str, Any], confirmed: bool) -> None:
             if not confirmed:
@@ -1191,6 +1480,18 @@ def run_tui(service: JotService) -> int:
         def on_button_pressed(self, event: Button.Pressed) -> None:
             if event.button.id == "time-refresh":
                 asyncio.create_task(self._refresh_time_async())
+                return
+            if event.button.id == "time-add":
+                self.action_time_add()
+                return
+            if event.button.id == "time-amend":
+                self.action_time_amend()
+                return
+            if event.button.id == "time-delete":
+                self.action_time_delete()
+                return
+            if event.button.id == "time-trash":
+                self.action_time_trash()
                 return
             if event.button.id == "notes-filter-clear":
                 self.note_filter_kind = ""
@@ -1324,6 +1625,93 @@ def run_tui(service: JotService) -> int:
                     str(item.get("note") or ""),
                     str(item.get("updated") or ""),
                 )
+
+        def _selected_time_row(self) -> dict[str, Any] | None:
+            table = self.query_one("#time-details-table", DataTable)
+            row = table.cursor_row
+            if row < 0 or row >= len(self.time_rows):
+                return None
+            return self.time_rows[row]
+
+        async def _apply_time_entry_async(
+            self,
+            mode: str,
+            item: dict[str, Any] | None,
+            payload: dict[str, str],
+        ) -> None:
+            try:
+                if mode == "add":
+                    result = await asyncio.to_thread(
+                        self.svc.timelog_add,
+                        payload["task_ref"],
+                        started_at=payload["started_at"],
+                        stopped_at=payload["stopped_at"],
+                        scope=payload["scope"],
+                    )
+                    if not result.get("written", True):
+                        self.notify("That interval already exists", severity="warning")
+                        return
+                    message = f"Added interval {result.get('timelog_key')}"
+                else:
+                    if item is None:
+                        raise RuntimeError("selected interval is no longer available")
+                    result = await asyncio.to_thread(
+                        self.svc.timelog_amend,
+                        str(item.get("key") or ""),
+                        started_at=payload["started_at"],
+                        stopped_at=payload["stopped_at"],
+                    )
+                    message = f"Amended interval {result.get('new_timelog_key')}"
+            except Exception as exc:
+                self.notify(f"Time {mode} failed: {exc}", severity="error")
+                return
+            self.notify(message, severity="information")
+            await self._refresh_after_time_change_async()
+
+        async def _apply_time_delete_async(self, item: dict[str, Any]) -> None:
+            try:
+                result = await asyncio.to_thread(
+                    self.svc.timelog_delete,
+                    str(item.get("key") or ""),
+                )
+            except Exception as exc:
+                self.notify(f"Time delete failed: {exc}", severity="error")
+                return
+            self.notify(f"Archived interval {result.get('timelog_key')}", severity="information")
+            await self._refresh_after_time_change_async()
+
+        async def _open_time_trash_async(self) -> None:
+            try:
+                items = await asyncio.to_thread(self.svc.timelog_trash)
+            except Exception as exc:
+                self.notify(f"Time trash failed: {exc}", severity="error")
+                return
+            if not items:
+                self.notify("No deleted time intervals are available", severity="information")
+                return
+            self.push_screen(
+                TimeTrashModal(items),
+                lambda item: self._on_time_restore_selected(item),
+            )
+
+        async def _apply_time_restore_async(self, item: dict[str, Any]) -> None:
+            try:
+                result = await asyncio.to_thread(
+                    self.svc.timelog_restore,
+                    f"#{item.get('id')}",
+                )
+            except Exception as exc:
+                self.notify(f"Time restore failed: {exc}", severity="error")
+                return
+            self.notify(f"Restored interval {result.get('timelog_key')}", severity="information")
+            await self._refresh_after_time_change_async()
+
+        async def _refresh_after_time_change_async(self) -> None:
+            await self._refresh_time_async()
+            await self._refresh_recent_async()
+            await self._refresh_tasks_async()
+            await self._refresh_projects_async()
+            await self._refresh_notes_async()
 
         async def _refresh_time_async(self) -> None:
             summary = self.query_one("#time-summary", Static)
@@ -1498,6 +1886,18 @@ def run_tui(service: JotService) -> int:
                 self.query_one("#main-tabs", TabbedContent).active = "time-tab"
                 await self._refresh_time_async()
                 self._update_action_hints()
+                return
+            if command_id == "time-add":
+                self.action_time_add()
+                return
+            if command_id == "time-amend":
+                self.action_time_amend()
+                return
+            if command_id == "time-delete":
+                self.action_time_delete()
+                return
+            if command_id == "time-restore":
+                self.action_time_trash()
                 return
             if command_id == "latest-edits":
                 self.query_one("#main-tabs", TabbedContent).active = "latest-tab"
@@ -1918,7 +2318,7 @@ def run_tui(service: JotService) -> int:
         def _update_action_hints(self) -> None:
             if self.query_one("#main-tabs", TabbedContent).active == "time-tab":
                 self.query_one("#context-hints", Static).update(
-                    "Actions: select period | Enter open interval task | u refresh time | ctrl+p palette | / search | q quit"
+                    "Actions: a add | e amend selected | d delete selected | m actions/restore | Enter open task | u refresh | q quit"
                 )
                 return
             hints = ["Actions: m menu", "ctrl+p palette", "/ search", "r refresh", "u update", "q quit"]
@@ -1955,6 +2355,10 @@ def run_tui(service: JotService) -> int:
                 PaletteEntry("browse-projects", "Browse projects", "Open the project browser workspace"),
                 PaletteEntry("browse-notes", "Browse notes", "Open the all-notes browser with kind and project filters"),
                 PaletteEntry("time-report", "Time report", "Open time totals, rollups, and individual intervals"),
+                PaletteEntry("time-add", "Add time interval", "Record a completed interval manually"),
+                PaletteEntry("time-amend", "Amend selected interval", "Correct the selected interval and archive its original", bool(self._selected_time_row())),
+                PaletteEntry("time-delete", "Delete selected interval", "Confirm, archive, and remove the selected interval", bool(self._selected_time_row())),
+                PaletteEntry("time-restore", "Restore deleted interval", "Browse timelog trash and restore an archived interval"),
                 PaletteEntry("latest-edits", "Latest edits", "Open the recent activity workspace"),
                 PaletteEntry("search", "Search", "Focus the search tab and input"),
                 PaletteEntry("refresh-current", "Refresh current", "Reload the active workspace"),
@@ -1973,6 +2377,14 @@ def run_tui(service: JotService) -> int:
             return entries
 
         def _context_action_entries(self) -> list[PaletteEntry]:
+            if self.query_one("#main-tabs", TabbedContent).active == "time-tab":
+                selected = bool(self._selected_time_row())
+                return [
+                    PaletteEntry("time-add", "Add time interval", "Record a completed interval manually"),
+                    PaletteEntry("time-amend", "Amend selected interval", "Correct the selected interval", selected),
+                    PaletteEntry("time-delete", "Delete selected interval", "Archive and remove the selected interval", selected),
+                    PaletteEntry("time-restore", "Restore deleted interval", "Browse timelog trash and restore an interval"),
+                ]
             target = self._active_note_target()
             progress_targets = self._progress_targets()
             task_ref = self.current_task_ref or self.current_latest_task_ref

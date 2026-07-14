@@ -49,7 +49,14 @@ from .storage import (
     mutate_task_progress_storage,
 )
 from .taskwarrior import TaskwarriorClient
-from .timelog import report_time_logs
+from .timelog import (
+    add_time_log,
+    amend_time_log,
+    delete_time_log,
+    list_deleted_time_logs,
+    report_time_logs,
+    restore_deleted_time_log,
+)
 
 
 @dataclass(slots=True)
@@ -167,6 +174,40 @@ class JotService:
 
     def timelog_report(self, period: str = "week", *, details: bool = True) -> dict[str, Any]:
         return report_time_logs(self.config, period=period, details=details)
+
+    def timelog_add(
+        self,
+        task_ref: str,
+        *,
+        started_at: str,
+        stopped_at: str,
+        scope: str = "auto",
+    ) -> dict[str, Any]:
+        task = self.taskwarrior.resolve_task(task_ref)
+        return add_time_log(
+            self.config,
+            task,
+            started_at=started_at,
+            stopped_at=stopped_at,
+            scope=scope,
+        )
+
+    def timelog_amend(self, key: str, *, started_at: str, stopped_at: str) -> dict[str, Any]:
+        return amend_time_log(
+            self.config,
+            key,
+            started_at=started_at,
+            stopped_at=stopped_at,
+        )
+
+    def timelog_delete(self, key: str) -> dict[str, Any]:
+        return delete_time_log(self.config, key)
+
+    def timelog_trash(self) -> list[dict[str, Any]]:
+        return list_deleted_time_logs(self.config)
+
+    def timelog_restore(self, reference: str) -> dict[str, Any]:
+        return restore_deleted_time_log(self.config, reference)
 
     def task_summary(self, task_ref: str) -> dict[str, Any]:
         task = self.taskwarrior.resolve_task(task_ref)

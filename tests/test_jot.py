@@ -11,6 +11,7 @@ import textwrap
 import unittest
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from unittest import mock
@@ -38,8 +39,10 @@ from jot_tui.app import (
     resolve_progress_track,
     tui_actions_block,
     tui_context_action_entries,
+    tui_default_time_range,
     tui_next_actions,
     tui_note_empty_guidance,
+    tui_time_input_value,
 )
 from jot_tui.palette import PaletteEntry, filter_palette_entries
 
@@ -298,6 +301,18 @@ class EditorDiffTests(unittest.TestCase):
 
 
 class PaletteTests(unittest.TestCase):
+    def test_tui_time_inputs_are_local_and_keep_the_same_instant(self) -> None:
+        converted = tui_time_input_value("2026-07-14T09:30:00Z")
+        self.assertEqual(
+            datetime.fromisoformat(converted).astimezone(timezone.utc),
+            datetime(2026, 7, 14, 9, 30, tzinfo=timezone.utc),
+        )
+        started, stopped = tui_default_time_range(datetime(2026, 7, 14, 10, 0, tzinfo=timezone.utc))
+        self.assertEqual(
+            datetime.fromisoformat(stopped) - datetime.fromisoformat(started),
+            timedelta(hours=1),
+        )
+
     def test_filter_palette_entries_prefers_relevant_matches(self) -> None:
         entries = [
             PaletteEntry("refresh-all", "Refresh all", "Reload everything"),
@@ -636,6 +651,46 @@ class ServiceProgressRowTests(unittest.TestCase):
         self.assertEqual(report["total_minutes"], 60)
         self.assertEqual(report["by_project"][0]["name"], "reading")
         self.assertEqual(report["entries"][0]["key"], "a1b2c3d4e5f60708")
+
+    def test_timelog_service_exposes_tui_mutation_lifecycle(self) -> None:
+        task_json = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Read book",
+            "project": "reading",
+            "tags": [],
+        }
+
+        class FakeTaskwarrior:
+            def resolve_task(self, task_ref: str):
+                from jot_core.models import ResolvedTask, TaskRef
+
+                return ResolvedTask(
+                    ref=TaskRef(raw=task_ref),
+                    task_uuid=str(task_json["uuid"]),
+                    task_short_uuid="2d6d7d7d",
+                    description="Read book",
+                    project="reading",
+                    tags=[],
+                    task=task_json,
+                )
+
+        service = JotService(config=self.config, taskwarrior=FakeTaskwarrior())  # type: ignore[arg-type]
+        added = service.timelog_add(
+            "2d6d7d7d",
+            started_at="2026-07-14T09:00:00Z",
+            stopped_at="2026-07-14T10:00:00Z",
+        )
+        amended = service.timelog_amend(
+            str(added["timelog_key"]),
+            started_at="2026-07-14T09:00:00Z",
+            stopped_at="2026-07-14T10:30:00Z",
+        )
+        deleted = service.timelog_delete(str(amended["new_timelog_key"]))
+        self.assertEqual(service.timelog_report("all")["entry_count"], 0)
+        self.assertEqual(service.timelog_trash()[0]["key"], deleted["timelog_key"])
+        restored = service.timelog_restore("#1")
+        self.assertEqual(restored["timelog_key"], deleted["timelog_key"])
+        self.assertEqual(service.timelog_report("all")["total_minutes"], 90)
 
     def test_progress_track_names_reads_each_note_scope(self) -> None:
         task = {
