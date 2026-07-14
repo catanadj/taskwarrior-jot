@@ -73,7 +73,10 @@ from .storage import (
 )
 from .taskwarrior import INTEGER_RE, SHORT_UUID_RE, UUID_RE
 from .timelog import (
+    add_time_log,
+    amend_time_log,
     cancel_time_session,
+    delete_time_log,
     ingest_time_log,
     list_time_sessions,
     report_time_logs,
@@ -490,6 +493,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="remove a pending Jot-managed timelog session without writing a note",
     )
     timelog_cancel.add_argument("task_ref", help="task ID, full UUID, or unique short UUID")
+    timelog_add = timelog_subparsers.add_parser(
+        "add",
+        help="add a completed time interval manually",
+        description="Add a completed interval using local time unless an explicit timezone is supplied.",
+    )
+    timelog_add.add_argument("task_ref", help="task ID, full UUID, or unique short UUID")
+    timelog_add.add_argument("--from", dest="started_at", required=True, help="interval start datetime")
+    timelog_add.add_argument("--to", dest="stopped_at", required=True, help="interval stop datetime")
+    timelog_add.add_argument(
+        "--scope",
+        choices=("auto", "task", "chain"),
+        default="auto",
+        help="write to chain notes when chainID exists, otherwise task notes",
+    )
+    timelog_amend = timelog_subparsers.add_parser(
+        "amend",
+        help="correct an existing interval by its key",
+        description="Replace one interval and archive its original record. Unique key prefixes are accepted.",
+    )
+    timelog_amend.add_argument("key", help="full timelog key or unique prefix of at least 4 characters")
+    timelog_amend.add_argument("--from", dest="started_at", default="", help="replacement start datetime")
+    timelog_amend.add_argument("--to", dest="stopped_at", default="", help="replacement stop datetime")
+    timelog_delete = timelog_subparsers.add_parser(
+        "delete",
+        help="archive and remove an existing interval",
+        description="Remove one interval after archiving its original record. Unique key prefixes are accepted.",
+    )
+    timelog_delete.add_argument("key", help="full timelog key or unique prefix of at least 4 characters")
+    timelog_delete.add_argument("--yes", action="store_true", help="confirm removal of the interval")
     timelog_subparsers.add_parser(
         "pending",
         help="list pending Jot-managed timelog sessions",
@@ -1729,6 +1761,35 @@ def _run_timelog(ctx, args) -> CommandResult:
         return CommandResult(
             command="timelog-cancel",
             payload=cancel_time_session(ctx.config, task),
+        )
+    if args.timelog_command == "add":
+        task = ctx.taskwarrior.resolve_task(args.task_ref)
+        return CommandResult(
+            command="timelog-add",
+            payload=add_time_log(
+                ctx.config,
+                task,
+                started_at=args.started_at,
+                stopped_at=args.stopped_at,
+                scope=args.scope,
+            ),
+        )
+    if args.timelog_command == "amend":
+        return CommandResult(
+            command="timelog-amend",
+            payload=amend_time_log(
+                ctx.config,
+                args.key,
+                started_at=args.started_at,
+                stopped_at=args.stopped_at,
+            ),
+        )
+    if args.timelog_command == "delete":
+        if not args.yes:
+            raise RuntimeError("timelog delete requires --yes")
+        return CommandResult(
+            command="timelog-delete",
+            payload=delete_time_log(ctx.config, args.key),
         )
     if args.timelog_command == "report":
         if args.csv and args.json:

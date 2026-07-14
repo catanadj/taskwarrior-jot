@@ -1130,6 +1130,79 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(invalid.returncode, 1)
         self.assertIn("cannot be combined", invalid.stderr)
 
+    def test_timelog_manual_add_amend_and_archived_delete(self) -> None:
+        task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+        task = {
+            "uuid": task_uuid,
+            "description": "Manual work",
+            "project": "operations",
+            "tags": ["field"],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        env = {"TZ": "UTC"}
+
+        added = self.run_jot_with_env(
+            "--json",
+            "timelog",
+            "add",
+            "1",
+            "--from",
+            "2026-07-03T09:00:00",
+            "--to",
+            "2026-07-03T10:00:00",
+            extra_env=env,
+        )
+        self.assertEqual(added.returncode, 0, added.stderr)
+        added_payload = json.loads(added.stdout)
+        old_key = added_payload["timelog_key"]
+        self.assertEqual(added_payload["duration_minutes"], 60)
+
+        amended = self.run_jot_with_env(
+            "--json",
+            "timelog",
+            "amend",
+            old_key[:8],
+            "--to",
+            "2026-07-03T10:30:00",
+            extra_env=env,
+        )
+        self.assertEqual(amended.returncode, 0, amended.stderr)
+        amended_payload = json.loads(amended.stdout)
+        new_key = amended_payload["new_timelog_key"]
+        self.assertNotEqual(new_key, old_key)
+        self.assertEqual(amended_payload["duration_minutes"], 90)
+        amend_archive = Path(amended_payload["archive_path"])
+        self.assertTrue(amend_archive.exists())
+        self.assertEqual(json.loads(amend_archive.read_text(encoding="utf-8"))["action"], "amend")
+
+        report = self.run_jot_with_env("--json", "timelog", "report", "--details", extra_env=env)
+        self.assertEqual(report.returncode, 0, report.stderr)
+        report_payload = json.loads(report.stdout)
+        self.assertEqual(report_payload["total_minutes"], 90)
+        self.assertEqual(report_payload["entries"][0]["key"], new_key)
+
+        unconfirmed = self.run_jot_with_env("timelog", "delete", new_key[:8], extra_env=env)
+        self.assertEqual(unconfirmed.returncode, 1)
+        self.assertIn("requires --yes", unconfirmed.stderr)
+
+        deleted = self.run_jot_with_env(
+            "--json", "timelog", "delete", new_key[:8], "--yes", extra_env=env
+        )
+        self.assertEqual(deleted.returncode, 0, deleted.stderr)
+        deleted_payload = json.loads(deleted.stdout)
+        delete_archive = Path(deleted_payload["archive_path"])
+        self.assertTrue(delete_archive.exists())
+        self.assertEqual(json.loads(delete_archive.read_text(encoding="utf-8"))["action"], "delete")
+
+        empty = self.run_jot_with_env("--json", "timelog", "report", extra_env=env)
+        self.assertEqual(empty.returncode, 0, empty.stderr)
+        self.assertEqual(json.loads(empty.stdout)["entry_count"], 0)
+
+        short_key = self.run_jot_with_env("timelog", "delete", "abc", "--yes", extra_env=env)
+        self.assertEqual(short_key.returncode, 1)
+        self.assertIn("at least 4", short_key.stderr)
+
     def test_timelog_cancel_removes_pending_session(self) -> None:
         task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
         task = {

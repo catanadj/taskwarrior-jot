@@ -95,6 +95,15 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "timelog-cancel":
         _emit_timelog_cancel(payload)
         return
+    if command == "timelog-add":
+        _emit_timelog_add(payload)
+        return
+    if command == "timelog-amend":
+        _emit_timelog_amend(payload)
+        return
+    if command == "timelog-delete":
+        _emit_timelog_delete(payload)
+        return
     if command == "timelog-report":
         _emit_timelog_report(payload)
         return
@@ -550,6 +559,24 @@ def _emit_timelog_cancel(payload: dict[str, Any]) -> None:
     _emit_field("started", payload.get("started"), indent=0)
 
 
+def _emit_timelog_add(payload: dict[str, Any]) -> None:
+    sys.stdout.write(f"Added time log {payload.get('timelog_key')} for task {payload.get('task_short_uuid')}\n")
+    _emit_field("duration", f"{payload.get('duration_minutes')} minutes", indent=0)
+    _emit_field("path", payload.get("path"), indent=0)
+
+
+def _emit_timelog_amend(payload: dict[str, Any]) -> None:
+    sys.stdout.write(f"Amended time log {payload.get('timelog_key')}\n")
+    _emit_field("new key", payload.get("new_timelog_key"), indent=0)
+    _emit_field("duration", f"{payload.get('duration_minutes')} minutes", indent=0)
+    _emit_field("archive", payload.get("archive_path"), indent=0)
+
+
+def _emit_timelog_delete(payload: dict[str, Any]) -> None:
+    sys.stdout.write(f"Deleted time log {payload.get('timelog_key')}\n")
+    _emit_field("archive", payload.get("archive_path"), indent=0)
+
+
 def _emit_timelog_report(payload: dict[str, Any]) -> None:
     period = str(payload.get("period") or "all")
     sys.stdout.write(f"Timelog report: {period}\n\n")
@@ -619,7 +646,9 @@ def _emit_time_log_details(items: list[object]) -> None:
         suffix = f"  task {task}" if task else ""
         if chain:
             suffix += f"  chain {chain}"
-        sys.stdout.write(f"  {raw.get('day') or ''}  {duration:>8}  {timerange}  {project}{suffix}\n")
+        key = str(raw.get("key") or "").strip()
+        key_prefix = f"[{key}]  " if key else ""
+        sys.stdout.write(f"  {key_prefix}{raw.get('day') or ''}  {duration:>8}  {timerange}  {project}{suffix}\n")
 
 
 def _emit_headings(payload: dict[str, Any]) -> None:

@@ -161,10 +161,23 @@ To see where time went:
 jot timelog report today
 jot timelog report week
 jot timelog report week --project reading --details
+jot timelog report --since 2026-07-01 --until 2026-07-07
+jot timelog report month --csv > time.csv
 ```
 
 Reports group time by day, project, chain, and task. `--details` shows the
-individual intervals behind the totals.
+individual intervals and their keys. Intervals crossing midnight or report
+boundaries are counted only where they overlap.
+
+Forgot to start the timer, or entered the wrong time?
+
+```bash
+jot timelog add 42 --from 2026-07-14T09:00 --to 2026-07-14T10:30
+jot timelog amend a1b2c3d4 --to 2026-07-14T10:45
+jot timelog delete a1b2c3d4 --yes
+```
+
+Amended and deleted entries are archived under `.jot_trash/timelog/`.
 
 ## Finding Things Again
 

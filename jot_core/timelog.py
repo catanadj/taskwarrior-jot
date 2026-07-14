@@ -7,12 +7,12 @@ from datetime import datetime, time as datetime_time, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .frontmatter import atomic_write_text, exclusive_file_lock, read_document
+from .frontmatter import atomic_write_text, exclusive_file_lock, read_document, write_document
 from .index import update_chain_note_index, update_task_note_index
 from .models import ResolvedTask, TaskRef
 from .nautical import chain_id_for_task
 from .notes import append_under_heading_once, ensure_chain_note, ensure_task_note
-from .ops import append_op
+from .ops import append_op, iso_now
 
 
 TIME_LOG_HEADING = "Time log"
@@ -266,6 +266,126 @@ def write_time_log(
     }
 
 
+def add_time_log(
+    config,
+    task: ResolvedTask,
+    *,
+    started_at: str,
+    stopped_at: str,
+    scope: str = "auto",
+) -> dict[str, Any]:
+    started = _parse_user_datetime(started_at)
+    stopped = _parse_user_datetime(stopped_at)
+    return write_time_log(config, task, started=started, stopped=stopped, scope=scope)
+
+
+def amend_time_log(
+    config,
+    key: str,
+    *,
+    started_at: str = "",
+    stopped_at: str = "",
+) -> dict[str, Any]:
+    if not started_at and not stopped_at:
+        raise RuntimeError("timelog amend requires --from or --to")
+    location = _find_time_log_location(config, key)
+    record = dict(location["record"])
+    started = _parse_user_datetime(started_at) if started_at else _parse_datetime(str(record.get("started") or ""))
+    stopped = _parse_user_datetime(stopped_at) if stopped_at else _parse_datetime(str(record.get("stopped") or ""))
+    if stopped < started:
+        raise RuntimeError("stop time is before start time")
+    task = _resolved_task_from_record(record)
+    note_kind = str(record.get("note_kind") or location["note_kind"])
+    old_key = str(record.get("key") or "")
+    new_key = _time_log_key(task.task_uuid, started, stopped)
+    replacement = _format_time_entry(task, started, stopped, note_kind=note_kind, guard_key=new_key)
+    note_path = Path(str(location["path"]))
+
+    with exclusive_file_lock(note_path):
+        metadata, body = read_document(note_path)
+        line_index, original_line = _find_time_log_line(body, old_key)
+        if new_key != old_key and new_key in body:
+            raise RuntimeError(f"timelog entry {new_key} already exists")
+        archive_path = _archive_time_log_record(
+            config,
+            action="amend",
+            path=note_path,
+            line=original_line,
+            record=record,
+        )
+        lines = body.splitlines()
+        lines[line_index] = _replace_time_log_line(original_line, replacement)
+        metadata["updated"] = iso_now()
+        write_document(note_path, metadata, "\n".join(lines))
+
+    _update_time_log_index(config, task, note_kind, note_path)
+    append_op(
+        config,
+        "timelog_amend",
+        timelog_key=old_key,
+        new_timelog_key=new_key,
+        task_uuid=task.task_uuid,
+        task_short_uuid=task.task_short_uuid,
+        chain_id=chain_id_for_task(task.task) or None,
+        path=str(note_path),
+        archive_path=str(archive_path),
+    )
+    return {
+        "amended": True,
+        "timelog_key": old_key,
+        "new_timelog_key": new_key,
+        "task_short_uuid": task.task_short_uuid,
+        "started": _iso_z(started),
+        "stopped": _iso_z(stopped),
+        "duration_minutes": round((stopped - started).total_seconds() / 60, 2),
+        "path": str(note_path),
+        "archive_path": str(archive_path),
+    }
+
+
+def delete_time_log(config, key: str) -> dict[str, Any]:
+    location = _find_time_log_location(config, key)
+    record = dict(location["record"])
+    note_path = Path(str(location["path"]))
+    exact_key = str(record.get("key") or "")
+
+    with exclusive_file_lock(note_path):
+        metadata, body = read_document(note_path)
+        line_index, original_line = _find_time_log_line(body, exact_key)
+        archive_path = _archive_time_log_record(
+            config,
+            action="delete",
+            path=note_path,
+            line=original_line,
+            record=record,
+        )
+        lines = body.splitlines()
+        del lines[line_index]
+        metadata["updated"] = iso_now()
+        write_document(note_path, metadata, "\n".join(lines))
+
+    task = _resolved_task_from_record(record)
+    note_kind = str(record.get("note_kind") or location["note_kind"])
+    _update_time_log_index(config, task, note_kind, note_path)
+    append_op(
+        config,
+        "timelog_delete",
+        timelog_key=exact_key,
+        task_uuid=task.task_uuid,
+        task_short_uuid=task.task_short_uuid,
+        chain_id=chain_id_for_task(task.task) or None,
+        path=str(note_path),
+        archive_path=str(archive_path),
+    )
+    return {
+        "deleted": True,
+        "timelog_key": exact_key,
+        "task_short_uuid": task.task_short_uuid,
+        "path": str(note_path),
+        "archive_path": str(archive_path),
+    }
+
+
 def report_time_logs(
     config,
     *,
@@ -341,6 +461,32 @@ def _resolved_task_from_json(task_json: dict[str, Any]) -> ResolvedTask:
         task_short_uuid=uuid.split("-")[0],
         description=str(task_json.get("description") or ""),
         project=str(task_json.get("project") or ""),
+        tags=tag_list,
+        task=task_json,
+    )
+
+
+def _resolved_task_from_record(record: dict[str, Any]) -> ResolvedTask:
+    task_uuid = str(record.get("task_uuid") or "").strip()
+    if not task_uuid:
+        raise RuntimeError("timelog entry does not include task_uuid")
+    short_uuid = str(record.get("task_short_uuid") or "").strip() or task_uuid.split("-")[0]
+    chain_id = str(record.get("chain_id") or "").strip()
+    tags = record.get("tags")
+    tag_list = [str(tag) for tag in tags] if isinstance(tags, list) else []
+    task_json: dict[str, Any] = {
+        "uuid": task_uuid,
+        "project": str(record.get("project") or ""),
+        "tags": tag_list,
+    }
+    if chain_id:
+        task_json["chainID"] = chain_id
+    return ResolvedTask(
+        ref=TaskRef(raw=task_uuid),
+        task_uuid=task_uuid,
+        task_short_uuid=short_uuid,
+        description="",
+        project=str(record.get("project") or ""),
         tags=tag_list,
         task=task_json,
     )
@@ -425,6 +571,103 @@ def _read_time_log_records(config) -> list[dict[str, Any]]:
                 record["path"] = str(note_path)
                 records.append(record)
     return sorted(records, key=lambda item: str(item.get("stopped") or item.get("started") or ""))
+
+
+def _find_time_log_location(config, key: str) -> dict[str, Any]:
+    query = str(key or "").strip().casefold()
+    if len(query) < 4:
+        raise RuntimeError("timelog key prefix must contain at least 4 characters")
+    matches: list[dict[str, Any]] = []
+    for note_kind, root in (("task", config.tasks_dir), ("chain", config.chains_dir)):
+        if not root.exists():
+            continue
+        for note_path in sorted(root.rglob("*.md")):
+            _metadata, body = read_document(note_path)
+            for line_index, line in enumerate(body.splitlines()):
+                match = TIME_LOG_DATA_RE.search(line)
+                if match is None:
+                    continue
+                try:
+                    record = json.loads(match.group(1))
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(record, dict):
+                    continue
+                record_key = str(record.get("key") or "").strip()
+                if record_key.casefold().startswith(query):
+                    matches.append(
+                        {
+                            "note_kind": note_kind,
+                            "path": str(note_path),
+                            "line_index": line_index,
+                            "line": line,
+                            "record": record,
+                        }
+                    )
+    if not matches:
+        raise RuntimeError(f"timelog entry not found for key '{key}'")
+    exact = [item for item in matches if str(item["record"].get("key") or "").casefold() == query]
+    if len(exact) == 1:
+        return exact[0]
+    if len(matches) > 1:
+        keys = ", ".join(sorted({str(item["record"].get("key") or "") for item in matches}))
+        raise RuntimeError(f"timelog key prefix '{key}' is ambiguous: {keys}")
+    return matches[0]
+
+
+def _find_time_log_line(body: str, key: str) -> tuple[int, str]:
+    for line_index, line in enumerate(body.splitlines()):
+        match = TIME_LOG_DATA_RE.search(line)
+        if match is None:
+            continue
+        try:
+            record = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(record, dict) and str(record.get("key") or "") == key:
+            return line_index, line
+    raise RuntimeError(f"timelog entry {key} changed while waiting for the note lock")
+
+
+def _replace_time_log_line(original_line: str, replacement: str) -> str:
+    prefix_match = re.match(r"^(\s*-\s+\[[^\]]+\]\s+)", original_line)
+    prefix = prefix_match.group(1) if prefix_match else "- "
+    return f"{prefix}{replacement}"
+
+
+def _archive_time_log_record(
+    config,
+    *,
+    action: str,
+    path: Path,
+    line: str,
+    record: dict[str, Any],
+) -> Path:
+    archived_at = iso_now()
+    stamp = archived_at.replace("-", "").replace(":", "")
+    key = str(record.get("key") or "unknown")
+    directory = config.trash_dir / "timelog" / stamp
+    archive_path = directory / f"{key}.json"
+    counter = 1
+    while archive_path.exists():
+        archive_path = directory / f"{key}-{counter}.json"
+        counter += 1
+    payload = {
+        "action": action,
+        "archived_at": archived_at,
+        "path": str(path),
+        "line": line,
+        "record": record,
+    }
+    atomic_write_text(archive_path, json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n")
+    return archive_path
+
+
+def _update_time_log_index(config, task: ResolvedTask, note_kind: str, note_path: Path) -> None:
+    if note_kind == "chain":
+        update_chain_note_index(config, task, note_path)
+    else:
+        update_task_note_index(config, task, note_path)
 
 
 def _report_window(
@@ -606,6 +849,21 @@ def _time_range(started: datetime, stopped: datetime) -> str:
 
 def _zone_label(value: datetime) -> str:
     return value.tzname() or value.strftime("%z")
+
+
+def _parse_user_datetime(value: str) -> datetime:
+    raw = str(value or "").strip()
+    if not raw:
+        raise RuntimeError("datetime value is empty")
+    if raw.endswith("Z") and len(raw) == 16 and raw[8] == "T":
+        return _parse_datetime(raw)
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise RuntimeError(f"invalid datetime: {value}") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.astimezone()
+    return parsed.astimezone(timezone.utc)
 
 
 def _parse_datetime(value: str) -> datetime:
