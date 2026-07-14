@@ -692,6 +692,50 @@ class ServiceProgressRowTests(unittest.TestCase):
         self.assertEqual(restored["timelog_key"], deleted["timelog_key"])
         self.assertEqual(service.timelog_report("all")["total_minutes"], 90)
 
+    def test_timelog_service_exposes_live_session_lifecycle(self) -> None:
+        task_json = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Read book",
+            "project": "reading",
+            "tags": [],
+        }
+
+        class FakeTaskwarrior:
+            def resolve_task(self, task_ref: str):
+                from jot_core.models import ResolvedTask, TaskRef
+
+                return ResolvedTask(
+                    ref=TaskRef(raw=task_ref),
+                    task_uuid=str(task_json["uuid"]),
+                    task_short_uuid="2d6d7d7d",
+                    description="Read book",
+                    project="reading",
+                    tags=[],
+                    task=task_json,
+                )
+
+        service = JotService(config=self.config, taskwarrior=FakeTaskwarrior())  # type: ignore[arg-type]
+        started = service.timelog_start("2d6d7d7d", started_at="2026-07-14T09:00:00Z")
+        self.assertNotIn("already_started", started)
+        self.assertEqual(service.timelog_pending()[0]["task_short_uuid"], "2d6d7d7d")
+        duplicate = service.timelog_start("2d6d7d7d", started_at="2026-07-14T09:15:00Z")
+        self.assertTrue(duplicate["already_started"])
+
+        cancelled = service.timelog_cancel("2d6d7d7d")
+        self.assertEqual(cancelled["task_short_uuid"], "2d6d7d7d")
+        self.assertEqual(service.timelog_pending(), [])
+
+        service.timelog_start("2d6d7d7d", started_at="2026-07-14T10:00:00Z")
+        stopped = service.timelog_stop("2d6d7d7d", stopped_at="2026-07-14T10:30:00Z")
+        self.assertEqual(stopped["duration_minutes"], 30)
+        self.assertEqual(service.timelog_pending(), [])
+
+        service.timelog_start("2d6d7d7d", started_at="2026-07-14T11:00:00Z")
+        stopped_all = service.timelog_stop_all(stopped_at="2026-07-14T11:20:00Z")
+        self.assertEqual(stopped_all["count"], 1)
+        self.assertEqual(stopped_all["error_count"], 0)
+        self.assertEqual(service.timelog_report("all")["total_minutes"], 50)
+
     def test_progress_track_names_reads_each_note_scope(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",

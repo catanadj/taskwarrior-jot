@@ -52,10 +52,15 @@ from .taskwarrior import TaskwarriorClient
 from .timelog import (
     add_time_log,
     amend_time_log,
+    cancel_time_session,
     delete_time_log,
     list_deleted_time_logs,
+    list_time_sessions,
     report_time_logs,
     restore_deleted_time_log,
+    start_time_session,
+    stop_all_time_sessions,
+    stop_time_session,
 )
 
 
@@ -174,6 +179,40 @@ class JotService:
 
     def timelog_report(self, period: str = "week", *, details: bool = True) -> dict[str, Any]:
         return report_time_logs(self.config, period=period, details=details)
+
+    def timelog_start(self, task_ref: str, *, started_at: str = "") -> dict[str, Any]:
+        task = self.taskwarrior.resolve_task(task_ref)
+        return start_time_session(self.config, task, started_at=started_at)
+
+    def timelog_pending(self) -> list[dict[str, Any]]:
+        return list_time_sessions(self.config)
+
+    def timelog_stop(
+        self,
+        task_ref: str,
+        *,
+        stopped_at: str = "",
+        scope: str = "auto",
+    ) -> dict[str, Any]:
+        task = self.taskwarrior.resolve_task(task_ref)
+        return stop_time_session(
+            self.config,
+            task,
+            stopped_at=stopped_at,
+            scope=scope,
+        )
+
+    def timelog_stop_all(self, *, stopped_at: str = "", scope: str = "auto") -> dict[str, Any]:
+        return stop_all_time_sessions(
+            self.config,
+            self.taskwarrior,
+            stopped_at=stopped_at,
+            scope=scope,
+        )
+
+    def timelog_cancel(self, task_ref: str) -> dict[str, Any]:
+        task = self.taskwarrior.resolve_task(task_ref)
+        return cancel_time_session(self.config, task)
 
     def timelog_add(
         self,

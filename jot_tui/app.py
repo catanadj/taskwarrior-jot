@@ -479,6 +479,96 @@ def run_tui(service: JotService) -> int:
                 }
             )
 
+    class TimeSessionStartModal(ModalScreen[str | None]):
+        CSS = """
+        #dialog {
+            width: 70;
+            height: auto;
+            border: round $accent;
+            padding: 1 2;
+            background: $surface;
+        }
+        #dialog Input { margin: 1 0; }
+        #time-session-help { color: $text-muted; }
+        #buttons { height: auto; }
+        """
+
+        BINDINGS = [("escape", "cancel", "Cancel")]
+
+        def __init__(self, initial_task_ref: str = "") -> None:
+            super().__init__()
+            self.initial_task_ref = initial_task_ref
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id="dialog"):
+                yield Label("Start timer")
+                yield Static(
+                    "Jot will keep this session pending until you stop or cancel it.",
+                    id="time-session-help",
+                )
+                yield Input(
+                    value=self.initial_task_ref,
+                    placeholder="Task ID or UUID",
+                    id="time-session-task",
+                )
+                with Horizontal(id="buttons"):
+                    yield Button("Cancel", id="cancel-btn")
+                    yield Button("Start", id="start-btn", variant="primary")
+
+        def action_cancel(self) -> None:
+            self.dismiss(None)
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "start-btn":
+                self._submit()
+                return
+            self.dismiss(None)
+
+        def on_input_submitted(self, _event: Input.Submitted) -> None:
+            self._submit()
+
+        def _submit(self) -> None:
+            task_ref = self.query_one("#time-session-task", Input).value.strip()
+            if not task_ref:
+                self.app.notify("Task reference is required", severity="warning")
+                return
+            self.dismiss(task_ref)
+
+    class ConfirmTimeSessionModal(ModalScreen[bool]):
+        CSS = """
+        #dialog {
+            width: 76;
+            height: auto;
+            border: round $warning;
+            padding: 1 2;
+            background: $surface;
+        }
+        #details { margin: 1 0; color: $text-muted; }
+        #buttons { height: auto; }
+        """
+
+        BINDINGS = [("escape", "cancel", "Cancel")]
+
+        def __init__(self, *, title: str, details: str, action_label: str) -> None:
+            super().__init__()
+            self.title_text = title
+            self.details = details
+            self.action_label = action_label
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id="dialog"):
+                yield Label(self.title_text)
+                yield Static(self.details, id="details")
+                with Horizontal(id="buttons"):
+                    yield Button("Back", id="cancel-btn")
+                    yield Button(self.action_label, id="confirm-btn", variant="warning")
+
+        def action_cancel(self) -> None:
+            self.dismiss(False)
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            self.dismiss(event.button.id == "confirm-btn")
+
     class TimeEntryModal(ModalScreen[dict[str, str] | None]):
         CSS = """
         #dialog {
@@ -868,6 +958,11 @@ def run_tui(service: JotService) -> int:
         #time-filter-controls, #time-action-controls { height: auto; }
         #time-period { width: 24; margin: 0 1 0 0; }
         #time-controls Button { margin: 0 1 0 0; }
+        #time-sessions-block { height: 8; border: round $panel; }
+        #time-sessions-title { height: auto; padding: 0 1; }
+        #time-session-controls { height: auto; padding: 0 1; }
+        #time-session-controls Button { margin: 0 1 0 0; }
+        #time-sessions-table { height: 1fr; }
         #time-summary { height: auto; padding: 0 1 1 1; }
         #time-groups { height: 2fr; }
         #time-groups > Vertical { width: 1fr; border: round $panel; }
@@ -906,6 +1001,7 @@ def run_tui(service: JotService) -> int:
             self.note_rows: list[dict[str, Any]] = []
             self.search_note_rows: list[dict[str, Any]] = []
             self.search_event_rows: list[dict[str, Any]] = []
+            self.time_session_rows: list[dict[str, Any]] = []
             self.time_rows: list[dict[str, Any]] = []
             self.time_period: str = "week"
             self.current_search_query: str = ""
@@ -992,6 +1088,16 @@ def run_tui(service: JotService) -> int:
                                 yield Button("Amend", id="time-amend")
                                 yield Button("Delete", id="time-delete", variant="error")
                                 yield Button("Trash / Restore", id="time-trash")
+                        with Vertical(id="time-sessions-block"):
+                            yield Static("Active timers", id="time-sessions-title", classes="title")
+                            with Horizontal(id="time-session-controls"):
+                                yield Button("Start", id="time-session-start", variant="success")
+                                yield Button("Stop", id="time-session-stop", disabled=True)
+                                yield Button("Stop all", id="time-session-stop-all", disabled=True)
+                                yield Button("Cancel", id="time-session-cancel", variant="warning", disabled=True)
+                            sessions = DataTable(id="time-sessions-table", cursor_type="row")
+                            sessions.add_columns("elapsed", "task", "description", "project", "started", "chain")
+                            yield sessions
                         yield Static("Loading time expenditure...", id="time-summary")
                         with Horizontal(id="time-groups"):
                             with Vertical():
@@ -1069,6 +1175,7 @@ def run_tui(service: JotService) -> int:
             await self._refresh_projects_async()
             await self._refresh_notes_async()
             await self._refresh_time_async()
+            self.set_interval(60, self._refresh_time_sessions_async)
             self._update_action_hints()
 
         async def action_refresh(self) -> None:
@@ -1101,6 +1208,13 @@ def run_tui(service: JotService) -> int:
             table_id = focused.id or ""
             row_index = focused.cursor_row
             if row_index < 0:
+                return
+            if table_id == "time-sessions-table":
+                if row_index >= len(self.time_session_rows):
+                    return
+                task_ref = str(self.time_session_rows[row_index].get("task_short_uuid") or "").strip()
+                if task_ref:
+                    self._open_task_workspace(task_ref)
                 return
             if table_id == "time-details-table":
                 if row_index >= len(self.time_rows):
@@ -1377,6 +1491,50 @@ def run_tui(service: JotService) -> int:
         def action_time_trash(self) -> None:
             asyncio.create_task(self._open_time_trash_async())
 
+        def action_time_session_start(self) -> None:
+            selected = self._selected_time_row()
+            initial_task = str((selected or {}).get("task_short_uuid") or self.current_task_ref or "")
+            self.push_screen(
+                TimeSessionStartModal(initial_task),
+                self._on_time_session_start_selected,
+            )
+
+        def action_time_session_stop(self) -> None:
+            session = self._selected_time_session()
+            if session is None:
+                self.notify("Select an active timer to stop", severity="warning")
+                return
+            asyncio.create_task(self._apply_time_session_stop_async(session))
+
+        def action_time_session_stop_all(self) -> None:
+            count = len(self.time_session_rows)
+            if not count:
+                self.notify("No active timers to stop", severity="information")
+                return
+            self.push_screen(
+                ConfirmTimeSessionModal(
+                    title=f"Stop all {count} active timers?",
+                    details="Each elapsed interval will be written to its task or chain note.",
+                    action_label="Stop all",
+                ),
+                self._on_time_session_stop_all_confirmed,
+            )
+
+        def action_time_session_cancel(self) -> None:
+            session = self._selected_time_session()
+            if session is None:
+                self.notify("Select an active timer to cancel", severity="warning")
+                return
+            task_ref = str(session.get("task_short_uuid") or "")
+            self.push_screen(
+                ConfirmTimeSessionModal(
+                    title=f"Cancel timer for {task_ref}?",
+                    details="The pending start will be discarded without writing a time interval.",
+                    action_label="Discard timer",
+                ),
+                lambda confirmed: self._on_time_session_cancel_confirmed(session, confirmed),
+            )
+
         def _on_palette_selected(self, payload: dict[str, Any] | None) -> None:
             if not payload:
                 return
@@ -1409,6 +1567,22 @@ def run_tui(service: JotService) -> int:
         def _on_time_restore_selected(self, item: dict[str, Any] | None) -> None:
             if item:
                 asyncio.create_task(self._apply_time_restore_async(item))
+
+        def _on_time_session_start_selected(self, task_ref: str | None) -> None:
+            if task_ref:
+                asyncio.create_task(self._apply_time_session_start_async(task_ref))
+
+        def _on_time_session_stop_all_confirmed(self, confirmed: bool) -> None:
+            if confirmed:
+                asyncio.create_task(self._apply_time_session_stop_all_async())
+
+        def _on_time_session_cancel_confirmed(
+            self,
+            session: dict[str, Any],
+            confirmed: bool,
+        ) -> None:
+            if confirmed:
+                asyncio.create_task(self._apply_time_session_cancel_async(session))
 
         def _on_delete_confirmed(self, target: dict[str, Any], confirmed: bool) -> None:
             if not confirmed:
@@ -1493,6 +1667,18 @@ def run_tui(service: JotService) -> int:
             if event.button.id == "time-trash":
                 self.action_time_trash()
                 return
+            if event.button.id == "time-session-start":
+                self.action_time_session_start()
+                return
+            if event.button.id == "time-session-stop":
+                self.action_time_session_stop()
+                return
+            if event.button.id == "time-session-stop-all":
+                self.action_time_session_stop_all()
+                return
+            if event.button.id == "time-session-cancel":
+                self.action_time_session_cancel()
+                return
             if event.button.id == "notes-filter-clear":
                 self.note_filter_kind = ""
                 self.note_filter_project = ""
@@ -1520,6 +1706,14 @@ def run_tui(service: JotService) -> int:
             asyncio.create_task(self._refresh_time_async())
 
         def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+            if event.data_table.id == "time-sessions-table":
+                row_index = event.cursor_row
+                if row_index < 0 or row_index >= len(self.time_session_rows):
+                    return
+                task_ref = str(self.time_session_rows[row_index].get("task_short_uuid") or "").strip()
+                if task_ref:
+                    self._open_task_workspace(task_ref)
+                return
             if event.data_table.id == "time-details-table":
                 row_index = event.cursor_row
                 if row_index < 0 or row_index >= len(self.time_rows):
@@ -1633,6 +1827,81 @@ def run_tui(service: JotService) -> int:
                 return None
             return self.time_rows[row]
 
+        def _selected_time_session(self) -> dict[str, Any] | None:
+            table = self.query_one("#time-sessions-table", DataTable)
+            row = table.cursor_row
+            if row < 0 or row >= len(self.time_session_rows):
+                return None
+            return self.time_session_rows[row]
+
+        async def _apply_time_session_start_async(self, task_ref: str) -> None:
+            try:
+                result = await asyncio.to_thread(self.svc.timelog_start, task_ref)
+            except Exception as exc:
+                self.notify(f"Timer start failed: {exc}", severity="error")
+                return
+            if result.get("already_started"):
+                self.notify(
+                    f"Timer for {result.get('task_short_uuid')} is already running",
+                    severity="warning",
+                )
+            else:
+                self.notify(
+                    f"Started timer for {result.get('task_short_uuid')}",
+                    severity="information",
+                )
+            await self._refresh_time_sessions_async()
+
+        async def _apply_time_session_stop_async(self, session: dict[str, Any]) -> None:
+            task_ref = str(session.get("task_uuid") or session.get("task_short_uuid") or "")
+            try:
+                result = await asyncio.to_thread(self.svc.timelog_stop, task_ref)
+            except Exception as exc:
+                self.notify(f"Timer stop failed: {exc}", severity="error")
+                await self._refresh_time_sessions_async()
+                return
+            if result.get("written"):
+                self.notify(
+                    f"Stopped timer for {result.get('task_short_uuid')}: "
+                    f"{float(result.get('duration_minutes') or 0):g}m recorded",
+                    severity="information",
+                )
+            else:
+                self.notify("Stopped timer; that interval was already recorded", severity="warning")
+            await self._refresh_after_time_change_async()
+
+        async def _apply_time_session_stop_all_async(self) -> None:
+            try:
+                result = await asyncio.to_thread(self.svc.timelog_stop_all)
+            except Exception as exc:
+                self.notify(f"Stop all timers failed: {exc}", severity="error")
+                await self._refresh_time_sessions_async()
+                return
+            count = int(result.get("count") or 0)
+            errors = int(result.get("error_count") or 0)
+            if errors:
+                self.notify(
+                    f"Stopped {count} timers; {errors} could not be stopped",
+                    severity="warning",
+                )
+            else:
+                self.notify(f"Stopped {count} timers", severity="information")
+            await self._refresh_after_time_change_async()
+
+        async def _apply_time_session_cancel_async(self, session: dict[str, Any]) -> None:
+            task_ref = str(session.get("task_uuid") or session.get("task_short_uuid") or "")
+            try:
+                result = await asyncio.to_thread(self.svc.timelog_cancel, task_ref)
+            except Exception as exc:
+                self.notify(f"Timer cancel failed: {exc}", severity="error")
+                await self._refresh_time_sessions_async()
+                return
+            self.notify(
+                f"Cancelled timer for {result.get('task_short_uuid')}",
+                severity="information",
+            )
+            await self._refresh_time_sessions_async()
+
         async def _apply_time_entry_async(
             self,
             mode: str,
@@ -1713,7 +1982,38 @@ def run_tui(service: JotService) -> int:
             await self._refresh_projects_async()
             await self._refresh_notes_async()
 
+        async def _refresh_time_sessions_async(self) -> None:
+            table = self.query_one("#time-sessions-table", DataTable)
+            title = self.query_one("#time-sessions-title", Static)
+            table.clear()
+            try:
+                sessions = await asyncio.to_thread(self.svc.timelog_pending)
+            except Exception as exc:
+                self.time_session_rows = []
+                title.update("Active timers (unavailable)")
+                self.query_one("#time-session-stop", Button).disabled = True
+                self.query_one("#time-session-stop-all", Button).disabled = True
+                self.query_one("#time-session-cancel", Button).disabled = True
+                self.notify(f"Timer refresh failed: {exc}", severity="error")
+                return
+            self.time_session_rows = list(sessions)
+            has_sessions = bool(self.time_session_rows)
+            title.update(f"Active timers ({len(self.time_session_rows)})")
+            self.query_one("#time-session-stop", Button).disabled = not has_sessions
+            self.query_one("#time-session-stop-all", Button).disabled = not has_sessions
+            self.query_one("#time-session-cancel", Button).disabled = not has_sessions
+            for item in self.time_session_rows:
+                table.add_row(
+                    str(item.get("elapsed") or ""),
+                    str(item.get("task_short_uuid") or ""),
+                    str(item.get("description") or ""),
+                    str(item.get("project") or ""),
+                    tui_time_input_value(str(item.get("started") or "")),
+                    str(item.get("chain_id") or ""),
+                )
+
         async def _refresh_time_async(self) -> None:
+            await self._refresh_time_sessions_async()
             summary = self.query_one("#time-summary", Static)
             tables = {
                 "day": self.query_one("#time-day-table", DataTable),
@@ -1886,6 +2186,18 @@ def run_tui(service: JotService) -> int:
                 self.query_one("#main-tabs", TabbedContent).active = "time-tab"
                 await self._refresh_time_async()
                 self._update_action_hints()
+                return
+            if command_id == "time-session-start":
+                self.action_time_session_start()
+                return
+            if command_id == "time-session-stop":
+                self.action_time_session_stop()
+                return
+            if command_id == "time-session-stop-all":
+                self.action_time_session_stop_all()
+                return
+            if command_id == "time-session-cancel":
+                self.action_time_session_cancel()
                 return
             if command_id == "time-add":
                 self.action_time_add()
@@ -2318,7 +2630,7 @@ def run_tui(service: JotService) -> int:
         def _update_action_hints(self) -> None:
             if self.query_one("#main-tabs", TabbedContent).active == "time-tab":
                 self.query_one("#context-hints", Static).update(
-                    "Actions: a add | e amend selected | d delete selected | m actions/restore | Enter open task | u refresh | q quit"
+                    "Actions: timer buttons | a add | e amend | d delete | m all actions | Enter open task | u refresh | q quit"
                 )
                 return
             hints = ["Actions: m menu", "ctrl+p palette", "/ search", "r refresh", "u update", "q quit"]
@@ -2355,6 +2667,10 @@ def run_tui(service: JotService) -> int:
                 PaletteEntry("browse-projects", "Browse projects", "Open the project browser workspace"),
                 PaletteEntry("browse-notes", "Browse notes", "Open the all-notes browser with kind and project filters"),
                 PaletteEntry("time-report", "Time report", "Open time totals, rollups, and individual intervals"),
+                PaletteEntry("time-session-start", "Start task timer", "Start a pending timer for a task"),
+                PaletteEntry("time-session-stop", "Stop selected timer", "Stop the selected timer and record its interval", bool(self._selected_time_session())),
+                PaletteEntry("time-session-stop-all", "Stop all timers", "Stop every active timer and record their intervals", bool(self.time_session_rows)),
+                PaletteEntry("time-session-cancel", "Cancel selected timer", "Discard the selected timer without recording it", bool(self._selected_time_session())),
                 PaletteEntry("time-add", "Add time interval", "Record a completed interval manually"),
                 PaletteEntry("time-amend", "Amend selected interval", "Correct the selected interval and archive its original", bool(self._selected_time_row())),
                 PaletteEntry("time-delete", "Delete selected interval", "Confirm, archive, and remove the selected interval", bool(self._selected_time_row())),
@@ -2378,11 +2694,16 @@ def run_tui(service: JotService) -> int:
 
         def _context_action_entries(self) -> list[PaletteEntry]:
             if self.query_one("#main-tabs", TabbedContent).active == "time-tab":
-                selected = bool(self._selected_time_row())
+                selected_interval = bool(self._selected_time_row())
+                selected_session = bool(self._selected_time_session())
                 return [
+                    PaletteEntry("time-session-start", "Start task timer", "Start a pending timer for a task"),
+                    PaletteEntry("time-session-stop", "Stop selected timer", "Stop and record the selected timer", selected_session),
+                    PaletteEntry("time-session-stop-all", "Stop all timers", "Stop and record every active timer", bool(self.time_session_rows)),
+                    PaletteEntry("time-session-cancel", "Cancel selected timer", "Discard the selected timer without recording it", selected_session),
                     PaletteEntry("time-add", "Add time interval", "Record a completed interval manually"),
-                    PaletteEntry("time-amend", "Amend selected interval", "Correct the selected interval", selected),
-                    PaletteEntry("time-delete", "Delete selected interval", "Archive and remove the selected interval", selected),
+                    PaletteEntry("time-amend", "Amend selected interval", "Correct the selected interval", selected_interval),
+                    PaletteEntry("time-delete", "Delete selected interval", "Archive and remove the selected interval", selected_interval),
                     PaletteEntry("time-restore", "Restore deleted interval", "Browse timelog trash and restore an interval"),
                 ]
             target = self._active_note_target()
