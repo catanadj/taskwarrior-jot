@@ -640,6 +640,14 @@ def run_tui(service: JotService) -> int:
         }
         #search-bar { height: auto; }
         #search-input { margin: 0 1 0 0; width: 1fr; }
+        #time-pane { padding: 0 1; }
+        #time-controls { height: auto; margin: 0 0 1 0; }
+        #time-period { width: 24; margin: 0 1 0 0; }
+        #time-summary { height: auto; padding: 0 1 1 1; }
+        #time-groups { height: 2fr; }
+        #time-groups > Vertical { width: 1fr; border: round $panel; }
+        #time-details-block { height: 3fr; border: round $panel; }
+        #time-day-table, #time-project-table, #time-task-table, #time-details-table { height: 1fr; }
         #context-hints { padding: 0 1; color: $text-muted; }
         #recent-table, #tasks-table, #projects-table, #notes-table, #search-notes-table, #search-events-table { height: 1fr; }
         """
@@ -673,6 +681,8 @@ def run_tui(service: JotService) -> int:
             self.note_rows: list[dict[str, Any]] = []
             self.search_note_rows: list[dict[str, Any]] = []
             self.search_event_rows: list[dict[str, Any]] = []
+            self.time_rows: list[dict[str, Any]] = []
+            self.time_period: str = "week"
             self.current_search_query: str = ""
             self.note_filter_kind: str = ""
             self.note_filter_project: str = ""
@@ -741,6 +751,38 @@ def run_tui(service: JotService) -> int:
                                                 yield Static("No resources loaded.", id="project-resources-preview")
                                             with TabPane("Progress", id="project-progress-pane"):
                                                 yield Static("No progress loaded.", id="project-progress-preview")
+                with TabPane("Time", id="time-tab"):
+                    with Vertical(id="time-pane"):
+                        with Horizontal(id="time-controls"):
+                            yield Select(
+                                [("Today", "today"), ("This week", "week"), ("This month", "month"), ("All time", "all")],
+                                value="week",
+                                allow_blank=False,
+                                id="time-period",
+                            )
+                            yield Button("Refresh time", id="time-refresh", variant="primary")
+                        yield Static("Loading time expenditure...", id="time-summary")
+                        with Horizontal(id="time-groups"):
+                            with Vertical():
+                                yield Static("By day", classes="title")
+                                days = DataTable(id="time-day-table", cursor_type="row")
+                                days.add_columns("day", "time", "entries")
+                                yield days
+                            with Vertical():
+                                yield Static("By project", classes="title")
+                                projects = DataTable(id="time-project-table", cursor_type="row")
+                                projects.add_columns("project", "time", "entries")
+                                yield projects
+                            with Vertical():
+                                yield Static("By task", classes="title")
+                                tasks = DataTable(id="time-task-table", cursor_type="row")
+                                tasks.add_columns("task", "time", "entries")
+                                yield tasks
+                        with Vertical(id="time-details-block"):
+                            yield Static("Intervals", classes="title")
+                            details = DataTable(id="time-details-table", cursor_type="row")
+                            details.add_columns("key", "day", "time", "task", "project", "interval")
+                            yield details
                 with TabPane("Notes", id="notes-tab"):
                     with Vertical(id="notes-pane"):
                         yield Static("Notes", classes="title")
@@ -795,6 +837,7 @@ def run_tui(service: JotService) -> int:
             await self._refresh_tasks_async()
             await self._refresh_projects_async()
             await self._refresh_notes_async()
+            await self._refresh_time_async()
             self._update_action_hints()
 
         async def action_refresh(self) -> None:
@@ -802,6 +845,7 @@ def run_tui(service: JotService) -> int:
             await self._refresh_tasks_async()
             await self._refresh_projects_async()
             await self._refresh_notes_async()
+            await self._refresh_time_async()
             self._update_action_hints()
 
         async def action_refresh_current(self) -> None:
@@ -826,6 +870,13 @@ def run_tui(service: JotService) -> int:
             table_id = focused.id or ""
             row_index = focused.cursor_row
             if row_index < 0:
+                return
+            if table_id == "time-details-table":
+                if row_index >= len(self.time_rows):
+                    return
+                task_ref = str(self.time_rows[row_index].get("task_short_uuid") or "").strip()
+                if task_ref:
+                    self._open_task_workspace(task_ref)
                 return
             if table_id == "recent-table":
                 if row_index >= len(self.recent_rows):
@@ -1138,6 +1189,9 @@ def run_tui(service: JotService) -> int:
             self._render_tasks_table()
 
         def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == "time-refresh":
+                asyncio.create_task(self._refresh_time_async())
+                return
             if event.button.id == "notes-filter-clear":
                 self.note_filter_kind = ""
                 self.note_filter_project = ""
@@ -1155,7 +1209,24 @@ def run_tui(service: JotService) -> int:
             self.query_one("#task-filter-notes", Checkbox).value = False
             self._render_tasks_table()
 
+        def on_select_changed(self, event: Select.Changed) -> None:
+            if event.select.id != "time-period":
+                return
+            period = str(event.value or "").strip()
+            if period not in {"all", "today", "week", "month"}:
+                return
+            self.time_period = period
+            asyncio.create_task(self._refresh_time_async())
+
         def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+            if event.data_table.id == "time-details-table":
+                row_index = event.cursor_row
+                if row_index < 0 or row_index >= len(self.time_rows):
+                    return
+                task_ref = str(self.time_rows[row_index].get("task_short_uuid") or "").strip()
+                if task_ref:
+                    self._open_task_workspace(task_ref)
+                return
             if event.data_table.id == "recent-table":
                 row_index = event.cursor_row
                 if row_index < 0 or row_index >= len(self.recent_rows):
@@ -1254,6 +1325,60 @@ def run_tui(service: JotService) -> int:
                     str(item.get("updated") or ""),
                 )
 
+        async def _refresh_time_async(self) -> None:
+            summary = self.query_one("#time-summary", Static)
+            tables = {
+                "day": self.query_one("#time-day-table", DataTable),
+                "project": self.query_one("#time-project-table", DataTable),
+                "task": self.query_one("#time-task-table", DataTable),
+                "details": self.query_one("#time-details-table", DataTable),
+            }
+            for table in tables.values():
+                table.clear()
+            try:
+                report = await asyncio.to_thread(
+                    self.svc.timelog_report,
+                    self.time_period,
+                    details=True,
+                )
+            except Exception as exc:
+                self.time_rows = []
+                summary.update(f"Time report failed: {exc}")
+                self.notify(f"Time refresh failed: {exc}", severity="error")
+                return
+            self.time_rows = list(report.get("entries") or [])
+            summary.update(
+                f"{str(report.get('period') or self.time_period).capitalize()}: "
+                f"{report.get('total') or '0m'} across {report.get('entry_count', 0)} intervals"
+            )
+            for item in report.get("by_day") or []:
+                tables["day"].add_row(
+                    str(item.get("name") or ""),
+                    str(item.get("duration") or ""),
+                    str(item.get("entry_count") or 0),
+                )
+            for item in report.get("by_project") or []:
+                tables["project"].add_row(
+                    str(item.get("name") or ""),
+                    str(item.get("duration") or ""),
+                    str(item.get("entry_count") or 0),
+                )
+            for item in report.get("by_task") or []:
+                tables["task"].add_row(
+                    str(item.get("name") or ""),
+                    str(item.get("duration") or ""),
+                    str(item.get("entry_count") or 0),
+                )
+            for item in self.time_rows:
+                tables["details"].add_row(
+                    str(item.get("key") or ""),
+                    str(item.get("day") or ""),
+                    str(item.get("duration") or ""),
+                    str(item.get("task_short_uuid") or ""),
+                    str(item.get("project") or ""),
+                    str(item.get("display_range") or ""),
+                )
+
         def _run_search(self, query: str) -> None:
             asyncio.create_task(self._run_search_async(query))
 
@@ -1342,6 +1467,9 @@ def run_tui(service: JotService) -> int:
                 if self.current_search_query:
                     await self._run_search_async(self.current_search_query)
                 return
+            if main_tab == "time-tab":
+                await self._refresh_time_async()
+                return
             await self._refresh_recent_async()
             await self._refresh_tasks_async()
             await self._refresh_projects_async()
@@ -1364,6 +1492,11 @@ def run_tui(service: JotService) -> int:
             if command_id == "browse-notes":
                 self.query_one("#main-tabs", TabbedContent).active = "notes-tab"
                 await self._refresh_notes_async()
+                self._update_action_hints()
+                return
+            if command_id == "time-report":
+                self.query_one("#main-tabs", TabbedContent).active = "time-tab"
+                await self._refresh_time_async()
                 self._update_action_hints()
                 return
             if command_id == "latest-edits":
@@ -1783,6 +1916,11 @@ def run_tui(service: JotService) -> int:
             await self._refresh_after_resource_change_async()
 
         def _update_action_hints(self) -> None:
+            if self.query_one("#main-tabs", TabbedContent).active == "time-tab":
+                self.query_one("#context-hints", Static).update(
+                    "Actions: select period | Enter open interval task | u refresh time | ctrl+p palette | / search | q quit"
+                )
+                return
             hints = ["Actions: m menu", "ctrl+p palette", "/ search", "r refresh", "u update", "q quit"]
             active_note = self._active_note_target()
             task_context = self.current_task_ref or self.current_latest_task_ref
@@ -1816,6 +1954,7 @@ def run_tui(service: JotService) -> int:
                 PaletteEntry("browse-tasks", "Browse tasks", "Open the task browser workspace"),
                 PaletteEntry("browse-projects", "Browse projects", "Open the project browser workspace"),
                 PaletteEntry("browse-notes", "Browse notes", "Open the all-notes browser with kind and project filters"),
+                PaletteEntry("time-report", "Time report", "Open time totals, rollups, and individual intervals"),
                 PaletteEntry("latest-edits", "Latest edits", "Open the recent activity workspace"),
                 PaletteEntry("search", "Search", "Focus the search tab and input"),
                 PaletteEntry("refresh-current", "Refresh current", "Reload the active workspace"),

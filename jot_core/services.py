@@ -49,6 +49,7 @@ from .storage import (
     mutate_task_progress_storage,
 )
 from .taskwarrior import TaskwarriorClient
+from .timelog import report_time_logs
 
 
 @dataclass(slots=True)
@@ -163,6 +164,9 @@ class JotService:
 
     def search(self, query: str) -> dict[str, list[dict[str, Any]]]:
         return search_all(self.config, query)
+
+    def timelog_report(self, period: str = "week", *, details: bool = True) -> dict[str, Any]:
+        return report_time_logs(self.config, period=period, details=details)
 
     def task_summary(self, task_ref: str) -> dict[str, Any]:
         task = self.taskwarrior.resolve_task(task_ref)

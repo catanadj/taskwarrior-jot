@@ -607,6 +607,36 @@ class ServiceProgressRowTests(unittest.TestCase):
         project_rows = service.project_tree_rows()
         self.assertEqual(project_rows[0]["progress"], "2/10 books (20%)")
 
+    def test_timelog_report_service_returns_detailed_tui_data(self) -> None:
+        record = {
+            "v": 1,
+            "key": "a1b2c3d4e5f60708",
+            "note_kind": "task",
+            "task_uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "task_short_uuid": "2d6d7d7d",
+            "chain_id": "",
+            "project": "reading",
+            "tags": [],
+            "started": "2026-07-03T09:00:00Z",
+            "stopped": "2026-07-03T10:00:00Z",
+            "minutes": 60,
+        }
+        write_document(
+            self.config.tasks_dir / "2d6d7d7d--read-book.md",
+            OrderedDict([("kind", "task-note"), ("task_short_uuid", "2d6d7d7d")]),
+            "# Read book\n\n## Time log\n\n"
+            f"- interval <!-- jot-time-log {json.dumps(record, separators=(',', ':'))} -->",
+        )
+
+        class FakeTaskwarrior:
+            pass
+
+        service = JotService(config=self.config, taskwarrior=FakeTaskwarrior())  # type: ignore[arg-type]
+        report = service.timelog_report("all")
+        self.assertEqual(report["total_minutes"], 60)
+        self.assertEqual(report["by_project"][0]["name"], "reading")
+        self.assertEqual(report["entries"][0]["key"], "a1b2c3d4e5f60708")
+
     def test_progress_track_names_reads_each_note_scope(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
