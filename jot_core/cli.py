@@ -31,7 +31,7 @@ from .notes import (
     task_note_path,
 )
 from .ops import iso_now, read_ops
-from .output import configure_output, emit_result, warn
+from .output import configure_output, emit_result, style_text, warn
 from .report import (
     list_notes,
     list_project_notes,
@@ -935,11 +935,22 @@ def _offer_post_save_task_action(ctx, task) -> dict | None:
     if not ctx.config.editor_post_save_actions or not sys.stdin.isatty():
         return None
 
-    sys.stderr.write("\nPost-save actions\n")
-    sys.stderr.write(f"Task: {task.task_short_uuid}  {task.description}\n")
-    sys.stderr.write("  c  complete task\n")
-    sys.stderr.write("  enter  do nothing\n")
-    sys.stderr.write("Action: ")
+    title = style_text("Post-save actions", role="title", bold=True, stream=sys.stderr)
+    task_label = style_text("Task", role="label", bold=True, stream=sys.stderr)
+    task_id = style_text(
+        task.task_short_uuid,
+        role="identity",
+        bold=True,
+        stream=sys.stderr,
+    )
+    complete_key = style_text("c", role="success", bold=True, stream=sys.stderr)
+    enter_key = style_text("enter", role="muted", bold=True, stream=sys.stderr)
+    action_label = style_text("Action", role="label", bold=True, stream=sys.stderr)
+    sys.stderr.write(f"\n{title}\n")
+    sys.stderr.write(f"{task_label}: {task_id}  {task.description}\n")
+    sys.stderr.write(f"  {complete_key}  complete task\n")
+    sys.stderr.write(f"  {enter_key}  do nothing\n")
+    sys.stderr.write(f"{action_label}: ")
     sys.stderr.flush()
 
     choice = sys.stdin.readline().strip().casefold()

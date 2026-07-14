@@ -19,6 +19,16 @@ def configure_output(*, color_mode: str) -> None:
     _COLOR_MODE = str(color_mode or "auto").strip().casefold()
 
 
+def style_text(
+    text: str,
+    *,
+    role: str = "",
+    bold: bool = False,
+    stream: Any = None,
+) -> str:
+    return _style(text, color=role, bold=bold, stream=stream)
+
+
 def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if json_mode:
         sys.stdout.write(json.dumps(result.payload, ensure_ascii=False, indent=2) + "\n")

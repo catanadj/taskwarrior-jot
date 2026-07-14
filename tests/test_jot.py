@@ -15,9 +15,10 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
-from jot_core.cli import build_parser
+from jot_core.cli import _offer_post_save_task_action, build_parser
 from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from jot_core.editor import colorize_diff, note_diff
@@ -613,6 +614,37 @@ class OutputColorTests(unittest.TestCase):
             colored = self._emit(result)
 
         self.assertEqual(re.sub(r"\033\[[0-9;]*m", "", colored), plain)
+
+    def test_post_save_actions_use_stderr_semantic_colors(self) -> None:
+        class TtyInput(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        taskwarrior = mock.Mock()
+        ctx = SimpleNamespace(
+            config=SimpleNamespace(editor_post_save_actions=True),
+            taskwarrior=taskwarrior,
+        )
+        task = SimpleNamespace(
+            task_uuid="2d6d7d7d-1111-2222-3333-444444444444",
+            task_short_uuid="2d6d7d7d",
+            description="Read book",
+        )
+        stdin = TtyInput("c\n")
+        stderr = io.StringIO()
+        configure_output(color_mode="always")
+
+        with mock.patch.dict(os.environ):
+            os.environ.pop("NO_COLOR", None)
+            with mock.patch("sys.stdin", stdin), mock.patch("sys.stderr", stderr):
+                result = _offer_post_save_task_action(ctx, task)
+
+        output = stderr.getvalue()
+        self.assertIn("\033[1;38;5;45mPost-save actions\033[0m", output)
+        self.assertIn("\033[1;38;5;220m2d6d7d7d\033[0m", output)
+        self.assertIn("\033[1;38;5;42mc\033[0m", output)
+        self.assertEqual(result["action"], "complete-task")
+        taskwarrior.complete_task.assert_called_once_with(task.task_uuid)
 
 
 class ServiceProgressRowTests(unittest.TestCase):
