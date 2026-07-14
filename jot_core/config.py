@@ -3,11 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import re
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover
-    tomllib = None
+import tomllib
 
 from .models import AppConfig
 
@@ -25,7 +21,7 @@ def _expand_path(raw: str | None, fallback: Path) -> Path:
 
 
 def _read_config_file(path: Path) -> dict:
-    if not path.exists() or tomllib is None:
+    if not path.exists():
         return {}
     with path.open("rb") as handle:
         data = tomllib.load(handle) or {}
@@ -43,6 +39,14 @@ def _config_bool(value: object, default: bool) -> bool:
     if text in {"0", "no", "false", "off"}:
         return False
     return default
+
+
+def _config_choice(value: object, default: str, *, key: str, allowed: set[str]) -> str:
+    normalized = str(value or default).strip().casefold()
+    if normalized not in allowed:
+        choices = ", ".join(sorted(allowed))
+        raise RuntimeError(f"invalid {key} value '{value}'; expected one of: {choices}")
+    return normalized
 
 
 def _taskdata_root() -> Path:
@@ -69,7 +73,7 @@ def _taskdata_root() -> Path:
 
 
 def load_config() -> AppConfig:
-    default_root = _taskdata_root() / "jot"
+    default_root = _expand_path(os.environ.get("JOT_HOME"), _taskdata_root() / "jot")
     config_path = _expand_path(os.environ.get("JOT_CONFIG"), default_root / DEFAULT_CONFIG_NAME)
     data = _read_config_file(config_path)
 
@@ -87,11 +91,26 @@ def load_config() -> AppConfig:
 
     editor_command = str(editor_cfg.get("command") or os.environ.get("EDITOR") or "vim").strip()
     editor_show_diff_on_save = _config_bool(editor_cfg.get("show_diff_on_save"), True)
-    editor_diff_color = str(editor_cfg.get("diff_color") or "auto").strip() or "auto"
+    editor_diff_color = _config_choice(
+        editor_cfg.get("diff_color"),
+        "auto",
+        key="editor.diff_color",
+        allowed={"auto", "always", "never"},
+    )
     editor_post_save_actions = _config_bool(editor_cfg.get("post_save_actions"), True)
-    color_mode = str(display_cfg.get("color") or "auto").strip() or "auto"
-    default_format = str(display_cfg.get("default_format") or "text").strip() or "text"
-    nautical_enabled = bool(nautical_cfg.get("enabled", True))
+    color_mode = _config_choice(
+        display_cfg.get("color"),
+        "auto",
+        key="display.color",
+        allowed={"auto", "always", "never"},
+    )
+    default_format = _config_choice(
+        display_cfg.get("default_format"),
+        "text",
+        key="display.default_format",
+        allowed={"json", "text"},
+    )
+    nautical_enabled = _config_bool(nautical_cfg.get("enabled"), True)
 
     return AppConfig(
         config_path=config_path,

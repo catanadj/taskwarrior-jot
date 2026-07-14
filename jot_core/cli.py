@@ -30,7 +30,7 @@ from .notes import (
     task_note_path,
 )
 from .ops import iso_now, read_ops
-from .output import emit_result, warn
+from .output import configure_output, emit_result, warn
 from .report import (
     list_notes,
     list_project_notes,
@@ -689,6 +689,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             ctx = build_app_context()
             ensure_app_dirs(ctx.config)
+            configure_output(color_mode=ctx.config.color_mode)
             result = _run_auto_note(ctx, shorthand_ref)
         except RuntimeError as exc:
             warn(str(exc))
@@ -696,7 +697,10 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:
             warn(str(exc))
             return 1
-        emit_result(result, json_mode=shorthand_json)
+        emit_result(
+            result,
+            json_mode=shorthand_json or ctx.config.default_format == "json",
+        )
         return 0
 
     parser = build_parser()
@@ -709,6 +713,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         ctx = build_app_context()
         ensure_app_dirs(ctx.config)
+        configure_output(color_mode=ctx.config.color_mode)
     except Exception as exc:
         if args.command == "doctor":
             emit_result(run_doctor_config_error(f"failed to load config: {exc}"), json_mode=args.json)
@@ -812,7 +817,7 @@ def main(argv: list[str] | None = None) -> int:
         warn(str(exc))
         return 1
 
-    emit_result(result, json_mode=args.json)
+    emit_result(result, json_mode=args.json or ctx.config.default_format == "json")
     return 0
 
 
@@ -882,7 +887,7 @@ def _run_trash_restore(ctx, trash_id: int) -> CommandResult:
 
 def _run_auto_note(ctx, task_ref: str) -> CommandResult:
     task = ctx.taskwarrior.resolve_task(task_ref)
-    if chain_id_for_task(task.task):
+    if ctx.config.nautical_enabled and chain_id_for_task(task.task):
         note = ensure_chain_note(ctx.config, task)
         _open_note_in_editor(ctx, note.note_path)
         finalize_chain_note_edit(ctx.config, task, note)

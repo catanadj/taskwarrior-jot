@@ -9,6 +9,11 @@ INSTALL_TIMELOG_HOOK="ask"
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
+if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
+  echo "error: jot requires Python 3.11 or newer" >&2
+  exit 1
+fi
+
 resolve_taskdata_dir() {
   if [[ -n "${TASKDATA:-}" ]]; then
     printf '%s\n' "$TASKDATA"
@@ -211,6 +216,12 @@ for name in task-note.md chain-note.md project-note.md; do
   fi
 done
 
+if python3 -c 'import textual' >/dev/null 2>&1; then
+  TUI_NOTE="TUI available: textual is installed"
+else
+  TUI_NOTE="TUI unavailable: install the optional 'textual' Python package to use 'jot tui'"
+fi
+
 cat <<EOF
 Installed jot to:
   $LIB_DIR
@@ -224,6 +235,7 @@ Templates kept: $kept_templates
 Hook examples:
   $LIB_DIR/hooks
 $TIMELOG_HOOK_NOTE
+$TUI_NOTE
 
 If '$BIN_DIR' is not on your PATH, add this to your shell profile:
   export PATH="$BIN_DIR:\$PATH"

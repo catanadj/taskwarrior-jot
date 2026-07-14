@@ -15,6 +15,7 @@ you got, and how long it took.
 This installs `jot` to `~/.local/bin/jot` and stores notes under your
 Taskwarrior data directory. The installer follows `TASKDATA`, then
 `data.location` from `TASKRC` or `~/.taskrc`, then falls back to `~/.task`.
+Python 3.11 or newer is required.
 
 For time expenditure notes, let the installer enable the hook when asked, or
 use:
@@ -179,6 +180,9 @@ jot export 42 --json
 All commands support `--json`.
 
 ## The TUI
+
+The CLI has no third-party Python dependencies. The TUI additionally requires
+the `textual` package; the installer reports whether it is available.
 
 ```bash
 jot tui

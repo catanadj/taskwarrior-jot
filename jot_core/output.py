@@ -10,6 +10,14 @@ from typing import Any
 from .models import CommandResult, DoctorCheck
 
 
+_COLOR_MODE = "auto"
+
+
+def configure_output(*, color_mode: str) -> None:
+    global _COLOR_MODE
+    _COLOR_MODE = str(color_mode or "auto").strip().casefold()
+
+
 def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if json_mode:
         sys.stdout.write(json.dumps(result.payload, ensure_ascii=False, indent=2) + "\n")
@@ -848,7 +856,11 @@ def _style(text: str, *, color: str = "", bold: bool = False) -> str:
 
 
 def _use_color() -> bool:
-    return sys.stdout.isatty() and "NO_COLOR" not in os.environ
+    if _COLOR_MODE == "never" or "NO_COLOR" in os.environ:
+        return False
+    if _COLOR_MODE == "always":
+        return True
+    return sys.stdout.isatty()
 
 
 def _emit_list(payload: dict[str, Any]) -> None:

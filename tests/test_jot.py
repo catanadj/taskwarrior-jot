@@ -1082,6 +1082,24 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(len(list((self.home / ".task" / "jot" / "tasks").glob("*.md"))), 0)
         self.assertEqual(len(list((self.home / ".task" / "jot" / "chains").glob("*.md"))), 1)
 
+    def test_nautical_disabled_keeps_auto_note_on_task(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Recurring task",
+            "project": "finance.audit",
+            "tags": [],
+            "chainID": "a4bf5egh",
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        config = self.root / "no-nautical.toml"
+        config.write_text("[nautical]\nenabled = false\n", encoding="utf-8")
+
+        result = self.run_jot_with_env("--json", "1", extra_env={"JOT_CONFIG": str(config)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertIn("/tasks/", payload["path"])
+
     def test_note_edit_prints_diff_to_stderr_after_save(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
@@ -1168,6 +1186,7 @@ class CliIntegrationTests(JotCliTestCase):
             "projects_dir",
             "templates_dir",
             "editor",
+            "tui",
             "ops",
             "index",
             "taskwarrior",
@@ -1201,6 +1220,36 @@ class CliIntegrationTests(JotCliTestCase):
         payload = json.loads(result.stdout)
         self.assertEqual(payload["root_dir"], str(taskdata / "jot"))
         self.assertEqual(payload["config_path"], str(taskdata / "jot" / "config-jot.toml"))
+
+    def test_paths_honor_jot_home_at_runtime(self) -> None:
+        jot_home = self.root / "custom-jot-home"
+        result = self.run_jot_with_env("--json", "paths", extra_env={"JOT_HOME": str(jot_home)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["root_dir"], str(jot_home))
+        self.assertEqual(payload["config_path"], str(jot_home / "config-jot.toml"))
+
+    def test_config_default_format_can_enable_json_output(self) -> None:
+        jot_home = self.root / "json-jot-home"
+        jot_home.mkdir()
+        (jot_home / "config-jot.toml").write_text(
+            "[display]\ndefault_format = \"json\"\n",
+            encoding="utf-8",
+        )
+        result = self.run_jot_with_env("paths", extra_env={"JOT_HOME": str(jot_home)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["root_dir"], str(jot_home))
+
+    def test_doctor_reports_invalid_config_choices(self) -> None:
+        config = self.root / "invalid-choice.toml"
+        config.write_text("[display]\ncolor = \"sometimes\"\n", encoding="utf-8")
+        result = self.run_jot_with_env("--json", "doctor", extra_env={"JOT_CONFIG": str(config)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        checks = {item["name"]: item for item in payload["checks"]}
+        self.assertFalse(checks["config"]["ok"])
+        self.assertIn("invalid display.color value", checks["config"]["detail"])
 
     def test_paths_default_to_taskrc_data_location(self) -> None:
         taskdata = self.root / "taskrc-taskdata"

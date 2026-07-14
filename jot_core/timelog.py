@@ -182,7 +182,11 @@ def write_time_log(
 ) -> dict[str, Any]:
     if stopped < started:
         raise RuntimeError("stop time is before start time")
-    note_kind = _resolve_scope(scope, task.task)
+    note_kind = _resolve_scope(
+        scope,
+        task.task,
+        nautical_enabled=bool(getattr(config, "nautical_enabled", True)),
+    )
     guard_key = _time_log_key(task.task_uuid, started, stopped)
     text = _format_time_entry(task, started, stopped, note_kind=note_kind, guard_key=guard_key)
     if note_kind == "chain":
@@ -331,12 +335,12 @@ def _resolved_task_from_json(task_json: dict[str, Any]) -> ResolvedTask:
     )
 
 
-def _resolve_scope(scope: str, task_json: dict[str, Any]) -> str:
+def _resolve_scope(scope: str, task_json: dict[str, Any], *, nautical_enabled: bool = True) -> str:
     normalized = str(scope or "auto").strip().casefold()
     if normalized not in {"auto", "task", "chain"}:
         raise RuntimeError("timelog scope must be auto, task, or chain")
     if normalized == "auto":
-        return "chain" if chain_id_for_task(task_json) else "task"
+        return "chain" if nautical_enabled and chain_id_for_task(task_json) else "task"
     if normalized == "chain" and not chain_id_for_task(task_json):
         raise RuntimeError("cannot write chain time log for a task without chainID")
     return normalized

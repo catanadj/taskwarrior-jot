@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import importlib.util
 from pathlib import Path
 import tempfile
 
@@ -33,6 +34,7 @@ def run_doctor(config: AppConfig, client: TaskwarriorClient) -> CommandResult:
         checks.append(_directory_check(name, path))
 
     checks.append(_editor_check(config.editor_command))
+    checks.append(_tui_check())
     checks.append(_ops_check(config))
     checks.append(_index_check(config))
 
@@ -104,6 +106,16 @@ def _editor_check(editor_command: str) -> DoctorCheck:
     if not resolved:
         return DoctorCheck(name="editor", ok=False, detail=f"{cmd[0]} not found")
     return DoctorCheck(name="editor", ok=True, detail=f"{' '.join(cmd)} -> {resolved}")
+
+
+def _tui_check() -> DoctorCheck:
+    if importlib.util.find_spec("textual") is None:
+        return DoctorCheck(
+            name="tui",
+            ok=True,
+            detail="optional dependency missing; CLI available, install textual to use `jot tui`",
+        )
+    return DoctorCheck(name="tui", ok=True, detail="textual available")
 
 
 def _ops_check(config: AppConfig) -> DoctorCheck:

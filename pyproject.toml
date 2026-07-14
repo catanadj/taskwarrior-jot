@@ -7,12 +7,15 @@ name = "jot-taskwarrior"
 dynamic = ["version"]
 description = "Note-first companion for Taskwarrior and Taskwarrior-Nautical"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 license = { file = "LICENSE" }
 authors = [
   { name = "pooK" }
 ]
 dependencies = []
+
+[project.optional-dependencies]
+tui = ["textual>=0.47"]
 
 [project.scripts]
 jot = "jot_core.cli:main"
