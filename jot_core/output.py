@@ -158,23 +158,26 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
 def _emit_doctor(payload: dict[str, Any]) -> None:
     repairs = payload.get("repairs") or []
     if repairs:
-        sys.stdout.write("Repairs\n")
+        _write_title("Repairs")
         for item in repairs:
             action = str(item.get("action") or "repair")
             detail = str(item.get("detail") or "")
-            sys.stdout.write(f"  {action}: {detail}\n")
-        sys.stdout.write("\nChecks\n")
+            sys.stdout.write(f"  {_style(action, color='identity', bold=True)}: {detail}\n")
+        sys.stdout.write("\n")
+        _write_title("Checks")
     checks = payload.get("checks") or []
     for item in checks:
         label = "OK" if item.get("ok") else "FAIL"
         name = str(item.get("name") or "check")
         detail = str(item.get("detail") or "")
-        sys.stdout.write(f"[{label}] {name}: {detail}\n")
+        color = "success" if item.get("ok") else "error"
+        status = _style(f"[{label}]", color=color, bold=True)
+        sys.stdout.write(f"{status} {_style(name, color='label', bold=True)}: {detail}\n")
 
 
 def _emit_migrate(payload: dict[str, Any]) -> None:
     mode = "Migration plan" if payload.get("dry_run") else "Migration"
-    sys.stdout.write(f"{mode}\n\n")
+    _write_title(mode, blank_after=True)
     _emit_field("schema", payload.get("schema_version"), indent=0)
     _emit_field("notes", payload.get("total"), indent=0)
     _emit_field("planned", payload.get("planned"), indent=0)
@@ -188,14 +191,15 @@ def _emit_migrate(payload: dict[str, Any]) -> None:
         if item.get("status") in {"future", "invalid"}
     ]
     if blocked:
-        sys.stdout.write("\nBlocked notes:\n")
+        sys.stdout.write("\n")
+        _write_section_title("Blocked notes:", color="error")
         for item in blocked:
             errors = "; ".join(str(value) for value in item.get("errors") or [])
             sys.stdout.write(f"  {item.get('path')}: {errors}\n")
 
 
 def _emit_paths(payload: dict[str, Any]) -> None:
-    sys.stdout.write("Paths\n\n")
+    _write_title("Paths", blank_after=True)
     for key in (
         "config_path",
         "root_dir",
@@ -211,10 +215,11 @@ def _emit_paths(payload: dict[str, Any]) -> None:
 
 
 def _emit_rebuild_index(payload: dict[str, Any]) -> None:
-    sys.stdout.write("Index rebuilt\n\n")
+    _write_title("Index rebuilt", blank_after=True)
     _emit_field("index", payload.get("index_path"), indent=0)
     _emit_field("updated", payload.get("updated"), indent=0)
-    sys.stdout.write("\nCounts:\n")
+    sys.stdout.write("\n")
+    _write_section_title("Counts:")
     counts = payload.get("counts") or {}
     for key in ("tasks", "chains", "projects"):
         _emit_field(key, counts.get(key), indent=2)
@@ -225,32 +230,34 @@ def _emit_stats(payload: dict[str, Any]) -> None:
     ops = payload.get("ops") or {}
     index = payload.get("index") or {}
 
-    sys.stdout.write("Stats\n\n")
-    sys.stdout.write("Notes:\n")
+    _write_title("Stats", blank_after=True)
+    _write_section_title("Notes:")
     for key in ("tasks", "chains", "projects"):
         _emit_field(key, notes.get(key), indent=2)
 
-    sys.stdout.write("\nOps:\n")
+    sys.stdout.write("\n")
+    _write_section_title("Ops:")
     _emit_field("path", ops.get("path"), indent=2)
     _emit_field("entries", ops.get("entries"), indent=2)
     _emit_field("event_add", ops.get("event_add"), indent=2)
     _emit_field("latest", ops.get("latest"), indent=2)
 
-    sys.stdout.write("\nIndex:\n")
+    sys.stdout.write("\n")
+    _write_section_title("Index:")
     _emit_field("path", index.get("path"), indent=2)
     _emit_field("exists", "yes" if index.get("exists") else "no", indent=2)
     _emit_field("valid", "yes" if index.get("valid") else "no", indent=2)
     _emit_field("stale", "yes" if index.get("stale") else "no", indent=2)
     _emit_field("updated", index.get("updated"), indent=2)
     counts = index.get("counts") or {}
-    sys.stdout.write("  counts:\n")
+    _write_section_title("counts:", indent=2)
     for key in ("tasks", "chains", "projects"):
         _emit_field(key, counts.get(key), indent=4)
 
 
 def _emit_project_list(payload: dict[str, Any]) -> None:
     items = payload.get("projects") or []
-    sys.stdout.write("Projects\n\n")
+    _write_title("Projects", blank_after=True)
     if not items:
         sys.stdout.write("(none)\n")
         return
@@ -258,7 +265,7 @@ def _emit_project_list(payload: dict[str, Any]) -> None:
         project = str(item.get("project") or "")
         updated = str(item.get("updated") or "").strip() or "unknown"
         path = str(item.get("path") or "")
-        sys.stdout.write(f"{project}\n")
+        sys.stdout.write(f"{_style(project, color='identity', bold=True)}\n")
         _emit_field("updated", updated, indent=2)
         _emit_field("path", path, indent=2)
         sys.stdout.write("\n")
@@ -266,7 +273,7 @@ def _emit_project_list(payload: dict[str, Any]) -> None:
 
 def _emit_notes(payload: dict[str, Any]) -> None:
     items = payload.get("notes") or []
-    sys.stdout.write("Notes\n\n")
+    _write_title("Notes", blank_after=True)
     if not items:
         sys.stdout.write("(none)\n")
         return
@@ -281,7 +288,7 @@ def _emit_notes(payload: dict[str, Any]) -> None:
             heading += f" {ident}"
         if title and title != ident:
             heading += f"  {title}"
-        sys.stdout.write(f"{heading}\n")
+        sys.stdout.write(f"{_style(heading, color='identity', bold=True)}\n")
         project = str(item.get("project") or "").strip()
         chain_id = str(item.get("chain_id") or "").strip()
         if project:
@@ -298,7 +305,7 @@ def _emit_notes(payload: dict[str, Any]) -> None:
 
 def _emit_trash_list(payload: dict[str, Any]) -> None:
     items = payload.get("items") or []
-    sys.stdout.write("Trash\n\n")
+    _write_title("Trash", blank_after=True)
     if not items:
         sys.stdout.write("(empty)\n")
         return
@@ -308,16 +315,15 @@ def _emit_trash_list(payload: dict[str, Any]) -> None:
             or str(item.get("chain_id") or "").strip()
             or str(item.get("project") or "").strip()
         )
-        sys.stdout.write(
-            f"{item.get('id')}. {item.get('kind')} {ident}  {item.get('deleted_at') or ''}\n"
-        )
+        item_id = _style(str(item.get("id") or ""), color="identity", bold=True)
+        sys.stdout.write(f"{item_id}. {item.get('kind')} {ident}  {item.get('deleted_at') or ''}\n")
         _emit_field("from", item.get("path"), indent=2)
         _emit_field("trash", item.get("trash_path"), indent=2)
         sys.stdout.write("\n")
 
 
 def _emit_trash_restore(payload: dict[str, Any]) -> None:
-    sys.stdout.write("Restored note from trash\n")
+    _write_status("Restored note from trash")
     _emit_field("kind", payload.get("kind"), indent=0)
     _emit_field("to", payload.get("path"), indent=0)
     _emit_field("from", payload.get("trash_path"), indent=0)
@@ -327,9 +333,9 @@ def _emit_report_recent(payload: dict[str, Any]) -> None:
     items = payload.get("items") or []
     limit = payload.get("limit")
     kinds = payload.get("kinds") or []
-    sys.stdout.write(f"Recent (limit={limit})\n")
+    _write_title(f"Recent (limit={limit})")
     if kinds:
-        sys.stdout.write(f"Kinds: {', '.join(kinds)}\n")
+        _write_inline_field("Kinds", ", ".join(kinds))
     sys.stdout.write("\n")
     if not items:
         sys.stdout.write("(none)\n")
@@ -339,12 +345,12 @@ def _emit_report_recent(payload: dict[str, Any]) -> None:
         kind = str(item.get("kind") or "item")
         ident = _recent_identity(item)
         summary = _recent_summary(item)
-        line = f"{ts}  {kind}"
+        sys.stdout.write(f"{_style(ts, color='muted')}  {_style(kind, color='label')}")
         if ident:
-            line += f"  {ident}"
+            sys.stdout.write(f"  {_style(ident, color='identity', bold=True)}")
         if summary:
-            line += f"  {summary}"
-        sys.stdout.write(f"{line}\n")
+            sys.stdout.write(f"  {summary}")
+        sys.stdout.write("\n")
 
 
 def _emit_note_like(command: str, payload: dict[str, Any]) -> None:
@@ -354,10 +360,10 @@ def _emit_note_like(command: str, payload: dict[str, Any]) -> None:
         "chain": "chain note",
         "project": "project note",
     }[command]
-    sys.stdout.write(f"{action} {kind}: {payload['path']}\n")
+    _write_status(f"{action} {kind}: {payload['path']}")
     post_save_action = payload.get("post_save_action") or {}
     if post_save_action.get("action") == "complete-task":
-        sys.stdout.write(f"Completed task: {post_save_action.get('task_short_uuid')}\n")
+        _write_status(f"Completed task: {post_save_action.get('task_short_uuid')}")
 
 
 def _emit_append_like(command: str, payload: dict[str, Any]) -> None:
@@ -368,7 +374,7 @@ def _emit_append_like(command: str, payload: dict[str, Any]) -> None:
         "project-append": "project note",
     }[command]
     prefix = "Created and appended to" if created else "Appended to"
-    sys.stdout.write(f"{prefix} {kind}: {payload['path']}\n")
+    _write_status(f"{prefix} {kind}: {payload['path']}")
 
 
 def _emit_delete(command: str, payload: dict[str, Any]) -> None:
@@ -379,17 +385,17 @@ def _emit_delete(command: str, payload: dict[str, Any]) -> None:
     }[command]
     original = str(payload.get("path") or "")
     trash = str(payload.get("trash_path") or "")
-    sys.stdout.write(f"Moved {kind} to trash\n")
+    _write_status(f"Moved {kind} to trash", color="warning")
     _emit_field("from", original, indent=0)
     _emit_field("to", trash, indent=0)
 
 
 def _emit_project_show(payload: dict[str, Any]) -> None:
-    sys.stdout.write(f"Project {payload['project']}\n\n")
+    _write_title(f"Project {payload['project']}", blank_after=True)
     note = payload.get("note") or {}
     exists = bool(note.get("exists"))
     path = note.get("path")
-    sys.stdout.write("Note:\n")
+    _write_section_title("Note:")
     if not exists:
         if path:
             _emit_field("exists", "no", indent=2)
@@ -408,9 +414,9 @@ def _emit_project_show(payload: dict[str, Any]) -> None:
 
 
 def _emit_project_report(payload: dict[str, Any]) -> None:
-    sys.stdout.write(f"Project {payload.get('project')}\n\n")
+    _write_title(f"Project {payload.get('project')}", blank_after=True)
     note = payload.get("note") or {}
-    sys.stdout.write("Project note:\n")
+    _write_section_title("Project note:")
     if not note.get("exists"):
         sys.stdout.write("  (none)\n")
     else:
@@ -423,7 +429,8 @@ def _emit_project_report(payload: dict[str, Any]) -> None:
         if headings:
             _emit_field("headings", ", ".join(str(item) for item in headings), indent=2)
 
-    sys.stdout.write("\nTasks:\n")
+    sys.stdout.write("\n")
+    _write_section_title("Tasks:")
     tasks = payload.get("tasks") or []
     if not tasks:
         sys.stdout.write("  (none)\n")
@@ -438,7 +445,8 @@ def _emit_project_report(payload: dict[str, Any]) -> None:
             line += f"  notes: {','.join(note_labels)}"
         sys.stdout.write(line + "\n")
 
-    sys.stdout.write("\nRecent:\n")
+    sys.stdout.write("\n")
+    _write_section_title("Recent:")
     recent = payload.get("recent") or []
     if not recent:
         sys.stdout.write("  (none)\n")
@@ -452,7 +460,8 @@ def _emit_project_report(payload: dict[str, Any]) -> None:
             line += f"  {summary}"
         sys.stdout.write(line + "\n")
 
-    sys.stdout.write("\nChains:\n")
+    sys.stdout.write("\n")
+    _write_section_title("Chains:")
     chains = payload.get("chains") or []
     if not chains:
         sys.stdout.write("  (none)\n")
@@ -464,7 +473,8 @@ def _emit_project_report(payload: dict[str, Any]) -> None:
         sys.stdout.write(line + "\n")
 
     timelog = payload.get("timelog") or {}
-    sys.stdout.write(f"\nTime ({timelog.get('period') or 'week'}):\n")
+    sys.stdout.write("\n")
+    _write_section_title(f"Time ({timelog.get('period') or 'week'}):")
     sys.stdout.write(
         f"  {timelog.get('total') or '0m'} across {timelog.get('entry_count', 0)} entries\n"
     )
@@ -475,8 +485,8 @@ def _emit_cat(payload: dict[str, Any]) -> None:
 
 
 def _emit_add(payload: dict[str, Any]) -> None:
-    sys.stdout.write(
-        f"Added event to task {payload['task_short_uuid']}: {payload['annotation']}\n"
+    _write_status(
+        f"Added event to task {payload['task_short_uuid']}: {payload['annotation']}"
     )
 
 
@@ -490,7 +500,7 @@ def _emit_add_to(payload: dict[str, Any]) -> None:
         identity = str(payload.get("project") or "")
     else:
         identity = str(payload.get("task_short_uuid") or "")
-    sys.stdout.write(f"Added entry to {kind} note {identity}\n")
+    _write_status(f"Added entry to {kind} note {identity}")
     _emit_field("heading", heading, indent=0)
     _emit_field("match", match, indent=0)
     _emit_field("path", path, indent=0)
@@ -499,9 +509,14 @@ def _emit_add_to(payload: dict[str, Any]) -> None:
 
 def _emit_timelog_ingest(payload: dict[str, Any]) -> None:
     if not payload.get("written"):
-        sys.stdout.write(f"Time log skipped: {payload.get('reason') or 'no entry'}\n")
+        _write_status(
+            f"Time log skipped: {payload.get('reason') or 'no entry'}",
+            color="warning",
+        )
         return
-    sys.stdout.write(f"Time log written to {payload.get('note_kind')} note: {payload.get('path')}\n")
+    _write_status(
+        f"Time log written to {payload.get('note_kind')} note: {payload.get('path')}"
+    )
     _emit_field("task", payload.get("task_short_uuid"), indent=0)
     chain_id = str(payload.get("chain_id") or "").strip()
     if chain_id:
@@ -511,9 +526,14 @@ def _emit_timelog_ingest(payload: dict[str, Any]) -> None:
 
 def _emit_timelog_start(payload: dict[str, Any]) -> None:
     if payload.get("already_started"):
-        sys.stdout.write(f"Jot timelog session already pending for task {payload.get('task_short_uuid')}\n")
+        _write_status(
+            f"Jot timelog session already pending for task {payload.get('task_short_uuid')}",
+            color="warning",
+        )
     else:
-        sys.stdout.write(f"Started Jot timelog session for task {payload.get('task_short_uuid')}\n")
+        _write_status(
+            f"Started Jot timelog session for task {payload.get('task_short_uuid')}"
+        )
     _emit_field("started", payload.get("started"), indent=0)
     chain_id = str(payload.get("chain_id") or "").strip()
     if chain_id:
@@ -523,32 +543,42 @@ def _emit_timelog_start(payload: dict[str, Any]) -> None:
 def _emit_timelog_stop(payload: dict[str, Any]) -> None:
     _emit_timelog_ingest(payload)
     if payload.get("session_cleared"):
-        sys.stdout.write("Pending session cleared\n")
+        _write_status("Pending session cleared")
 
 
 def _emit_timelog_stop_all(payload: dict[str, Any]) -> None:
-    sys.stdout.write(f"Stopped {payload.get('count', 0)} pending timelog sessions\n")
+    _write_status(f"Stopped {payload.get('count', 0)} pending timelog sessions")
     errors = payload.get("errors") or []
     if errors:
-        sys.stdout.write(f"Errors: {len(errors)}\n")
+        _write_section_title(f"Errors: {len(errors)}", color="error")
         for item in errors:
-            sys.stdout.write(f"  {item.get('task_uuid')}: {item.get('error')}\n")
+            sys.stdout.write(
+                f"  {_style(str(item.get('task_uuid') or ''), color='identity')}: "
+                f"{_style(str(item.get('error') or ''), color='error')}\n"
+            )
     items = payload.get("items") or []
     for item in items:
         status = "written" if item.get("written") else str(item.get("reason") or "skipped")
-        sys.stdout.write(f"  {item.get('task_short_uuid')}  {item.get('duration_minutes')}m  {status}\n")
+        status_color = "success" if item.get("written") else "warning"
+        identity = _style(str(item.get("task_short_uuid") or ""), color="identity", bold=True)
+        sys.stdout.write(
+            f"  {identity}  {item.get('duration_minutes')}m  "
+            f"{_style(status, color=status_color)}\n"
+        )
 
 
 def _emit_timelog_pending(payload: dict[str, Any]) -> None:
     sessions = payload.get("sessions") or []
-    sys.stdout.write("Pending timelog sessions\n\n")
+    _write_title("Pending timelog sessions", blank_after=True)
     if not sessions:
         sys.stdout.write("(none)\n")
         return
     for item in sessions:
         elapsed = str(item.get("elapsed") or "").strip()
         suffix = f"  elapsed {elapsed}" if elapsed else ""
-        sys.stdout.write(f"{item.get('task_short_uuid')}  started {item.get('started')}{suffix}\n")
+        identity = _style(str(item.get("task_short_uuid") or ""), color="identity", bold=True)
+        started = _style(str(item.get("started") or ""), color="muted")
+        sys.stdout.write(f"{identity}  started {started}{suffix}\n")
         description = str(item.get("description") or "").strip()
         if description:
             _emit_field("description", description, indent=2)
@@ -561,57 +591,64 @@ def _emit_timelog_pending(payload: dict[str, Any]) -> None:
 
 
 def _emit_timelog_cancel(payload: dict[str, Any]) -> None:
-    sys.stdout.write(f"Cancelled Jot timelog session for task {payload.get('task_short_uuid')}\n")
+    _write_status(
+        f"Cancelled Jot timelog session for task {payload.get('task_short_uuid')}",
+        color="warning",
+    )
     _emit_field("started", payload.get("started"), indent=0)
 
 
 def _emit_timelog_add(payload: dict[str, Any]) -> None:
-    sys.stdout.write(f"Added time log {payload.get('timelog_key')} for task {payload.get('task_short_uuid')}\n")
+    _write_status(
+        f"Added time log {payload.get('timelog_key')} for task {payload.get('task_short_uuid')}"
+    )
     _emit_field("duration", f"{payload.get('duration_minutes')} minutes", indent=0)
     _emit_field("path", payload.get("path"), indent=0)
 
 
 def _emit_timelog_amend(payload: dict[str, Any]) -> None:
-    sys.stdout.write(f"Amended time log {payload.get('timelog_key')}\n")
+    _write_status(f"Amended time log {payload.get('timelog_key')}")
     _emit_field("new key", payload.get("new_timelog_key"), indent=0)
     _emit_field("duration", f"{payload.get('duration_minutes')} minutes", indent=0)
     _emit_field("archive", payload.get("archive_path"), indent=0)
 
 
 def _emit_timelog_delete(payload: dict[str, Any]) -> None:
-    sys.stdout.write(f"Deleted time log {payload.get('timelog_key')}\n")
+    _write_status(f"Deleted time log {payload.get('timelog_key')}", color="warning")
     _emit_field("archive", payload.get("archive_path"), indent=0)
 
 
 def _emit_timelog_trash(payload: dict[str, Any]) -> None:
     items = payload.get("items") or []
     if not items:
-        sys.stdout.write("No deleted time logs available for restoration.\n")
+        _write_status("No deleted time logs available for restoration.", color="muted")
         return
-    sys.stdout.write("Deleted time logs\n\n")
+    _write_title("Deleted time logs", blank_after=True)
     for item in items:
         identity = str(item.get("chain_id") or item.get("task_short_uuid") or "")
         project = str(item.get("project") or "").strip()
         suffix = f"  {project}" if project else ""
-        sys.stdout.write(
-            f"  #{item.get('id')}  {item.get('key')}  {item.get('duration')}  {identity}{suffix}\n"
-        )
+        item_id = _style(f"#{item.get('id')}", color="identity", bold=True)
+        key = _style(str(item.get("key") or ""), color="muted")
+        sys.stdout.write(f"  {item_id}  {key}  {item.get('duration')}  {identity}{suffix}\n")
         _emit_field("archived", item.get("archived_at"), indent=4)
 
 
 def _emit_timelog_restore(payload: dict[str, Any]) -> None:
-    sys.stdout.write(f"Restored time log {payload.get('timelog_key')}\n")
+    _write_status(f"Restored time log {payload.get('timelog_key')}")
     _emit_field("path", payload.get("path"), indent=0)
 
 
 def _emit_timelog_report(payload: dict[str, Any]) -> None:
     period = str(payload.get("period") or "all")
-    sys.stdout.write(f"Timelog report: {period}\n\n")
-    sys.stdout.write(f"Total: {payload.get('total')} across {payload.get('entry_count', 0)} entries\n")
+    _write_title(f"Timelog report: {period}", blank_after=True)
+    label = _style("Total", color="label", bold=True)
+    total = _style(str(payload.get("total") or "0m"), color="success", bold=True)
+    sys.stdout.write(f"{label}: {total} across {payload.get('entry_count', 0)} entries\n")
     filters = payload.get("filters") if isinstance(payload.get("filters"), dict) else {}
     active_filters = [f"{key}={value}" for key, value in filters.items() if value]
     if active_filters:
-        sys.stdout.write(f"Filters: {', '.join(active_filters)}\n")
+        _write_inline_field("Filters", ", ".join(active_filters))
     _emit_time_log_group("By day", payload.get("by_day") or [])
     _emit_time_log_group("By project", payload.get("by_project") or [])
     _emit_time_log_group("By chain", payload.get("by_chain") or [])
@@ -644,7 +681,8 @@ def _emit_timelog_report_csv(payload: dict[str, Any]) -> None:
 
 
 def _emit_time_log_group(title: str, items: list[object]) -> None:
-    sys.stdout.write(f"\n{title}\n")
+    sys.stdout.write("\n")
+    _write_section_title(title)
     if not items:
         sys.stdout.write("  (none)\n")
         return
@@ -654,11 +692,14 @@ def _emit_time_log_group(title: str, items: list[object]) -> None:
         name = str(raw.get("name") or "(unknown)")
         duration = str(raw.get("duration") or "")
         count = raw.get("entry_count", 0)
-        sys.stdout.write(f"  {name:<24} {duration:>8}  {count} entries\n")
+        styled_name = _style(f"{name:<24}", color="identity")
+        styled_duration = _style(f"{duration:>8}", color="success", bold=True)
+        sys.stdout.write(f"  {styled_name} {styled_duration}  {count} entries\n")
 
 
 def _emit_time_log_details(items: list[object]) -> None:
-    sys.stdout.write("\nDetails\n")
+    sys.stdout.write("\n")
+    _write_section_title("Details")
     if not items:
         sys.stdout.write("  (none)\n")
         return
@@ -674,12 +715,17 @@ def _emit_time_log_details(items: list[object]) -> None:
         if chain:
             suffix += f"  chain {chain}"
         key = str(raw.get("key") or "").strip()
-        key_prefix = f"[{key}]  " if key else ""
-        sys.stdout.write(f"  {key_prefix}{raw.get('day') or ''}  {duration:>8}  {timerange}  {project}{suffix}\n")
+        key_prefix = f"{_style(f'[{key}]', color='muted')}  " if key else ""
+        day = _style(str(raw.get("day") or ""), color="muted")
+        duration_text = _style(f"{duration:>8}", color="success", bold=True)
+        project_text = _style(project, color="identity")
+        sys.stdout.write(
+            f"  {key_prefix}{day}  {duration_text}  {timerange}  {project_text}{suffix}\n"
+        )
 
 
 def _emit_headings(payload: dict[str, Any]) -> None:
-    sys.stdout.write(f"Headings in {payload.get('note_kind')} note\n")
+    _write_title(f"Headings in {payload.get('note_kind')} note")
     _emit_field("path", payload.get("path"), indent=0)
     headings = payload.get("headings") or []
     if not headings:
@@ -690,7 +736,7 @@ def _emit_headings(payload: dict[str, Any]) -> None:
         level = int(item.get("level") or 1)
         title = str(item.get("title") or "")
         line = item.get("line")
-        sys.stdout.write(f"{'#' * level} {title}")
+        sys.stdout.write(_style(f"{'#' * level} {title}", color="section", bold=True))
         if line:
             sys.stdout.write(f"  (line {line})")
         sys.stdout.write("\n")
@@ -704,7 +750,7 @@ def _emit_section(payload: dict[str, Any]) -> None:
 
 def _emit_resources(payload: dict[str, Any]) -> None:
     kind = str(payload.get("note_kind") or "note")
-    sys.stdout.write(f"Resources in {kind} note\n")
+    _write_title(f"Resources in {kind} note")
     _emit_field("path", payload.get("path"), indent=0)
     resources = payload.get("resources") or []
     if not resources:
@@ -721,15 +767,21 @@ def _emit_resources(payload: dict[str, Any]) -> None:
             suffix += f" {status}"
         prefix = f"{item.get('id')}. "
         if label and label != target:
-            sys.stdout.write(f"{prefix}{label}  {suffix}\n")
+            sys.stdout.write(
+                f"{_style(prefix + label, color='identity', bold=True)}  "
+                f"{_style(suffix, color=_resource_status_color(status))}\n"
+            )
             _emit_field("target", target, indent=3)
         else:
-            sys.stdout.write(f"{prefix}{target}  {suffix}\n")
+            sys.stdout.write(
+                f"{_style(prefix + target, color='identity')}  "
+                f"{_style(suffix, color=_resource_status_color(status))}\n"
+            )
 
 
 def _emit_attach(payload: dict[str, Any]) -> None:
     resource = payload.get("resource") or {}
-    sys.stdout.write(f"Attached resource to {payload.get('note_kind')} note\n")
+    _write_status(f"Attached resource to {payload.get('note_kind')} note")
     _emit_field("path", payload.get("path"), indent=0)
     _emit_field("id", resource.get("id"), indent=0)
     _emit_field("label", resource.get("label"), indent=0)
@@ -738,7 +790,7 @@ def _emit_attach(payload: dict[str, Any]) -> None:
 
 def _emit_open_resource(payload: dict[str, Any]) -> None:
     resource = payload.get("resource") or {}
-    sys.stdout.write("Opened resource\n")
+    _write_status("Opened resource")
     _emit_field("target", resource.get("target"), indent=0)
     opener = payload.get("opener") or []
     if opener:
@@ -747,7 +799,10 @@ def _emit_open_resource(payload: dict[str, Any]) -> None:
 
 def _emit_detach_resource(payload: dict[str, Any]) -> None:
     resource = payload.get("resource") or {}
-    sys.stdout.write(f"Detached resource from {payload.get('note_kind')} note\n")
+    _write_status(
+        f"Detached resource from {payload.get('note_kind')} note",
+        color="warning",
+    )
     _emit_field("path", payload.get("path"), indent=0)
     _emit_field("id", resource.get("id"), indent=0)
     _emit_field("target", resource.get("target"), indent=0)
@@ -762,7 +817,7 @@ def _emit_progress(payload: dict[str, Any]) -> None:
     tracks = payload.get("tracks") or []
     kind = str(payload.get("note_kind") or "note")
     operation = str(payload.get("operation") or "show")
-    sys.stdout.write(f"Progress for {kind} note\n")
+    _write_title(f"Progress for {kind} note")
     _emit_field("path", payload.get("path"), indent=0)
     _emit_field("operation", operation, indent=0)
     selected_track = str(payload.get("track") or "").strip()
@@ -790,7 +845,7 @@ def _emit_progress(payload: dict[str, Any]) -> None:
 def _emit_progress_items(payload: dict[str, Any], items: list[object]) -> None:
     kind = str(payload.get("note_kind") or "note")
     selected_track = str(payload.get("track") or "").strip()
-    sys.stdout.write(f"Progress for {len(items)} {kind} notes\n")
+    _write_title(f"Progress for {len(items)} {kind} notes")
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -801,7 +856,7 @@ def _emit_progress_items(payload: dict[str, Any], items: list[object]) -> None:
             or item.get("project")
             or reference
         )
-        sys.stdout.write(f"\n{_style(str(identity), bold=True)}")
+        sys.stdout.write(f"\n{_style(str(identity), color='identity', bold=True)}")
         if reference and reference != str(identity):
             sys.stdout.write(f"  ({reference})")
         sys.stdout.write("\n")
@@ -854,7 +909,7 @@ def _emit_progress_visual(progress: dict[str, Any]) -> None:
     percentage_text = f"{percentage}%" if percentage is not None else "no percentage"
     status = str(progress.get("status") or "").strip()
 
-    sys.stdout.write(f"  {_style(track, bold=True)}\n")
+    sys.stdout.write(f"  {_style(track, color='identity', bold=True)}\n")
     sys.stdout.write(f"  {_progress_bar(percentage)}  {_style(percentage_text, bold=True)}\n")
     sys.stdout.write(f"  {measurement}")
     if status:
@@ -877,7 +932,7 @@ def _emit_progress_analysis(payload: dict[str, Any], *, track: str | None = None
             and (not selected_track or str(item.get("track") or "default").casefold() == selected_track.casefold())
         ]
         if filtered:
-            sys.stdout.write("  Trends\n")
+            _write_section_title("Trends", indent=2)
             for item in filtered:
                 _emit_progress_trend(item)
     if isinstance(history, list) and history:
@@ -887,7 +942,7 @@ def _emit_progress_analysis(payload: dict[str, Any], *, track: str | None = None
             and (not selected_track or str(item.get("track") or "default").casefold() == selected_track.casefold())
         ]
         if filtered_history:
-            sys.stdout.write("  Recent history\n")
+            _write_section_title("Recent history", indent=2)
             for item in filtered_history:
                 _emit_progress_history_entry(item)
             sys.stdout.write("\n")
@@ -957,8 +1012,14 @@ def _progress_color(percentage: Decimal) -> str:
     return "red"
 
 
-def _style(text: str, *, color: str = "", bold: bool = False) -> str:
-    if not _use_color():
+def _style(
+    text: str,
+    *,
+    color: str = "",
+    bold: bool = False,
+    stream: Any = None,
+) -> str:
+    if not _use_color(stream=stream):
         return text
     codes = []
     if bold:
@@ -970,6 +1031,15 @@ def _style(text: str, *, color: str = "", bold: bool = False) -> str:
         "yellow_green": "38;5;154",
         "bright_green": "38;2;52;190;90",
         "green": "38;2;0;255;70",
+        "title": "38;5;45",
+        "section": "38;5;75",
+        "label": "38;5;109",
+        "identity": "38;5;220",
+        "path": "38;5;117",
+        "muted": "38;5;244",
+        "success": "38;5;42",
+        "warning": "38;5;214",
+        "error": "38;5;196",
     }
     if color in color_codes:
         codes.append(color_codes[color])
@@ -978,19 +1048,52 @@ def _style(text: str, *, color: str = "", bold: bool = False) -> str:
     return f"\033[{';'.join(codes)}m{text}\033[0m"
 
 
-def _use_color() -> bool:
+def _use_color(*, stream: Any = None) -> bool:
     if _COLOR_MODE == "never" or "NO_COLOR" in os.environ:
         return False
     if _COLOR_MODE == "always":
         return True
-    return sys.stdout.isatty()
+    output = stream if stream is not None else sys.stdout
+    return bool(output.isatty())
+
+
+def _write_title(text: str, *, blank_after: bool = False) -> None:
+    suffix = "\n\n" if blank_after else "\n"
+    sys.stdout.write(_style(text, color="title", bold=True) + suffix)
+
+
+def _write_section_title(
+    text: str,
+    *,
+    indent: int = 0,
+    color: str = "section",
+) -> None:
+    sys.stdout.write(" " * indent + _style(text, color=color, bold=True) + "\n")
+
+
+def _write_status(text: str, *, color: str = "success") -> None:
+    sys.stdout.write(_style(text, color=color, bold=True) + "\n")
+
+
+def _write_inline_field(label: str, value: Any) -> None:
+    styled_label = _style(label, color="label", bold=True)
+    sys.stdout.write(f"{styled_label}: {value}\n")
+
+
+def _resource_status_color(status: str) -> str:
+    normalized = str(status or "").strip().casefold()
+    if normalized == "exists":
+        return "success"
+    if normalized in {"missing", "invalid"}:
+        return "error"
+    return "muted"
 
 
 def _emit_list(payload: dict[str, Any]) -> None:
     _emit_show(payload)
     events = payload.get("events") or []
     sys.stdout.write("\n")
-    sys.stdout.write("Events:\n")
+    _write_section_title("Events:")
     if not events:
         sys.stdout.write("  (none)\n")
         return
@@ -1003,7 +1106,7 @@ def _emit_list(payload: dict[str, Any]) -> None:
 def _emit_show(payload: dict[str, Any]) -> None:
     task = payload.get("task") or {}
     notes = payload.get("notes") or {}
-    sys.stdout.write(f"Task {task.get('short_uuid')}\n")
+    _write_title(f"Task {task.get('short_uuid')}")
     _emit_field("description", task.get("description"), indent=0)
     project = task.get("project")
     if project:
@@ -1012,14 +1115,14 @@ def _emit_show(payload: dict[str, Any]) -> None:
     if tags:
         _emit_field("tags", ", ".join(tags), indent=0)
     sys.stdout.write("\n")
-    sys.stdout.write("Notes:\n")
+    _write_section_title("Notes:")
     _emit_note_ref("task", notes.get("task") or {})
     _emit_note_ref("chain", notes.get("chain") or {})
     _emit_note_ref("project", notes.get("project") or {})
     nautical = payload.get("nautical") or {}
     if nautical:
         sys.stdout.write("\n")
-        sys.stdout.write("Nautical:\n")
+        _write_section_title("Nautical:")
         for key, value in sorted(nautical.items()):
             _emit_field(key, value, indent=2)
 
@@ -1032,7 +1135,7 @@ def _emit_export(payload: dict[str, Any]) -> None:
         _emit_field("exported", exported_at, indent=0)
         sys.stdout.write("\n")
     events = payload.get("events") or []
-    sys.stdout.write("Events:\n")
+    _write_section_title("Events:")
     if not events:
         sys.stdout.write("  (none)\n")
         return
@@ -1043,39 +1146,46 @@ def _emit_export(payload: dict[str, Any]) -> None:
 
 
 def _emit_search(payload: dict[str, Any]) -> None:
-    sys.stdout.write(f"Query: {payload.get('query')}\n")
+    _write_inline_field("Query", payload.get("query"))
     kinds = payload.get("kinds") or []
     if kinds:
-        sys.stdout.write(f"Kinds: {', '.join(kinds)}\n")
+        _write_inline_field("Kinds", ", ".join(kinds))
     project = str(payload.get("project") or "").strip()
     if project:
-        sys.stdout.write(f"Project: {project}\n")
+        _write_inline_field("Project", project)
     chain_id = str(payload.get("chain_id") or "").strip()
     if chain_id:
-        sys.stdout.write(f"Chain: {chain_id}\n")
+        _write_inline_field("Chain", chain_id)
     note_hits = payload.get("notes") or []
     event_hits = payload.get("events") or []
-    sys.stdout.write("Notes:\n")
+    _write_section_title("Notes:")
     if not note_hits:
         sys.stdout.write("  (none)\n")
     else:
         for item in note_hits:
-            sys.stdout.write(f"  [{item.get('kind')}] {item.get('path')}\n")
+            kind = _style(f"[{item.get('kind')}]", color="identity", bold=True)
+            path = _style(str(item.get("path") or ""), color="path")
+            sys.stdout.write(f"  {kind} {path}\n")
             match = item.get("match") or ""
             if match:
                 sys.stdout.write(f"    {match}\n")
-    sys.stdout.write("Events:\n")
+    _write_section_title("Events:")
     if not event_hits:
         sys.stdout.write("  (none)\n")
         return
     for item in event_hits:
-        sys.stdout.write(
-            f"  [{item.get('task_short_uuid')}] {item.get('annotation')} ({item.get('ts')})\n"
+        identity = _style(
+            f"[{item.get('task_short_uuid')}]",
+            color="identity",
+            bold=True,
         )
+        timestamp = _style(f"({item.get('ts')})", color="muted")
+        sys.stdout.write(f"  {identity} {item.get('annotation')} {timestamp}\n")
 
 
 def warn(message: str) -> None:
-    sys.stderr.write(f"[jot] {message}\n")
+    prefix = _style("[jot]", color="error", bold=True, stream=sys.stderr)
+    sys.stderr.write(f"{prefix} {message}\n")
 
 
 def _emit_note_ref(label: str, item: dict[str, Any]) -> None:
@@ -1096,7 +1206,60 @@ def _emit_note_ref(label: str, item: dict[str, Any]) -> None:
 def _emit_field(label: str, value: Any, *, indent: int = 0, width: int = 11) -> None:
     pad = " " * indent
     text = "" if value is None else str(value)
-    sys.stdout.write(f"{pad}{label:<{width}}: {text}\n")
+    styled_label = _style(f"{label:<{width}}", color="label", bold=True)
+    color = _field_value_color(label, text)
+    styled_value = _style(text, color=color) if color else text
+    sys.stdout.write(f"{pad}{styled_label}: {styled_value}\n")
+
+
+def _field_value_color(label: str, value: str) -> str:
+    normalized_label = str(label or "").strip().casefold()
+    normalized_value = str(value or "").strip().casefold()
+    if normalized_label in {
+        "path",
+        "from",
+        "to",
+        "trash",
+        "target",
+        "expected",
+        "archive",
+        "backup",
+        "config_path",
+        "root_dir",
+        "trash_dir",
+        "tasks_dir",
+        "chains_dir",
+        "projects_dir",
+        "templates_dir",
+        "index_path",
+        "ops_path",
+    }:
+        return "path"
+    if normalized_label in {
+        "id",
+        "task",
+        "chain",
+        "project",
+        "key",
+        "new key",
+        "track",
+    }:
+        return "identity"
+    if normalized_label in {
+        "started",
+        "stopped",
+        "created",
+        "updated",
+        "latest",
+        "exported",
+        "archived",
+    }:
+        return "muted"
+    if normalized_value in {"yes", "ok", "written", "active", "completed"}:
+        return "success"
+    if normalized_value in {"no", "none", "(none)", "(n/a)", "unknown"}:
+        return "muted"
+    return ""
 
 
 def _recent_identity(item: dict[str, Any]) -> str:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import io
 import json
 import os
 import re
@@ -21,8 +22,14 @@ from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from jot_core.editor import colorize_diff, note_diff
 from jot_core.frontmatter import atomic_write_text, parse_document, read_document, render_document, write_document
-from jot_core.models import AppConfig
-from jot_core.output import _progress_bar, _progress_color, _style
+from jot_core.models import AppConfig, CommandResult
+from jot_core.output import (
+    _progress_bar,
+    _progress_color,
+    _style,
+    configure_output,
+    emit_result,
+)
 from jot_core.progress import (
     adjust_note_progress,
     format_progress_summary,
@@ -518,6 +525,94 @@ class ProgressValueTests(unittest.TestCase):
         self.assertIn("\033[38;2;52;190;90m", near_complete)
         self.assertIn("\033[38;2;0;255;70m", complete)
         self.assertNotEqual(near_complete, complete)
+
+
+class OutputColorTests(unittest.TestCase):
+    def tearDown(self) -> None:
+        configure_output(color_mode="auto")
+
+    def _emit(self, result: CommandResult, *, json_mode: bool = False) -> str:
+        output = io.StringIO()
+        with mock.patch("sys.stdout", output):
+            emit_result(result, json_mode=json_mode)
+        return output.getvalue()
+
+    def test_human_output_uses_semantic_colors_when_forced(self) -> None:
+        configure_output(color_mode="always")
+        result = CommandResult(
+            command="show",
+            payload={
+                "task": {
+                    "short_uuid": "2d6d7d7d",
+                    "description": "Read book",
+                    "project": "reading",
+                },
+                "notes": {},
+            },
+        )
+
+        with mock.patch.dict(os.environ):
+            os.environ.pop("NO_COLOR", None)
+            output = self._emit(result)
+
+        self.assertIn("\033[1;38;5;45mTask 2d6d7d7d\033[0m", output)
+        self.assertIn("\033[1;38;5;109mdescription\033[0m", output)
+        self.assertIn("\033[38;5;220mreading\033[0m", output)
+
+    def test_color_can_be_disabled_and_no_color_takes_precedence(self) -> None:
+        result = CommandResult(command="paths", payload={"root_dir": "/tmp/jot"})
+        configure_output(color_mode="never")
+        self.assertNotIn("\033[", self._emit(result))
+
+        configure_output(color_mode="always")
+        with mock.patch.dict(os.environ, {"NO_COLOR": "1"}):
+            self.assertNotIn("\033[", self._emit(result))
+
+    def test_machine_readable_output_never_contains_color(self) -> None:
+        configure_output(color_mode="always")
+        payload = {"task": {"short_uuid": "2d6d7d7d"}}
+        json_output = self._emit(CommandResult(command="show", payload=payload), json_mode=True)
+        self.assertEqual(json.loads(json_output), payload)
+        self.assertNotIn("\033[", json_output)
+
+        csv_output = self._emit(
+            CommandResult(
+                command="timelog-report-csv",
+                payload={"entries": [{"key": "a1b2", "minutes": 30}]},
+            )
+        )
+        self.assertNotIn("\033[", csv_output)
+        self.assertEqual(list(csv.DictReader(csv_output.splitlines()))[0]["key"], "a1b2")
+
+    def test_color_styling_does_not_change_human_readable_text(self) -> None:
+        result = CommandResult(
+            command="timelog-report",
+            payload={
+                "period": "week",
+                "total": "1h 30m",
+                "entry_count": 2,
+                "filters": {"project": "reading"},
+                "by_day": [
+                    {
+                        "name": "2026-07-14",
+                        "duration": "1h 30m",
+                        "entry_count": 2,
+                    }
+                ],
+                "by_project": [],
+                "by_chain": [],
+                "by_task": [],
+            },
+        )
+        configure_output(color_mode="never")
+        plain = self._emit(result)
+
+        configure_output(color_mode="always")
+        with mock.patch.dict(os.environ):
+            os.environ.pop("NO_COLOR", None)
+            colored = self._emit(result)
+
+        self.assertEqual(re.sub(r"\033\[[0-9;]*m", "", colored), plain)
 
 
 class ServiceProgressRowTests(unittest.TestCase):

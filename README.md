@@ -237,6 +237,10 @@ python3 -m pip install -e '.[test]'
 python3 -m unittest discover -s tests -v
 ```
 
+CLI color follows the terminal automatically. Set `display.color` in
+`config-jot.toml` to `always` or `never` to override it; `NO_COLOR` always
+disables ANSI styling.
+
 ## Command Cheatsheet
 
 ```bash
