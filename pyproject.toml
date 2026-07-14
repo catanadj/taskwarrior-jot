@@ -16,6 +16,7 @@ dependencies = []
 
 [project.optional-dependencies]
 tui = ["textual>=0.47"]
+test = ["textual>=0.47"]
 
 [project.scripts]
 jot = "jot_core.cli:main"

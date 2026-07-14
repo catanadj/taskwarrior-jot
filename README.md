@@ -230,6 +230,13 @@ Useful keys:
 - `/`: search
 - `q`: quit
 
+Run the full automated suite, including the Textual pilot tests, with:
+
+```bash
+python3 -m pip install -e '.[test]'
+python3 -m unittest discover -s tests -v
+```
+
 ## Command Cheatsheet
 
 ```bash

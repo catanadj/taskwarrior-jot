@@ -164,7 +164,11 @@ def tui_actions_block(actions: list[str]) -> str:
     return "Next actions:\n" + "\n".join(f"  - {action}" for action in actions)
 
 
-def run_tui(service: JotService) -> int:
+def build_tui(
+    service: JotService,
+    *,
+    session_refresh_seconds: float | None = 60,
+) -> Any:
     try:
         from textual.app import App, ComposeResult
         from textual.containers import Horizontal, Vertical
@@ -994,6 +998,7 @@ def run_tui(service: JotService) -> int:
         def __init__(self, svc: JotService) -> None:
             super().__init__()
             self.svc = svc
+            self.session_refresh_seconds = session_refresh_seconds
             self.recent_rows: list[dict[str, Any]] = []
             self.task_all_rows: list[dict[str, Any]] = []
             self.task_rows: list[dict[str, Any]] = []
@@ -1175,7 +1180,11 @@ def run_tui(service: JotService) -> int:
             await self._refresh_projects_async()
             await self._refresh_notes_async()
             await self._refresh_time_async()
-            self.set_interval(60, self._refresh_time_sessions_async)
+            if self.session_refresh_seconds is not None:
+                self.set_interval(
+                    self.session_refresh_seconds,
+                    self._refresh_time_sessions_async,
+                )
             self._update_action_hints()
 
         async def action_refresh(self) -> None:
@@ -3234,6 +3243,10 @@ def run_tui(service: JotService) -> int:
         def _pretty_label(self, key: str) -> str:
             return str(key).replace("_", " ").capitalize()
 
-    app = JotTUI(service)
+    return JotTUI(service)
+
+
+def run_tui(service: JotService) -> int:
+    app = build_tui(service)
     app.run()
     return 0
