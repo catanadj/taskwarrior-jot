@@ -126,6 +126,9 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "timelog-report-csv":
         _emit_timelog_report_csv(payload)
         return
+    if command == "timew":
+        _emit_timewarrior(payload)
+        return
     if command == "headings":
         _emit_headings(payload)
         return
@@ -575,6 +578,45 @@ def _emit_timelog_stop_all(payload: dict[str, Any]) -> None:
             f"  {identity}  {item.get('duration_minutes')}m  "
             f"{_style(status, color=status_color)}\n"
         )
+
+
+def _emit_timewarrior(payload: dict[str, Any]) -> None:
+    operation = str(payload.get("operation") or "show")
+    if operation == "show":
+        _write_title("Timewarrior tags", blank_after=True)
+        _emit_field("task", payload.get("task_short_uuid"), indent=0)
+        if payload.get("chain_id"):
+            _emit_field("chain", payload.get("chain_id"), indent=0)
+        if payload.get("project"):
+            _emit_field("project", payload.get("project"), indent=0)
+        _emit_field("integration", "enabled" if payload.get("enabled") else "disabled", indent=0)
+        tags = payload.get("tags") or []
+        _emit_field("tags", ", ".join(str(tag) for tag in tags) if tags else "(none)", indent=0)
+        source = payload.get("source")
+        if isinstance(source, dict):
+            _emit_field("source", f"{source.get('scope')} {source.get('reference')}", indent=0)
+            _emit_field("path", source.get("path"), indent=0)
+            if payload.get("explicitly_disabled"):
+                _emit_field("inheritance", "disabled by explicit empty tag list", indent=0)
+        else:
+            _emit_field("source", "(none)", indent=0)
+        return
+
+    scope = str(payload.get("scope") or "note")
+    reference = str(payload.get("reference") or "")
+    changed = bool(payload.get("changed"))
+    if operation == "set":
+        tags = ", ".join(str(tag) for tag in payload.get("tags") or [])
+        message = f"Set Timewarrior tags on {scope} {reference}: {tags}"
+    elif operation == "clear":
+        message = f"Disabled inherited Timewarrior tags on {scope} {reference}"
+    else:
+        message = f"Restored Timewarrior tag inheritance on {scope} {reference}"
+    if not changed:
+        message = f"No change: {message[0].lower()}{message[1:]}"
+    _write_status(message)
+    if payload.get("path"):
+        _emit_field("path", payload.get("path"), indent=0)
 
 
 def _emit_timelog_pending(payload: dict[str, Any]) -> None:

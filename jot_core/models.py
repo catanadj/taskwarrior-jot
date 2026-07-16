@@ -37,6 +37,7 @@ class AppConfig:
     color_mode: str
     default_format: str
     nautical_enabled: bool
+    timewarrior_enabled: bool
 
 
 @dataclass(slots=True)

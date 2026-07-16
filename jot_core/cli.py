@@ -86,6 +86,12 @@ from .timelog import (
     start_time_session,
     stop_time_session,
 )
+from .timewarrior import (
+    clear_timewarrior_tags,
+    inherit_timewarrior_tags,
+    resolve_timewarrior_tags,
+    set_timewarrior_tags,
+)
 from .trash import list_trash, restore_trash_item
 
 
@@ -132,6 +138,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  jot migrate --dry-run\n"
             "  jot stats\n"
             "  jot paths\n"
+            "  jot timew set chain 42 deep-work client-a\n"
+            "  jot timew show 42\n"
             "  jot tui\n"
             "\n"
             "Commands accept unique prefixes, for example: jot proj-r Finances.Expense"
@@ -560,6 +568,46 @@ def build_parser() -> argparse.ArgumentParser:
     timelog_report.add_argument("--details", action="store_true", help="show individual time log entries")
     timelog_report.add_argument("--csv", action="store_true", help="write detailed entries as CSV")
 
+    timew = subparsers.add_parser(
+        "timew",
+        help="manage note-based Timewarrior tags",
+        description=(
+            "Store Timewarrior tags in task, chain, or project note metadata and show the effective tags for a task."
+        ),
+    )
+    timew_subparsers = timew.add_subparsers(dest="timew_command", required=True)
+    timew_set = timew_subparsers.add_parser(
+        "set",
+        help="set Timewarrior tags on a note",
+        description="Set one or more Timewarrior tags on a task, chain, or project note.",
+    )
+    timew_set.add_argument("note_kind", choices=("task", "chain", "project"), help="target note kind")
+    timew_set.add_argument("note_ref", help="task ref for task/chain or exact project name")
+    timew_set.add_argument("tags", nargs="+", help="one or more Timewarrior tags")
+
+    timew_clear = timew_subparsers.add_parser(
+        "clear",
+        help="disable inherited Timewarrior tags on a note",
+        description="Store an explicit empty tag list so lower-priority chain or project tags are not inherited.",
+    )
+    timew_clear.add_argument("note_kind", choices=("task", "chain", "project"), help="target note kind")
+    timew_clear.add_argument("note_ref", help="task ref for task/chain or exact project name")
+
+    timew_inherit = timew_subparsers.add_parser(
+        "inherit",
+        help="resume inherited Timewarrior tags",
+        description="Remove the local tag setting so Jot can use chain or project metadata again.",
+    )
+    timew_inherit.add_argument("note_kind", choices=("task", "chain", "project"), help="target note kind")
+    timew_inherit.add_argument("note_ref", help="task ref for task/chain or exact project name")
+
+    timew_show = timew_subparsers.add_parser(
+        "show",
+        help="show effective Timewarrior tags for a task",
+        description="Resolve task, chain, and nearest-project note metadata and show the first applicable tag setting.",
+    )
+    timew_show.add_argument("task_ref", help="task ID, full UUID, or unique short UUID")
+
     headings = subparsers.add_parser(
         "headings",
         help="list headings in a task, chain, or project note",
@@ -858,6 +906,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _run_add_to(ctx, args)
         elif args.command == "timelog":
             result = _run_timelog(ctx, args)
+        elif args.command == "timew":
+            result = _run_timewarrior(ctx, args)
         elif args.command == "headings":
             result = _run_headings(ctx, args)
         elif args.command == "section":
@@ -1864,6 +1914,49 @@ def _run_timelog(ctx, args) -> CommandResult:
             stopped_at=args.stopped_at,
         ),
     )
+
+
+def _run_timewarrior(ctx, args) -> CommandResult:
+    if args.timew_command == "show":
+        task = ctx.taskwarrior.resolve_task(args.task_ref)
+        resolution = resolve_timewarrior_tags(ctx.config, task)
+        return CommandResult(
+            command="timew",
+            payload={
+                "operation": "show",
+                "task_uuid": task.task_uuid,
+                "task_short_uuid": task.task_short_uuid,
+                "chain_id": chain_id_for_task(task.task) or None,
+                "project": task.project or None,
+                **resolution,
+            },
+        )
+
+    scope = args.note_kind
+    task = None
+    reference = str(args.note_ref).strip()
+    if scope in {"task", "chain"}:
+        task = ctx.taskwarrior.resolve_task(reference)
+        reference = task.task_short_uuid if scope == "task" else chain_id_for_task(task.task)
+        if not reference:
+            raise RuntimeError("task is not part of a Nautical chain")
+    elif not reference:
+        raise RuntimeError("project name is empty")
+
+    common = {
+        "scope": scope,
+        "reference": reference,
+        "task": task,
+    }
+    if args.timew_command == "set":
+        payload = set_timewarrior_tags(ctx.config, tags=args.tags, **common)
+    elif args.timew_command == "clear":
+        payload = clear_timewarrior_tags(ctx.config, **common)
+    elif args.timew_command == "inherit":
+        payload = inherit_timewarrior_tags(ctx.config, **common)
+    else:  # pragma: no cover
+        raise RuntimeError(f"unknown timew command '{args.timew_command}'")
+    return CommandResult(command="timew", payload=payload)
 
 
 def _run_search(

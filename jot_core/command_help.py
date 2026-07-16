@@ -66,6 +66,10 @@ COMMAND_EXAMPLES = {
     "timelog report": "jot timelog report week --project reading --details",
     "timelog start": "jot timelog start 42",
     "timelog stop": "jot timelog stop 42",
+    "timew set": "jot timew set chain 42 deep-work client-a",
+    "timew clear": "jot timew clear task 42",
+    "timew inherit": "jot timew inherit task 42",
+    "timew show": "jot timew show 42",
     "tui": "jot tui",
     "doctor": "jot doctor",
     "migrate": "jot migrate --dry-run",
@@ -160,7 +164,7 @@ def _command_category(path: tuple[str, ...]) -> str:
         return "Projects"
     if name in {"attach", "resources", "open-resource", "detach-resource"}:
         return "Resources"
-    if name in {"add-to", "headings", "section", "progress", "open", "edit", "cat", "notes", "timelog"}:
+    if name in {"add-to", "headings", "section", "progress", "open", "edit", "cat", "notes", "timelog", "timew"}:
         return "Notes"
     if name in {"search", "report", "recent"}:
         return "Search & Reports"

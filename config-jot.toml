@@ -17,3 +17,6 @@ default_format = "text"
 
 [nautical]
 enabled = true
+
+[timewarrior]
+enabled = false

@@ -667,6 +667,7 @@ class ServiceProgressRowTests(unittest.TestCase):
             color_mode="auto",
             default_format="text",
             nautical_enabled=True,
+            timewarrior_enabled=False,
         )
         for path in (
             self.config.tasks_dir,
@@ -1174,6 +1175,72 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout), new)
         self.assertIn("ingest timed out", result.stderr)
+
+    def test_timewarrior_metadata_resolves_task_chain_and_project_precedence(self) -> None:
+        task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+        task = {
+            "uuid": task_uuid,
+            "description": "Read chapter",
+            "project": "personal.reading.books",
+            "tags": ["book"],
+            "chainID": "2d6d7d7d",
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+
+        project_set = self.run_jot(
+            "--json", "timew", "set", "project", "personal.reading", "learning", "quiet"
+        )
+        self.assertEqual(project_set.returncode, 0, project_set.stderr)
+        project_payload = json.loads(project_set.stdout)
+        self.assertEqual(project_payload["tags"], ["learning", "quiet"])
+
+        project_show = self.run_jot("--json", "timew", "show", "1")
+        self.assertEqual(project_show.returncode, 0, project_show.stderr)
+        project_resolution = json.loads(project_show.stdout)
+        self.assertEqual(project_resolution["tags"], ["learning", "quiet"])
+        self.assertEqual(project_resolution["source"]["scope"], "project")
+        self.assertEqual(project_resolution["source"]["reference"], "personal.reading")
+
+        chain_set = self.run_jot("--json", "timew", "se", "ch", "1", "workout")
+        self.assertEqual(chain_set.returncode, 0, chain_set.stderr)
+        chain_show = json.loads(self.run_jot("--json", "timew", "sh", "1").stdout)
+        self.assertEqual(chain_show["tags"], ["workout"])
+        self.assertEqual(chain_show["source"]["scope"], "chain")
+
+        task_set = self.run_jot("--json", "timew", "set", "task", "1", "focused-reading")
+        self.assertEqual(task_set.returncode, 0, task_set.stderr)
+        task_show = json.loads(self.run_jot("--json", "timew", "show", "1").stdout)
+        self.assertEqual(task_show["tags"], ["focused-reading"])
+        self.assertEqual(task_show["source"]["scope"], "task")
+
+        cleared = self.run_jot("--json", "timew", "clear", "task", "1")
+        self.assertEqual(cleared.returncode, 0, cleared.stderr)
+        cleared_show = json.loads(self.run_jot("--json", "timew", "show", "1").stdout)
+        self.assertEqual(cleared_show["tags"], [])
+        self.assertEqual(cleared_show["source"]["scope"], "task")
+        self.assertTrue(cleared_show["explicitly_disabled"])
+
+        inherited = self.run_jot("--json", "timew", "inherit", "task", "1")
+        self.assertEqual(inherited.returncode, 0, inherited.stderr)
+        inherited_show = json.loads(self.run_jot("--json", "timew", "show", "1").stdout)
+        self.assertEqual(inherited_show["tags"], ["workout"])
+        self.assertEqual(inherited_show["source"]["scope"], "chain")
+
+    def test_timewarrior_chain_metadata_rejects_non_chain_task(self) -> None:
+        task = {
+            "uuid": "986e9d97-1111-2222-3333-444444444444",
+            "description": "One-off task",
+            "project": "personal",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "2": [task]})
+
+        result = self.run_jot("timew", "set", "chain", "2", "focus")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("not part of a Nautical chain", result.stderr)
 
     def test_timelog_start_stop_records_session_and_writes_note(self) -> None:
         task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"

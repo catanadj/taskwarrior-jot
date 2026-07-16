@@ -81,6 +81,7 @@ def load_config() -> AppConfig:
     editor_cfg = data.get("editor") if isinstance(data.get("editor"), dict) else {}
     display_cfg = data.get("display") if isinstance(data.get("display"), dict) else {}
     nautical_cfg = data.get("nautical") if isinstance(data.get("nautical"), dict) else {}
+    timewarrior_cfg = data.get("timewarrior") if isinstance(data.get("timewarrior"), dict) else {}
 
     root_dir = _expand_path(paths_cfg.get("root"), default_root)
     trash_dir = root_dir / ".jot_trash"
@@ -111,6 +112,7 @@ def load_config() -> AppConfig:
         allowed={"json", "text"},
     )
     nautical_enabled = _config_bool(nautical_cfg.get("enabled"), True)
+    timewarrior_enabled = _config_bool(timewarrior_cfg.get("enabled"), False)
 
     return AppConfig(
         config_path=config_path,
@@ -127,6 +129,7 @@ def load_config() -> AppConfig:
         color_mode=color_mode,
         default_format=default_format,
         nautical_enabled=nautical_enabled,
+        timewarrior_enabled=timewarrior_enabled,
     )
 
 
