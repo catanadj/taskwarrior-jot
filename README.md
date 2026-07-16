@@ -155,6 +155,35 @@ jot timelog stop --all
 Time goes to the chain note when `chainID` exists. Otherwise it goes to the
 task note.
 
+### Route Starts To Timewarrior
+
+Jot can also switch Timewarrior tags when a Jot-managed session starts. Enable
+the integration in `config-jot.toml`:
+
+```toml
+[timewarrior]
+enabled = true
+```
+
+Store tags on a task, Nautical chain, or project note:
+
+```bash
+jot timew set task 42 focused-reading
+jot timew set chain 42 workout strength
+jot timew set project work.client client-a deep-work
+jot timew show 42
+```
+
+Task settings override chain settings, which override the nearest project
+setting. `jot timew clear task 42` blocks inherited tags; `jot timew inherit
+task 42` resumes inheritance.
+
+When `jot timelog start 42` finds tags, it runs `timew start <tags>`. An existing
+Timewarrior interval is closed by Timewarrior. Jot does not change Timewarrior
+on task stop or completion, so the selected tags keep running until another
+tagged task starts or you change Timewarrior yourself. Tasks without Jot tags
+leave Timewarrior untouched.
+
 To see where time went:
 
 ```bash
@@ -272,6 +301,9 @@ jot timelog start 42
 jot timelog stop 42
 jot timelog pending
 jot timelog trash
+
+jot timew set chain 42 deep-work
+jot timew show 42
 
 jot paths
 jot stats

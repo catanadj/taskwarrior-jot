@@ -197,6 +197,9 @@ default_format = "text"
 
 [nautical]
 enabled = true
+
+[timewarrior]
+enabled = false
 EOF
   CONFIG_NOTE="Installed default config: $CONFIG_PATH"
 else

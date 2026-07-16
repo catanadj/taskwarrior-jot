@@ -13,6 +13,7 @@ from .models import ResolvedTask, TaskRef
 from .nautical import chain_id_for_task
 from .notes import append_under_heading_once, ensure_chain_note, ensure_task_note
 from .ops import append_op, iso_now, read_ops
+from .timewarrior import start_timewarrior_for_task
 
 
 TIME_LOG_HEADING = "Time log"
@@ -69,13 +70,15 @@ def start_time_session(config, task: ResolvedTask, *, started_at: str = "") -> d
         chain_id=chain_id_for_task(task.task) or None,
         started=_iso_z(started),
     )
-    return {
+    result = {
         "task_uuid": task.task_uuid,
         "task_short_uuid": task.task_short_uuid,
         "chain_id": chain_id_for_task(task.task) or None,
         "started": _iso_z(started),
         "path": str(path),
     }
+    result["timewarrior"] = start_timewarrior_for_task(config, task)
+    return result
 
 
 def stop_time_session(config, task: ResolvedTask, *, stopped_at: str = "", scope: str = "auto") -> dict[str, Any]:

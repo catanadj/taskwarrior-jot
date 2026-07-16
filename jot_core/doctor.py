@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 import importlib.util
 from pathlib import Path
+import shutil
 import tempfile
 
 from .editor import resolve_editor_executable, split_editor_command
@@ -41,6 +42,7 @@ def run_doctor(config: AppConfig, client: TaskwarriorClient, *, repair: bool = F
 
     checks.append(_editor_check(config.editor_command))
     checks.append(_tui_check())
+    checks.append(_timewarrior_check(config))
     checks.append(_locks_check(config))
     checks.append(_schema_check(config))
     checks.append(_ops_check(config))
@@ -124,6 +126,15 @@ def _tui_check() -> DoctorCheck:
             detail="optional dependency missing; CLI available, install textual to use `jot tui`",
         )
     return DoctorCheck(name="tui", ok=True, detail="textual available")
+
+
+def _timewarrior_check(config: AppConfig) -> DoctorCheck:
+    if not config.timewarrior_enabled:
+        return DoctorCheck(name="timewarrior", ok=True, detail="integration disabled")
+    resolved = shutil.which("timew")
+    if not resolved:
+        return DoctorCheck(name="timewarrior", ok=False, detail="integration enabled; timew not found in PATH")
+    return DoctorCheck(name="timewarrior", ok=True, detail=f"integration enabled; timew -> {resolved}")
 
 
 def _locks_check(config: AppConfig) -> DoctorCheck:

@@ -551,6 +551,18 @@ def _emit_timelog_start(payload: dict[str, Any]) -> None:
     chain_id = str(payload.get("chain_id") or "").strip()
     if chain_id:
         _emit_field("chain", chain_id, indent=0)
+    timewarrior = payload.get("timewarrior")
+    if not isinstance(timewarrior, dict) or not timewarrior.get("enabled"):
+        return
+    tags = ", ".join(str(tag) for tag in timewarrior.get("tags") or [])
+    if timewarrior.get("started"):
+        _write_status(f"Timewarrior started: {tags}")
+    elif timewarrior.get("error"):
+        _write_status(f"Timewarrior unchanged: {timewarrior['error']}", color="warning")
+    elif timewarrior.get("reason") == "explicitly-disabled":
+        _write_status("Timewarrior unchanged: tag inheritance is disabled for this task")
+    else:
+        _write_status("Timewarrior unchanged: no tags are configured")
 
 
 def _emit_timelog_stop(payload: dict[str, Any]) -> None:

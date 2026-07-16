@@ -120,6 +120,30 @@ def _write_fake_task_script(bin_dir: Path, state_path: Path) -> None:
     path.chmod(0o755)
 
 
+def _write_fake_timew_script(bin_dir: Path, log_path: Path, *, returncode: int = 0) -> None:
+    script = textwrap.dedent(
+        f"""\
+        #!/usr/bin/env python3
+        import json
+        import pathlib
+        import sys
+
+        log_path = pathlib.Path({str(log_path)!r})
+        calls = json.loads(log_path.read_text()) if log_path.exists() else []
+        calls.append(sys.argv[1:])
+        log_path.write_text(json.dumps(calls))
+        if {returncode}:
+            print('simulated Timewarrior failure', file=sys.stderr)
+        else:
+            print('Tracking requested tags')
+        raise SystemExit({returncode})
+        """
+    )
+    path = bin_dir / "timew"
+    path.write_text(script, encoding="utf-8")
+    path.chmod(0o755)
+
+
 class JotCliTestCase(unittest.TestCase):
     def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory(prefix="jot-test-")
@@ -1241,6 +1265,91 @@ class CliIntegrationTests(JotCliTestCase):
 
         self.assertEqual(result.returncode, 1)
         self.assertIn("not part of a Nautical chain", result.stderr)
+
+    def test_timelog_start_invokes_timewarrior_once_and_stop_leaves_it_running(self) -> None:
+        task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+        task = {
+            "uuid": task_uuid,
+            "description": "Client planning",
+            "project": "work.client",
+            "tags": [],
+            "chainID": "2d6d7d7d",
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        config_path = self.home / ".task" / "jot" / "config-jot.toml"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("[timewarrior]\nenabled = true\n", encoding="utf-8")
+        timew_log = self.root / "timew-calls.json"
+        _write_fake_timew_script(self.bin_dir, timew_log)
+        self.assertEqual(
+            self.run_jot("timew", "set", "chain", "1", "deep work", "client-a").returncode,
+            0,
+        )
+
+        started = self.run_jot("--json", "timelog", "start", "1", "--at", "20260703T060000Z")
+
+        self.assertEqual(started.returncode, 0, started.stderr)
+        payload = json.loads(started.stdout)
+        self.assertTrue(payload["timewarrior"]["started"])
+        self.assertEqual(payload["timewarrior"]["tags"], ["deep work", "client-a"])
+        self.assertEqual(json.loads(timew_log.read_text()), [["start", "deep work", "client-a"]])
+
+        duplicate = self.run_jot("--json", "timelog", "start", "1", "--at", "20260703T061000Z")
+        self.assertTrue(json.loads(duplicate.stdout)["already_started"])
+        self.assertEqual(json.loads(timew_log.read_text()), [["start", "deep work", "client-a"]])
+
+        stopped = self.run_jot("timelog", "stop", "1", "--at", "20260703T063000Z")
+        self.assertEqual(stopped.returncode, 0, stopped.stderr)
+        self.assertEqual(json.loads(timew_log.read_text()), [["start", "deep work", "client-a"]])
+
+    def test_timelog_start_skips_timewarrior_without_tags(self) -> None:
+        task = {
+            "uuid": "986e9d97-1111-2222-3333-444444444444",
+            "description": "General administration",
+            "project": "work.admin",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "2": [task]})
+        config_path = self.home / ".task" / "jot" / "config-jot.toml"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("[timewarrior]\nenabled = true\n", encoding="utf-8")
+        timew_log = self.root / "timew-calls.json"
+        _write_fake_timew_script(self.bin_dir, timew_log)
+
+        started = self.run_jot("--json", "timelog", "start", "2")
+
+        self.assertEqual(started.returncode, 0, started.stderr)
+        timewarrior = json.loads(started.stdout)["timewarrior"]
+        self.assertFalse(timewarrior["attempted"])
+        self.assertEqual(timewarrior["reason"], "no-tags")
+        self.assertFalse(timew_log.exists())
+
+    def test_timelog_start_keeps_jot_session_when_timewarrior_fails(self) -> None:
+        task = {
+            "uuid": "986e9d97-1111-2222-3333-444444444444",
+            "description": "Focused work",
+            "project": "work",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "2": [task]})
+        config_path = self.home / ".task" / "jot" / "config-jot.toml"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("[timewarrior]\nenabled = true\n", encoding="utf-8")
+        _write_fake_timew_script(self.bin_dir, self.root / "timew-calls.json", returncode=9)
+        self.assertEqual(self.run_jot("timew", "set", "task", "2", "focus").returncode, 0)
+
+        started = self.run_jot("--json", "timelog", "start", "2")
+
+        self.assertEqual(started.returncode, 0)
+        payload = json.loads(started.stdout)
+        self.assertFalse(payload["timewarrior"]["started"])
+        self.assertIn("simulated Timewarrior failure", payload["timewarrior"]["error"])
+        self.assertIn("Timewarrior", started.stderr)
+        pending = json.loads(self.run_jot("--json", "timelog", "pending").stdout)
+        self.assertEqual(len(pending["sessions"]), 1)
 
     def test_timelog_start_stop_records_session_and_writes_note(self) -> None:
         task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"

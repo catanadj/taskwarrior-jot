@@ -1806,9 +1806,13 @@ def _run_add_to(ctx, args) -> CommandResult:
 def _run_timelog(ctx, args) -> CommandResult:
     if args.timelog_command == "start":
         task = ctx.taskwarrior.resolve_task(args.task_ref)
+        payload = start_time_session(ctx.config, task, started_at=args.at)
+        timewarrior = payload.get("timewarrior")
+        if isinstance(timewarrior, dict) and timewarrior.get("error"):
+            warn(f"Timewarrior: {timewarrior['error']}")
         return CommandResult(
             command="timelog-start",
-            payload=start_time_session(ctx.config, task, started_at=args.at),
+            payload=payload,
         )
     if args.timelog_command == "stop":
         if args.all:

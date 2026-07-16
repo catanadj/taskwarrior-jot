@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 from typing import Any
 
 from .frontmatter import locked_document, read_document, write_document
@@ -19,6 +20,57 @@ from .ops import append_op, iso_now
 
 
 TIMEW_TAGS_KEY = "timew_tags"
+TIMEW_COMMAND = "timew"
+TIMEW_TIMEOUT_SECONDS = 10
+
+
+def start_timewarrior_for_task(config: AppConfig, task: ResolvedTask) -> dict[str, Any]:
+    resolution = resolve_timewarrior_tags(config, task)
+    result = {
+        **resolution,
+        "attempted": False,
+        "started": False,
+        "reason": None,
+        "error": None,
+    }
+    if not config.timewarrior_enabled:
+        result["reason"] = "integration-disabled"
+        return result
+
+    tags = resolution["tags"]
+    if not tags:
+        result["reason"] = "explicitly-disabled" if resolution["explicitly_disabled"] else "no-tags"
+        return result
+
+    command = [TIMEW_COMMAND, "start", *tags]
+    result["attempted"] = True
+    result["command"] = command
+    try:
+        proc = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=TIMEW_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError:
+        result["error"] = f"{TIMEW_COMMAND} executable not found in PATH"
+        return result
+    except subprocess.TimeoutExpired:
+        result["error"] = f"{TIMEW_COMMAND} start timed out after {TIMEW_TIMEOUT_SECONDS} seconds"
+        return result
+    except OSError as exc:
+        result["error"] = f"could not run {TIMEW_COMMAND}: {exc}"
+        return result
+
+    result["returncode"] = proc.returncode
+    result["stdout"] = proc.stdout.strip()
+    result["stderr"] = proc.stderr.strip()
+    if proc.returncode != 0:
+        result["error"] = proc.stderr.strip() or proc.stdout.strip() or f"{TIMEW_COMMAND} start failed"
+        return result
+    result["started"] = True
+    return result
 
 
 def resolve_timewarrior_tags(config: AppConfig, task: ResolvedTask) -> dict[str, Any]:
