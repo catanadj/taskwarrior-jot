@@ -112,7 +112,7 @@ def load_config() -> AppConfig:
         allowed={"json", "text"},
     )
     nautical_enabled = _config_bool(nautical_cfg.get("enabled"), True)
-    timewarrior_enabled = _config_bool(timewarrior_cfg.get("enabled"), False)
+    timewarrior_enabled = _config_bool(timewarrior_cfg.get("enabled"), True)
 
     return AppConfig(
         config_path=config_path,

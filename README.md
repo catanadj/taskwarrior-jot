@@ -157,12 +157,13 @@ task note.
 
 ### Route Starts To Timewarrior
 
-Jot can also switch Timewarrior tags when a Jot-managed session starts. Enable
-the integration in `config-jot.toml`:
+Jot can also switch Timewarrior tags when a Jot-managed session starts. The
+integration is enabled by default and only acts when Jot tags are present. To
+opt out, add this to `config-jot.toml`:
 
 ```toml
 [timewarrior]
-enabled = true
+enabled = false
 ```
 
 Store tags on a task, Nautical chain, or project note:

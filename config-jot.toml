@@ -19,4 +19,4 @@ default_format = "text"
 enabled = true
 
 [timewarrior]
-enabled = false
+enabled = true

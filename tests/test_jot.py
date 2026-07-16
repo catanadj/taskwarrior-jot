@@ -1277,9 +1277,6 @@ class CliIntegrationTests(JotCliTestCase):
             "status": "pending",
         }
         self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
-        config_path = self.home / ".task" / "jot" / "config-jot.toml"
-        config_path.parent.mkdir(parents=True)
-        config_path.write_text("[timewarrior]\nenabled = true\n", encoding="utf-8")
         timew_log = self.root / "timew-calls.json"
         _write_fake_timew_script(self.bin_dir, timew_log)
         self.assertEqual(
@@ -1302,6 +1299,32 @@ class CliIntegrationTests(JotCliTestCase):
         stopped = self.run_jot("timelog", "stop", "1", "--at", "20260703T063000Z")
         self.assertEqual(stopped.returncode, 0, stopped.stderr)
         self.assertEqual(json.loads(timew_log.read_text()), [["start", "deep work", "client-a"]])
+
+    def test_explicitly_disabled_timewarrior_ignores_present_tags(self) -> None:
+        task = {
+            "uuid": "986e9d97-1111-2222-3333-444444444444",
+            "description": "Focused work",
+            "project": "work",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "2": [task]})
+        config_path = self.home / ".task" / "jot" / "config-jot.toml"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("[timewarrior]\nenabled = false\n", encoding="utf-8")
+        timew_log = self.root / "timew-calls.json"
+        _write_fake_timew_script(self.bin_dir, timew_log)
+        self.assertEqual(self.run_jot("timew", "set", "task", "2", "focus").returncode, 0)
+
+        started = self.run_jot("--json", "timelog", "start", "2")
+
+        self.assertEqual(started.returncode, 0, started.stderr)
+        timewarrior = json.loads(started.stdout)["timewarrior"]
+        self.assertFalse(timewarrior["enabled"])
+        self.assertFalse(timewarrior["attempted"])
+        self.assertEqual(timewarrior["reason"], "integration-disabled")
+        self.assertEqual(timewarrior["tags"], ["focus"])
+        self.assertFalse(timew_log.exists())
 
     def test_timelog_start_skips_timewarrior_without_tags(self) -> None:
         task = {
