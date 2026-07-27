@@ -1726,6 +1726,29 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertNotIn("rc.hooks=off", state["completed_task_args"][0])
         self.assertEqual(state["single"][0]["status"], "completed")
 
+    def test_taskwarrior_commands_use_a_timeout(self) -> None:
+        client = TaskwarriorClient(task_bin="task", timeout_seconds=7)
+        completed = subprocess.CompletedProcess(
+            args=["task", "--version"], returncode=0, stdout="2.6.2\n", stderr=""
+        )
+
+        with mock.patch("jot_core.taskwarrior.subprocess.run", return_value=completed) as run:
+            self.assertEqual(client.version(), "2.6.2")
+
+        self.assertEqual(run.call_args.kwargs["timeout"], 7)
+
+    def test_taskwarrior_timeout_is_reported_as_a_runtime_error(self) -> None:
+        client = TaskwarriorClient(task_bin="task", timeout_seconds=3)
+        timeout = subprocess.TimeoutExpired(cmd=["task", "--version"], timeout=3)
+
+        with mock.patch("jot_core.taskwarrior.subprocess.run", side_effect=timeout):
+            with self.assertRaisesRegex(RuntimeError, "timed out after 3 seconds"):
+                client.version()
+
+    def test_taskwarrior_timeout_must_be_positive(self) -> None:
+        with self.assertRaisesRegex(ValueError, "greater than zero"):
+            TaskwarriorClient(timeout_seconds=0)
+
     def test_no_arguments_prints_command_overview(self) -> None:
         result = self.run_jot()
         self.assertEqual(result.returncode, 0, result.stderr)

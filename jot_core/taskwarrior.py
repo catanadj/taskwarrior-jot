@@ -20,12 +20,18 @@ UUID_RE = re.compile(
 )
 SHORT_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}$")
 INTEGER_RE = re.compile(r"^[0-9]+$")
+TASK_TIMEOUT_SECONDS = 30
 
 
 @dataclass(slots=True)
 class TaskwarriorClient:
     task_bin: str = "task"
     taskdata: str = ""
+    timeout_seconds: float = TASK_TIMEOUT_SECONDS
+
+    def __post_init__(self) -> None:
+        if self.timeout_seconds <= 0:
+            raise ValueError("Taskwarrior timeout must be greater than zero")
 
     def is_available(self) -> bool:
         return shutil.which(self.task_bin) is not None
@@ -199,12 +205,23 @@ class TaskwarriorClient:
 
     def _run(self, args: list[str]) -> subprocess.CompletedProcess[str]:
         cmd = [self.task_bin, *self._command_prefix(), *args]
-        return subprocess.run(
-            cmd,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            return subprocess.run(
+                cmd,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            command = " ".join(cmd)
+            raise RuntimeError(
+                f"Taskwarrior command timed out after {self.timeout_seconds:g} seconds: {command}"
+            ) from exc
+        except FileNotFoundError as exc:
+            raise RuntimeError(f"Taskwarrior executable not found: {self.task_bin}") from exc
+        except OSError as exc:
+            raise RuntimeError(f"could not run Taskwarrior: {exc}") from exc
 
     def _command_prefix(self) -> list[str]:
         taskdata = self.taskdata or str(os.environ.get("TASKDATA") or "").strip()
