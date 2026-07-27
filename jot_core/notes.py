@@ -71,7 +71,15 @@ def slugify(text: str, fallback: str = "task", max_len: int = 40) -> str:
 def task_note_path(config: AppConfig, task: ResolvedTask) -> Path:
     existing = sorted(config.tasks_dir.glob(f"{task.task_short_uuid}--*.md"))
     if existing:
-        return existing[0]
+        return _select_identity_note(
+            existing,
+            label=f"task {task.task_short_uuid}",
+            kind="task-note",
+            short_key="task_short_uuid",
+            short_value=task.task_short_uuid,
+            full_key="task_uuid",
+            full_value=task.task_uuid,
+        )
     slug = slugify(task.description or "task", fallback="task")
     return config.tasks_dir / f"{task.task_short_uuid}--{slug}.md"
 
@@ -79,7 +87,13 @@ def task_note_path(config: AppConfig, task: ResolvedTask) -> Path:
 def chain_note_path(config: AppConfig, chain_id: str, description: str) -> Path:
     existing = sorted(config.chains_dir.glob(f"{chain_id}--*.md"))
     if existing:
-        return existing[0]
+        return _select_identity_note(
+            existing,
+            label=f"chain {chain_id}",
+            kind="chain-note",
+            short_key="chain_id",
+            short_value=chain_id,
+        )
     slug = slugify(description or "chain", fallback="chain")
     return config.chains_dir / f"{chain_id}--{slug}.md"
 
@@ -105,7 +119,17 @@ def ensure_task_note(config: AppConfig, task: ResolvedTask) -> NotePaths:
 
 def find_task_note(config: AppConfig, task: ResolvedTask) -> Path | None:
     existing = sorted(config.tasks_dir.glob(f"{task.task_short_uuid}--*.md"))
-    return existing[0] if existing else None
+    if not existing:
+        return None
+    return _select_identity_note(
+        existing,
+        label=f"task {task.task_short_uuid}",
+        kind="task-note",
+        short_key="task_short_uuid",
+        short_value=task.task_short_uuid,
+        full_key="task_uuid",
+        full_value=task.task_uuid,
+    )
 
 
 def ensure_chain_note(config: AppConfig, task: ResolvedTask) -> NotePaths:
@@ -124,8 +148,9 @@ def ensure_project_note(config: AppConfig, project_name: str) -> NotePaths:
     normalized = str(project_name or "").strip()
     if not normalized:
         raise RuntimeError("project name is empty")
-    note_path = project_note_path(config, normalized)
-    existed = note_path.exists()
+    existing = find_project_note(config, normalized)
+    note_path = existing or project_note_path(config, normalized)
+    existed = existing is not None
     if not existed:
         metadata, body = _build_project_note_document(config, normalized)
         write_document(note_path, metadata, body)
@@ -363,7 +388,15 @@ def find_chain_note(config: AppConfig, task: ResolvedTask) -> Path | None:
     if not chain_id:
         return None
     existing = sorted(config.chains_dir.glob(f"{chain_id}--*.md"))
-    return existing[0] if existing else None
+    if not existing:
+        return None
+    return _select_identity_note(
+        existing,
+        label=f"chain {chain_id}",
+        kind="chain-note",
+        short_key="chain_id",
+        short_value=chain_id,
+    )
 
 
 def find_project_note(config: AppConfig, project_name: str) -> Path | None:
@@ -371,7 +404,55 @@ def find_project_note(config: AppConfig, project_name: str) -> Path | None:
     if not normalized:
         return None
     note_path = project_note_path(config, normalized)
-    return note_path if note_path.exists() else None
+    if not note_path.exists():
+        return None
+    return _select_identity_note(
+        [note_path],
+        label=f"project {normalized}",
+        kind="project-note",
+        short_key="project",
+        short_value=normalized,
+    )
+
+
+def _select_identity_note(
+    candidates: list[Path],
+    *,
+    label: str,
+    kind: str,
+    short_key: str,
+    short_value: str,
+    full_key: str | None = None,
+    full_value: str | None = None,
+) -> Path:
+    matches: list[Path] = []
+    conflicts: list[str] = []
+    for path in candidates:
+        try:
+            metadata, _body = read_document(path)
+        except Exception as exc:
+            raise RuntimeError(f"cannot validate {label} note {path}: {exc}") from exc
+        stored_kind = str(metadata.get("kind") or "").strip()
+        stored_short = str(metadata.get(short_key) or "").strip()
+        stored_full = str(metadata.get(full_key) or "").strip() if full_key else ""
+        if stored_kind and stored_kind != kind:
+            conflicts.append(f"{path} (kind={stored_kind})")
+            continue
+        if stored_short != short_value:
+            conflicts.append(f"{path} ({short_key}={stored_short or 'missing'})")
+            continue
+        if full_key and stored_full and stored_full != str(full_value or "").strip():
+            conflicts.append(f"{path} ({full_key}={stored_full})")
+            continue
+        matches.append(path)
+
+    if len(matches) > 1:
+        paths = ", ".join(str(path) for path in matches)
+        raise RuntimeError(f"multiple matching {label} notes found: {paths}")
+    if not matches:
+        details = "; ".join(conflicts) or "no matching identity metadata"
+        raise RuntimeError(f"note identity conflict for {label}: {details}")
+    return matches[0]
 
 
 def _build_task_note_document(config: AppConfig, task: ResolvedTask) -> tuple[OrderedDict[str, object], str]:

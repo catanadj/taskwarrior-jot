@@ -2447,6 +2447,74 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(restored.returncode, 0, restored.stderr)
         self.assertTrue(note_path.exists())
 
+    def test_note_lookup_rejects_mismatched_task_identity(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Identity check",
+            "project": "testing",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        note_path = self.home / ".task" / "jot" / "tasks" / "2d6d7d7d--identity-check.md"
+        write_document(
+            note_path,
+            OrderedDict(
+                [
+                    ("kind", "task-note"),
+                    ("task_short_uuid", "2d6d7d7d"),
+                    ("task_uuid", "other000-1111-2222-3333-444444444444"),
+                ]
+            ),
+            "# Wrong task\n",
+        )
+
+        result = self.run_jot("note-append", "1", "must not overwrite")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("note identity conflict", result.stderr)
+
+    def test_note_lookup_rejects_duplicate_matching_task_notes(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Duplicate check",
+            "project": "testing",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        metadata = OrderedDict(
+            [
+                ("kind", "task-note"),
+                ("task_short_uuid", "2d6d7d7d"),
+                ("task_uuid", task["uuid"]),
+            ]
+        )
+        for suffix in ("first", "second"):
+            write_document(
+                self.home / ".task" / "jot" / "tasks" / f"2d6d7d7d--{suffix}.md",
+                metadata,
+                f"# {suffix}\n",
+            )
+
+        result = self.run_jot("note-append", "1", "must choose explicitly")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("multiple matching task 2d6d7d7d notes", result.stderr)
+
+    def test_project_lookup_rejects_slug_collision(self) -> None:
+        project_path = self.home / ".task" / "jot" / "projects" / "foo-bar" / "index.md"
+        write_document(
+            project_path,
+            OrderedDict([("kind", "project-note"), ("project", "foo-bar")]),
+            "# foo-bar\n",
+        )
+
+        result = self.run_jot("project-append", "foo_bar", "must not overwrite")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("note identity conflict for project foo_bar", result.stderr)
+
     def test_task_and_chain_cat_contracts(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
