@@ -6,6 +6,7 @@ PREFIX="${PREFIX:-$HOME/.local}"
 BIN_DIR="$PREFIX/bin"
 LIB_DIR="$PREFIX/lib/jot"
 INSTALL_TIMELOG_HOOK="ask"
+REPLACE_TIMELOG_HOOK="no"
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -57,6 +58,7 @@ TEMPLATES_DIR="$CONFIG_DIR/templates"
 usage() {
   cat <<'EOF'
 Usage: ./install.sh [--prefix DIR] [--with-timelog-hook|--no-timelog-hook]
+                  [--replace-timelog-hook]
 
 Installs jot without pip by copying the launcher and jot_core package into:
   <prefix>/lib/jot
@@ -77,6 +79,8 @@ data.location, then ~/.task. Set JOT_HOME to override the jot data directory.
 Timelog hook:
   --with-timelog-hook  copy the Jot time expenditure hook into Taskwarrior hooks
   --no-timelog-hook    do not prompt; leave the hook packaged but disabled
+  --replace-timelog-hook
+                       replace a different existing hook at the same path
 EOF
 }
 
@@ -98,6 +102,10 @@ while (($#)); do
       ;;
     --no-timelog-hook)
       INSTALL_TIMELOG_HOOK="no"
+      shift
+      ;;
+    --replace-timelog-hook)
+      REPLACE_TIMELOG_HOOK="yes"
       shift
       ;;
     -h|--help)
@@ -140,16 +148,26 @@ should_install_timelog_hook() {
 }
 
 mkdir -p "$BIN_DIR"
-mkdir -p "$LIB_DIR"
 mkdir -p "$CONFIG_DIR"
 mkdir -p "$TEMPLATES_DIR"
-rm -rf "$LIB_DIR/jot_core"
-rm -rf "$LIB_DIR/jot_tui"
-rm -rf "$LIB_DIR/hooks"
-rm -rf "$LIB_DIR/templates"
 
-install -m 755 "$SCRIPT_DIR/jot" "$LIB_DIR/jot"
-mkdir -p "$LIB_DIR/jot_core"
+for required in \
+  "$SCRIPT_DIR/jot" \
+  "$SCRIPT_DIR/config-jot.toml" \
+  "$SCRIPT_DIR/hooks/on-modify_jot_timelog.py" \
+  "$SCRIPT_DIR/templates/task-note.md" \
+  "$SCRIPT_DIR/templates/chain-note.md" \
+  "$SCRIPT_DIR/templates/project-note.md"; do
+  if [[ ! -f "$required" ]]; then
+    echo "error: required installation file is missing: $required" >&2
+    exit 1
+  fi
+done
+
+STAGE_DIR="$(mktemp -d "$PREFIX/.jot-install.XXXXXX")"
+trap 'rm -rf "$STAGE_DIR"' EXIT
+
+install -m 755 "$SCRIPT_DIR/jot" "$STAGE_DIR/jot"
 tar -C "$SCRIPT_DIR" \
   --exclude='jot_core/__pycache__' \
   --exclude='jot_core/*.pyc' \
@@ -157,12 +175,16 @@ tar -C "$SCRIPT_DIR" \
   --exclude='jot_tui/__pycache__' \
   --exclude='jot_tui/*.pyc' \
   --exclude='jot_tui/**/*.pyc' \
-  -cf - jot_core jot_tui | tar -C "$LIB_DIR" -xf -
-install -m 644 "$SCRIPT_DIR/config-jot.toml" "$LIB_DIR/config-jot.toml"
-mkdir -p "$LIB_DIR/templates"
-cp -R "$SCRIPT_DIR/templates/." "$LIB_DIR/templates/"
-mkdir -p "$LIB_DIR/hooks"
-install -m 755 "$SCRIPT_DIR/hooks/on-modify_jot_timelog.py" "$LIB_DIR/hooks/on-modify_jot_timelog.py"
+  -cf - jot_core jot_tui | tar -C "$STAGE_DIR" -xf -
+install -m 644 "$SCRIPT_DIR/config-jot.toml" "$STAGE_DIR/config-jot.toml"
+mkdir -p "$STAGE_DIR/templates"
+cp -R "$SCRIPT_DIR/templates/." "$STAGE_DIR/templates/"
+mkdir -p "$STAGE_DIR/hooks"
+install -m 755 "$SCRIPT_DIR/hooks/on-modify_jot_timelog.py" "$STAGE_DIR/hooks/on-modify_jot_timelog.py"
+
+mkdir -p "$LIB_DIR"
+rm -rf "$LIB_DIR/jot_core" "$LIB_DIR/jot_tui" "$LIB_DIR/hooks" "$LIB_DIR/templates"
+cp -R "$STAGE_DIR/." "$LIB_DIR/"
 ln -sfn "$LIB_DIR/jot" "$BIN_DIR/jot"
 
 TIMELOG_HOOK_SRC="$LIB_DIR/hooks/on-modify_jot_timelog.py"
@@ -170,8 +192,19 @@ TIMELOG_HOOK_DIR="$TASKDATA_DIR/hooks"
 TIMELOG_HOOK_DST="$TIMELOG_HOOK_DIR/on-modify_jot_timelog.py"
 if should_install_timelog_hook; then
   mkdir -p "$TIMELOG_HOOK_DIR"
-  install -m 755 "$TIMELOG_HOOK_SRC" "$TIMELOG_HOOK_DST"
-  TIMELOG_HOOK_NOTE="Installed Taskwarrior timelog hook: $TIMELOG_HOOK_DST"
+  if [[ -e "$TIMELOG_HOOK_DST" && ! -f "$TIMELOG_HOOK_DST" ]]; then
+    TIMELOG_HOOK_NOTE="Kept non-regular existing Taskwarrior hook path: $TIMELOG_HOOK_DST"
+  elif [[ -e "$TIMELOG_HOOK_DST" ]] && ! cmp -s "$TIMELOG_HOOK_SRC" "$TIMELOG_HOOK_DST"; then
+    if [[ "$REPLACE_TIMELOG_HOOK" != "yes" ]]; then
+      TIMELOG_HOOK_NOTE="Kept existing Taskwarrior hook (use --replace-timelog-hook to replace): $TIMELOG_HOOK_DST"
+    else
+      install -m 755 "$TIMELOG_HOOK_SRC" "$TIMELOG_HOOK_DST"
+      TIMELOG_HOOK_NOTE="Replaced Taskwarrior timelog hook: $TIMELOG_HOOK_DST"
+    fi
+  else
+    install -m 755 "$TIMELOG_HOOK_SRC" "$TIMELOG_HOOK_DST"
+    TIMELOG_HOOK_NOTE="Installed Taskwarrior timelog hook: $TIMELOG_HOOK_DST"
+  fi
 else
   TIMELOG_HOOK_NOTE="Timelog hook not enabled. To enable later: install -m 755 \"$TIMELOG_HOOK_SRC\" \"$TIMELOG_HOOK_DST\""
 fi

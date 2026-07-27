@@ -3739,5 +3739,84 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("ambiguous", result.stderr)
 
 
+class InstallLifecycleTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory(prefix="jot-install-test-")
+        self.addCleanup(self.tempdir.cleanup)
+        root = Path(self.tempdir.name)
+        self.home = root / "home"
+        self.home.mkdir()
+        self.taskdata = root / "taskdata"
+        self.prefix = root / "prefix"
+        self.env = os.environ.copy()
+        self.env.update(
+            {
+                "HOME": str(self.home),
+                "TASKDATA": str(self.taskdata),
+                "PREFIX": str(self.prefix),
+            }
+        )
+
+    def run_script(self, name: str, *args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(PROJECT_ROOT / name), *args],
+            cwd=PROJECT_ROOT,
+            env=self.env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    def test_upgrade_preserves_config_and_user_templates(self) -> None:
+        config = self.taskdata / "jot" / "config-jot.toml"
+        config.parent.mkdir(parents=True)
+        config.write_text("[display]\ncolor = \"never\"\n", encoding="utf-8")
+        template = config.parent / "templates" / "task-note.md"
+        template.parent.mkdir()
+        template.write_text("# My task template\n", encoding="utf-8")
+
+        result = self.run_script("install.sh", "--no-timelog-hook")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(config.read_text(encoding="utf-8"), "[display]\ncolor = \"never\"\n")
+        self.assertEqual(template.read_text(encoding="utf-8"), "# My task template\n")
+        self.assertTrue((self.prefix / "bin" / "jot").is_symlink())
+
+    def test_existing_timelog_hook_requires_explicit_replacement(self) -> None:
+        first = self.run_script("install.sh", "--with-timelog-hook")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        hook = self.taskdata / "hooks" / "on-modify_jot_timelog.py"
+        hook.write_text("custom hook\n", encoding="utf-8")
+
+        kept = self.run_script("install.sh", "--with-timelog-hook")
+        self.assertEqual(kept.returncode, 0, kept.stderr)
+        self.assertEqual(hook.read_text(encoding="utf-8"), "custom hook\n")
+        self.assertIn("--replace-timelog-hook", kept.stdout)
+
+        replaced = self.run_script("install.sh", "--with-timelog-hook", "--replace-timelog-hook")
+        self.assertEqual(replaced.returncode, 0, replaced.stderr)
+        self.assertNotEqual(hook.read_text(encoding="utf-8"), "custom hook\n")
+
+    def test_uninstall_preserves_data_and_requires_explicit_hook_removal(self) -> None:
+        installed = self.run_script("install.sh", "--with-timelog-hook")
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        config = self.taskdata / "jot" / "config-jot.toml"
+        hook = self.taskdata / "hooks" / "on-modify_jot_timelog.py"
+
+        removed = self.run_script("uninstall.sh")
+
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertFalse((self.prefix / "bin" / "jot").exists())
+        self.assertTrue(config.exists())
+        self.assertTrue(hook.exists())
+
+        reinstalled = self.run_script("install.sh", "--with-timelog-hook")
+        self.assertEqual(reinstalled.returncode, 0, reinstalled.stderr)
+        removed_with_hook = self.run_script("uninstall.sh", "--remove-timelog-hook")
+        self.assertEqual(removed_with_hook.returncode, 0, removed_with_hook.stderr)
+        self.assertFalse(hook.exists())
+        self.assertTrue(config.exists())
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

@@ -24,6 +24,11 @@ use:
 ./install.sh --with-timelog-hook
 ```
 
+The installer preserves existing configuration, templates, and conflicting
+hooks. Use `--replace-timelog-hook` only when you want to replace an existing
+hook. `./uninstall.sh` removes the installed program but preserves Jot data and
+hooks; pass `--remove-timelog-hook` to remove a matching Jot hook explicitly.
+
 ## A Normal Day With Jot
 
 You start with a Taskwarrior task:
