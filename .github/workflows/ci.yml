@@ -35,5 +35,8 @@ jobs:
       - name: Compile source files
         run: python -m compileall -q jot_core jot_tui hooks
 
+      - name: Build and validate distribution artifacts
+        run: python -m build && python tools/check_artifacts.py
+
       - name: Run tests
         run: python -m unittest discover -s tests -v

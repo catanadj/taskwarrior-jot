@@ -17,10 +17,10 @@ Taskwarrior data directory. The installer follows `TASKDATA`, then
 `data.location` from `TASKRC` or `~/.taskrc`, then falls back to `~/.task`.
 Python 3.11 or newer is required.
 
-For development, install the test and type-checking tools with
-`python -m pip install -e ".[dev]"`, then run `python -m unittest discover -s
-tests` and `python -m mypy`. CI runs the same checks on Python 3.11, 3.12, and
-3.13.
+For development, install the test and release tools with `python -m pip install
+-e ".[dev]"`, then run `python -m unittest discover -s tests`, `python -m mypy`,
+and `python -m build && python tools/check_artifacts.py`. CI runs the same
+checks on Python 3.11, 3.12, and 3.13.
 
 For time expenditure notes, let the installer enable the hook when asked, or
 use:

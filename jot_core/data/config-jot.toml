@@ -1,0 +1,22 @@
+[paths]
+root = "~/.task/jot"
+tasks = "~/.task/jot/tasks"
+chains = "~/.task/jot/chains"
+projects = "~/.task/jot/projects"
+templates = "~/.task/jot/templates"
+
+[editor]
+command = ""
+show_diff_on_save = true
+diff_color = "auto"
+post_save_actions = true
+
+[display]
+color = "auto"
+default_format = "text"
+
+[nautical]
+enabled = true
+
+[timewarrior]
+enabled = true

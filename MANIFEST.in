@@ -1,0 +1,3 @@
+include config-jot.toml
+recursive-include templates *.md
+recursive-include hooks *.py

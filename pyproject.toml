@@ -17,13 +17,16 @@ dependencies = []
 [project.optional-dependencies]
 tui = ["textual>=0.47"]
 test = ["textual>=0.47"]
-dev = ["textual>=0.47", "mypy>=1.11"]
+dev = ["textual>=0.47", "mypy>=1.11", "build>=1.2"]
 
 [project.scripts]
 jot = "jot_core.cli:main"
 
 [tool.setuptools]
 packages = ["jot_core", "jot_tui"]
+
+[tool.setuptools.package-data]
+jot_core = ["data/config-jot.toml", "data/templates/*.md", "data/hooks/*.py"]
 
 [tool.setuptools.dynamic]
 version = {attr = "jot_core.__version__"}

@@ -11,6 +11,10 @@ from .frontmatter import FrontMatter, read_document
 TOKEN_RE = re.compile(r"{{\s*([a-zA-Z0-9_]+)\s*}}|{\s*([a-zA-Z0-9_]+)\s*}")
 
 
+def bundled_templates_dir() -> Path:
+    return Path(__file__).resolve().parent / "data" / "templates"
+
+
 def apply_template(
     templates_dir: Path,
     *,
@@ -20,6 +24,8 @@ def apply_template(
     default_body: str,
 ) -> tuple[OrderedDict[str, object], str]:
     template_path = templates_dir / f"{kind}.md"
+    if not template_path.exists():
+        template_path = bundled_templates_dir() / f"{kind}.md"
     if not template_path.exists():
         return default_metadata, _render_text(default_body, context)
 

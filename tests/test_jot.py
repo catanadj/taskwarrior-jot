@@ -42,6 +42,7 @@ from jot_core.progress import (
 )
 from jot_core.services import JotService
 from jot_core.taskwarrior import TaskwarriorClient
+from jot_core.templates import apply_template
 from jot_tui.app import (
     NEW_PROGRESS_TRACK,
     initial_progress_track,
@@ -2293,6 +2294,25 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("## Context", task_note)
         self.assertIn("## Notes", task_note)
         self.assertIn("Created:", task_note)
+
+    def test_bundled_template_is_used_when_user_template_is_missing(self) -> None:
+        metadata, body = apply_template(
+            self.root / "templates-not-installed",
+            kind="task-note",
+            context={
+                "task_uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+                "task_short_uuid": "2d6d7d7d",
+                "description": "Bundled template task",
+                "project": "reading",
+                "created": "2026-07-27T12:00:00Z",
+            },
+            default_metadata=OrderedDict([("kind", "task-note")]),
+            default_body="fallback body",
+        )
+
+        self.assertEqual(metadata["kind"], "task-note")
+        self.assertIn("# Bundled template task", body)
+        self.assertIn("## Next steps", body)
 
     def test_project_note_append_uses_project_hierarchy_and_updates_index(self) -> None:
         result = self.run_jot("project-append", "Finances.Expense", "reimbursement", "policy")
