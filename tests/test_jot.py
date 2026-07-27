@@ -1959,6 +1959,26 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertFalse(checks["config"]["ok"])
         self.assertIn("invalid display.color value", checks["config"]["detail"])
 
+    def test_doctor_reports_invalid_config_boolean_without_defaulting(self) -> None:
+        config = self.root / "invalid-boolean.toml"
+        config.write_text("[timewarrior]\nenabled = \"sometimes\"\n", encoding="utf-8")
+        result = self.run_jot_with_env("--json", "doctor", extra_env={"JOT_CONFIG": str(config)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        checks = {item["name"]: item for item in payload["checks"]}
+        self.assertFalse(checks["config"]["ok"])
+        self.assertIn("invalid timewarrior.enabled value", checks["config"]["detail"])
+
+    def test_doctor_reports_unknown_config_keys(self) -> None:
+        config = self.root / "unknown-key.toml"
+        config.write_text("[timewarrior]\nenabled = true\nenabeld = false\n", encoding="utf-8")
+        result = self.run_jot_with_env("--json", "doctor", extra_env={"JOT_CONFIG": str(config)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        checks = {item["name"]: item for item in payload["checks"]}
+        self.assertFalse(checks["config"]["ok"])
+        self.assertIn("unknown config key(s): timewarrior.enabeld", checks["config"]["detail"])
+
     def test_migrate_dry_run_then_apply_backs_up_legacy_notes(self) -> None:
         jot_root = self.home / ".task" / "jot"
         note_path = jot_root / "tasks" / "2d6d7d7d--legacy.md"

@@ -11,6 +11,13 @@ from .models import AppConfig
 DEFAULT_TASKDATA = Path("~/.task").expanduser()
 DEFAULT_CONFIG_NAME = "config-jot.toml"
 TASKRC_DATA_RE = re.compile(r"^\s*(?:rc\.)?data\.location\s*=\s*(.*?)\s*$")
+CONFIG_KEYS = {
+    "paths": {"root", "tasks", "chains", "projects", "templates"},
+    "editor": {"command", "show_diff_on_save", "diff_color", "post_save_actions"},
+    "display": {"color", "default_format"},
+    "nautical": {"enabled"},
+    "timewarrior": {"enabled"},
+}
 
 
 def _expand_path(raw: str | None, fallback: Path) -> Path:
@@ -28,21 +35,21 @@ def _read_config_file(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def _config_bool(value: object, default: bool) -> bool:
+def _config_bool(value: object, default: bool, *, key: str) -> bool:
     if isinstance(value, bool):
         return value
-    if value in (None, ""):
+    if value is None:
         return default
     text = str(value).strip().casefold()
     if text in {"1", "yes", "true", "on"}:
         return True
     if text in {"0", "no", "false", "off"}:
         return False
-    return default
+    raise RuntimeError(f"invalid {key} value '{value}'; expected a boolean")
 
 
 def _config_choice(value: object, default: str, *, key: str, allowed: set[str]) -> str:
-    normalized = str(value or default).strip().casefold()
+    normalized = str(default if value is None else value).strip().casefold()
     if normalized not in allowed:
         choices = ", ".join(sorted(allowed))
         raise RuntimeError(f"invalid {key} value '{value}'; expected one of: {choices}")
@@ -76,6 +83,7 @@ def load_config() -> AppConfig:
     default_root = _expand_path(os.environ.get("JOT_HOME"), _taskdata_root() / "jot")
     config_path = _expand_path(os.environ.get("JOT_CONFIG"), default_root / DEFAULT_CONFIG_NAME)
     data = _read_config_file(config_path)
+    _validate_config_shape(data)
 
     paths_cfg = data.get("paths") if isinstance(data.get("paths"), dict) else {}
     editor_cfg = data.get("editor") if isinstance(data.get("editor"), dict) else {}
@@ -91,14 +99,18 @@ def load_config() -> AppConfig:
     templates_dir = _expand_path(paths_cfg.get("templates"), root_dir / "templates")
 
     editor_command = str(editor_cfg.get("command") or os.environ.get("EDITOR") or "vim").strip()
-    editor_show_diff_on_save = _config_bool(editor_cfg.get("show_diff_on_save"), True)
+    editor_show_diff_on_save = _config_bool(
+        editor_cfg.get("show_diff_on_save"), True, key="editor.show_diff_on_save"
+    )
     editor_diff_color = _config_choice(
         editor_cfg.get("diff_color"),
         "auto",
         key="editor.diff_color",
         allowed={"auto", "always", "never"},
     )
-    editor_post_save_actions = _config_bool(editor_cfg.get("post_save_actions"), True)
+    editor_post_save_actions = _config_bool(
+        editor_cfg.get("post_save_actions"), True, key="editor.post_save_actions"
+    )
     color_mode = _config_choice(
         display_cfg.get("color"),
         "auto",
@@ -111,8 +123,10 @@ def load_config() -> AppConfig:
         key="display.default_format",
         allowed={"json", "text"},
     )
-    nautical_enabled = _config_bool(nautical_cfg.get("enabled"), True)
-    timewarrior_enabled = _config_bool(timewarrior_cfg.get("enabled"), True)
+    nautical_enabled = _config_bool(nautical_cfg.get("enabled"), True, key="nautical.enabled")
+    timewarrior_enabled = _config_bool(
+        timewarrior_cfg.get("enabled"), True, key="timewarrior.enabled"
+    )
 
     return AppConfig(
         config_path=config_path,
@@ -143,3 +157,20 @@ def ensure_app_dirs(config: AppConfig) -> None:
         config.templates_dir,
     ):
         path.mkdir(parents=True, exist_ok=True)
+
+
+def _validate_config_shape(data: dict) -> None:
+    unknown_sections = sorted(set(data) - set(CONFIG_KEYS))
+    if unknown_sections:
+        names = ", ".join(unknown_sections)
+        raise RuntimeError(f"unknown config section(s): {names}")
+    for section, allowed_keys in CONFIG_KEYS.items():
+        if section not in data:
+            continue
+        value = data[section]
+        if not isinstance(value, dict):
+            raise RuntimeError(f"config section '{section}' must be a table")
+        unknown_keys = sorted(set(value) - allowed_keys)
+        if unknown_keys:
+            names = ", ".join(f"{section}.{key}" for key in unknown_keys)
+            raise RuntimeError(f"unknown config key(s): {names}")
