@@ -166,6 +166,9 @@ opt out, add this to `config-jot.toml`:
 enabled = false
 ```
 
+If Timewarrior is unavailable or fails to start, Jot keeps its own pending
+session and retries the Timewarrior start when the same task is started again.
+
 Store tags on a task, Nautical chain, or project note:
 
 ```bash

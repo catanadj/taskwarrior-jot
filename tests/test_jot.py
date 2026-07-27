@@ -121,7 +121,13 @@ def _write_fake_task_script(bin_dir: Path, state_path: Path) -> None:
     path.chmod(0o755)
 
 
-def _write_fake_timew_script(bin_dir: Path, log_path: Path, *, returncode: int = 0) -> None:
+def _write_fake_timew_script(
+    bin_dir: Path,
+    log_path: Path,
+    *,
+    returncode: int = 0,
+    returncodes: list[int] | None = None,
+) -> None:
     script = textwrap.dedent(
         f"""\
         #!/usr/bin/env python3
@@ -133,11 +139,13 @@ def _write_fake_timew_script(bin_dir: Path, log_path: Path, *, returncode: int =
         calls = json.loads(log_path.read_text()) if log_path.exists() else []
         calls.append(sys.argv[1:])
         log_path.write_text(json.dumps(calls))
-        if {returncode}:
+        returncodes = {(returncodes or [])!r}
+        exit_code = returncodes[len(calls) - 1] if len(calls) <= len(returncodes) else {returncode}
+        if exit_code:
             print('simulated Timewarrior failure', file=sys.stderr)
         else:
             print('Tracking requested tags')
-        raise SystemExit({returncode})
+        raise SystemExit(exit_code)
         """
     )
     path = bin_dir / "timew"
@@ -1374,6 +1382,32 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("Timewarrior", started.stderr)
         pending = json.loads(self.run_jot("--json", "timelog", "pending").stdout)
         self.assertEqual(len(pending["sessions"]), 1)
+
+    def test_timelog_start_retries_a_failed_timewarrior_start(self) -> None:
+        task = {
+            "uuid": "986e9d97-1111-2222-3333-444444444444",
+            "description": "Focused work",
+            "project": "work",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "2": [task]})
+        config_path = self.home / ".task" / "jot" / "config-jot.toml"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("[timewarrior]\nenabled = true\n", encoding="utf-8")
+        timew_log = self.root / "timew-calls.json"
+        _write_fake_timew_script(self.bin_dir, timew_log, returncodes=[9, 0])
+        self.assertEqual(self.run_jot("timew", "set", "task", "2", "focus").returncode, 0)
+
+        first = self.run_jot("--json", "timelog", "start", "2")
+        self.assertFalse(json.loads(first.stdout)["timewarrior"]["started"])
+
+        retry = self.run_jot("--json", "timelog", "start", "2")
+        retry_payload = json.loads(retry.stdout)
+        self.assertTrue(retry_payload["already_started"])
+        self.assertTrue(retry_payload["timewarrior_retry"])
+        self.assertTrue(retry_payload["timewarrior"]["started"])
+        self.assertEqual(len(json.loads(timew_log.read_text())), 2)
 
     def test_timelog_start_stop_records_session_and_writes_note(self) -> None:
         task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"

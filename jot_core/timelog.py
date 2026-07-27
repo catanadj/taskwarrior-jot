@@ -41,11 +41,12 @@ def ingest_time_log(config, old: dict[str, Any], new: dict[str, Any], *, scope: 
 def start_time_session(config, task: ResolvedTask, *, started_at: str = "") -> dict[str, Any]:
     started = _parse_datetime(started_at) if started_at else datetime.now(timezone.utc)
     path = _session_store_path(config)
+    existing = None
     with exclusive_file_lock(path):
         sessions = _read_sessions_unlocked(path)
         existing = sessions.get(task.task_uuid)
         if isinstance(existing, dict):
-            return {
+            result = {
                 "task_uuid": task.task_uuid,
                 "task_short_uuid": task.task_short_uuid,
                 "chain_id": existing.get("chain_id") or chain_id_for_task(task.task) or None,
@@ -53,31 +54,71 @@ def start_time_session(config, task: ResolvedTask, *, started_at: str = "") -> d
                 "path": str(path),
                 "already_started": True,
             }
-        sessions[task.task_uuid] = {
-            "task_uuid": task.task_uuid,
-            "task_short_uuid": task.task_short_uuid,
-            "description": task.description,
-            "project": task.project,
-            "chain_id": chain_id_for_task(task.task) or None,
-            "started": _iso_z(started),
-        }
-        _write_sessions_unlocked(path, sessions)
-    append_op(
-        config,
-        "timelog_session_start",
-        task_short_uuid=task.task_short_uuid,
-        task_uuid=task.task_uuid,
-        chain_id=chain_id_for_task(task.task) or None,
-        started=_iso_z(started),
+        else:
+            sessions[task.task_uuid] = {
+                "task_uuid": task.task_uuid,
+                "task_short_uuid": task.task_short_uuid,
+                "description": task.description,
+                "project": task.project,
+                "chain_id": chain_id_for_task(task.task) or None,
+                "started": _iso_z(started),
+                "timewarrior_attempted": False,
+                "timewarrior_started": False,
+            }
+            _write_sessions_unlocked(path, sessions)
+            result = {
+                "task_uuid": task.task_uuid,
+                "task_short_uuid": task.task_short_uuid,
+                "chain_id": chain_id_for_task(task.task) or None,
+                "started": _iso_z(started),
+                "path": str(path),
+            }
+
+    # A successful external start is idempotent. Failed starts, including
+    # legacy sessions without these fields, remain retryable.
+    retry_timewarrior = isinstance(existing, dict) and (
+        existing.get("timewarrior_started") is not True
+        and (
+            existing.get("timewarrior_attempted") is True
+            or "timewarrior_attempted" not in existing
+        )
     )
-    result = {
-        "task_uuid": task.task_uuid,
-        "task_short_uuid": task.task_short_uuid,
-        "chain_id": chain_id_for_task(task.task) or None,
-        "started": _iso_z(started),
-        "path": str(path),
-    }
+    if isinstance(existing, dict) and not retry_timewarrior:
+        result["timewarrior"] = {
+            "enabled": bool(config.timewarrior_enabled),
+            "attempted": False,
+            "started": False,
+            "reason": "already-started",
+            "error": None,
+        }
+        return result
+
+    if not isinstance(existing, dict):
+        append_op(
+            config,
+            "timelog_session_start",
+            task_short_uuid=task.task_short_uuid,
+            task_uuid=task.task_uuid,
+            chain_id=chain_id_for_task(task.task) or None,
+            started=_iso_z(started),
+        )
+
     result["timewarrior"] = start_timewarrior_for_task(config, task)
+    if retry_timewarrior:
+        result["timewarrior_retry"] = True
+
+    with exclusive_file_lock(path):
+        sessions = _read_sessions_unlocked(path)
+        current = sessions.get(task.task_uuid)
+        if isinstance(current, dict) and current.get("started") == result.get("started"):
+            timewarrior = result["timewarrior"]
+            current["timewarrior_attempted"] = bool(timewarrior.get("attempted"))
+            current["timewarrior_started"] = bool(timewarrior.get("started"))
+            if timewarrior.get("error"):
+                current["timewarrior_error"] = str(timewarrior["error"])
+            else:
+                current.pop("timewarrior_error", None)
+            _write_sessions_unlocked(path, sessions)
     return result
 
 

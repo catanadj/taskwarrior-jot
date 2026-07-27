@@ -1849,7 +1849,18 @@ def build_tui(
             except Exception as exc:
                 self.notify(f"Timer start failed: {exc}", severity="error")
                 return
-            if result.get("already_started"):
+            timewarrior = result.get("timewarrior")
+            if isinstance(timewarrior, dict) and timewarrior.get("error"):
+                self.notify(
+                    f"Jot timer is pending, but Timewarrior failed: {timewarrior['error']}",
+                    severity="error",
+                )
+            elif result.get("timewarrior_retry") and isinstance(timewarrior, dict) and timewarrior.get("started"):
+                self.notify(
+                    f"Retried and started Timewarrior for {result.get('task_short_uuid')}",
+                    severity="information",
+                )
+            elif result.get("already_started"):
                 self.notify(
                     f"Timer for {result.get('task_short_uuid')} is already running",
                     severity="warning",

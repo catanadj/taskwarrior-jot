@@ -554,6 +554,8 @@ def _emit_timelog_start(payload: dict[str, Any]) -> None:
     timewarrior = payload.get("timewarrior")
     if not isinstance(timewarrior, dict) or not timewarrior.get("enabled"):
         return
+    if timewarrior.get("reason") == "already-started":
+        return
     tags = ", ".join(str(tag) for tag in timewarrior.get("tags") or [])
     if timewarrior.get("started"):
         _write_status(f"Timewarrior started: {tags}")
