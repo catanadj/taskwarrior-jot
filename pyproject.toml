@@ -17,6 +17,7 @@ dependencies = []
 [project.optional-dependencies]
 tui = ["textual>=0.47"]
 test = ["textual>=0.47"]
+dev = ["textual>=0.47", "mypy>=1.11"]
 
 [project.scripts]
 jot = "jot_core.cli:main"
@@ -26,3 +27,19 @@ packages = ["jot_core", "jot_tui"]
 
 [tool.setuptools.dynamic]
 version = {attr = "jot_core.__version__"}
+
+[tool.mypy]
+python_version = "3.11"
+files = [
+  "jot_core/models.py",
+  "jot_core/taskwarrior.py",
+  "jot_core/editor.py",
+  "jot_core/command_prefix.py",
+  "jot_core/command_help.py",
+  "jot_tui/palette.py",
+]
+check_untyped_defs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+warn_redundant_casts = true
+warn_unused_ignores = true
