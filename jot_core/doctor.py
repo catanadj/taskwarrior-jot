@@ -15,6 +15,7 @@ from .models import AppConfig, CommandResult, DoctorCheck
 from .ops import ops_log_path, read_ops
 from .schema import inspect_note_schemas
 from .taskwarrior import TaskwarriorClient
+from .trash import list_trash, repair_trash
 
 
 def run_doctor(config: AppConfig, client: TaskwarriorClient, *, repair: bool = False) -> CommandResult:
@@ -46,6 +47,7 @@ def run_doctor(config: AppConfig, client: TaskwarriorClient, *, repair: bool = F
     checks.append(_locks_check(config))
     checks.append(_schema_check(config))
     checks.append(_ops_check(config))
+    checks.append(_trash_check(config))
     checks.append(_index_check(config))
 
     task_ok = client.is_available()
@@ -171,6 +173,14 @@ def _repair_local_state(config: AppConfig) -> list[dict[str, object]]:
             "count": len(repaired_locks),
         }
     ]
+    repaired_trash = repair_trash(config)
+    repairs.append(
+        {
+            "action": "trash",
+            "detail": f"recovered {len(repaired_trash)} orphaned trash item(s)",
+            "count": len(repaired_trash),
+        }
+    )
     migration = migrate_notes(config, dry_run=False)
     if migration.get("blocked"):
         detail = f"blocked by {migration['blocked']} invalid or future note(s)"
@@ -194,6 +204,21 @@ def _ops_check(config: AppConfig) -> DoctorCheck:
         return DoctorCheck(name="ops", ok=False, detail=f"{path}: {exc}")
 
 
+def _trash_check(config: AppConfig) -> DoctorCheck:
+    try:
+        items = list_trash(config)
+    except Exception as exc:
+        return DoctorCheck(name="trash", ok=False, detail=str(exc))
+    orphaned = sum(1 for item in items if item.get("orphaned"))
+    if orphaned:
+        return DoctorCheck(
+            name="trash",
+            ok=False,
+            detail=f"{orphaned} orphaned trash item(s); run `jot doctor --repair`",
+        )
+    return DoctorCheck(name="trash", ok=True, detail=f"{len(items)} recoverable item(s)")
+
+
 def _index_check(config: AppConfig) -> DoctorCheck:
     status = read_index_status(config)
     path = config.root_dir / "index.json"
@@ -206,7 +231,10 @@ def _index_check(config: AppConfig) -> DoctorCheck:
         "chains": len(list(config.chains_dir.glob("*.md"))),
         "projects": len(list(config.projects_dir.glob("**/index.md"))),
     }
-    ops_items = read_ops(config)
+    try:
+        ops_items = read_ops(config)
+    except Exception as exc:
+        return DoctorCheck(name="index", ok=False, detail=f"cannot inspect operations log: {exc}")
     latest_op_ts = max(
         (str(item.get("ts") or "").strip() for item in ops_items if str(item.get("ts") or "").strip()),
         default=None,

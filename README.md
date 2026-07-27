@@ -316,8 +316,9 @@ jot rebuild-index
 Jot notes carry a small schema version so upgrades remain predictable. Inspect
 an upgrade with `jot migrate --dry-run`, then run `jot migrate`; changed notes
 are copied under `.jot_backups/` before their metadata is updated. `jot doctor
---repair` also removes stale fallback locks, applies safe migrations, and
-rebuilds the derived index.
+--repair` also removes stale fallback locks, recovers orphaned trash entries,
+applies safe migrations, and rebuilds the derived index. A damaged operations
+log is reported with its file and line number instead of being silently ignored.
 
 ## Templates
 

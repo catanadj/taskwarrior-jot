@@ -5,6 +5,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1979,6 +1980,29 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertFalse(checks["config"]["ok"])
         self.assertIn("unknown config key(s): timewarrior.enabeld", checks["config"]["detail"])
 
+    def test_doctor_reports_corrupt_operations_log_with_line_number(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Corrupt log test",
+            "project": "testing",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        self.assertEqual(self.run_jot("note-append", "1", "create an ops record").returncode, 0)
+        ops_path = self.home / ".task" / "jot" / "ops.jsonl"
+        with ops_path.open("a", encoding="utf-8") as handle:
+            handle.write("{not valid json}\n")
+
+        result = self.run_jot("--json", "doctor")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        checks = {item["name"]: item for item in json.loads(result.stdout)["checks"]}
+        self.assertFalse(checks["ops"]["ok"])
+        self.assertIn("ops.jsonl:2", checks["ops"]["detail"])
+        self.assertFalse(checks["trash"]["ok"])
+        self.assertIn("ops.jsonl:2", checks["trash"]["detail"])
+
     def test_migrate_dry_run_then_apply_backs_up_legacy_notes(self) -> None:
         jot_root = self.home / ".task" / "jot"
         note_path = jot_root / "tasks" / "2d6d7d7d--legacy.md"
@@ -2072,7 +2096,7 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(repaired.returncode, 0, repaired.stderr)
         payload = json.loads(repaired.stdout)
         actions = {item["action"] for item in payload["repairs"]}
-        self.assertEqual(actions, {"stale-locks", "note-schema", "index"})
+        self.assertEqual(actions, {"stale-locks", "trash", "note-schema", "index"})
         checks = {item["name"]: item for item in payload["checks"]}
         self.assertTrue(checks["locks"]["ok"])
         self.assertTrue(checks["note_schema"]["ok"])
@@ -2378,6 +2402,50 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(after_restore.returncode, 0, after_restore.stderr)
         after_payload = json.loads(after_restore.stdout)
         self.assertEqual(len(after_payload["items"]), 2)
+
+    def test_doctor_recovers_orphaned_trash_note(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Orphan recovery",
+            "project": "testing",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        self.assertEqual(self.run_jot("note-append", "1", "recover me").returncode, 0)
+
+        note_path = self.home / ".task" / "jot" / "tasks" / "2d6d7d7d--orphan-recovery.md"
+        trash_path = (
+            self.home
+            / ".task"
+            / "jot"
+            / ".jot_trash"
+            / "20260727T120000Z"
+            / "tasks"
+            / note_path.name
+        )
+        trash_path.parent.mkdir(parents=True)
+        shutil.move(str(note_path), str(trash_path))
+
+        listed = self.run_jot("--json", "trash-list")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        listed_items = json.loads(listed.stdout)["items"]
+        self.assertEqual(len(listed_items), 1)
+        self.assertTrue(listed_items[0]["orphaned"])
+        self.assertEqual(listed_items[0]["path"], str(note_path))
+
+        repaired = self.run_jot("--json", "doctor", "--repair")
+        self.assertEqual(repaired.returncode, 0, repaired.stderr)
+        repairs = json.loads(repaired.stdout)["repairs"]
+        trash_repair = next(item for item in repairs if item["action"] == "trash")
+        self.assertEqual(trash_repair["count"], 1)
+
+        after_repair = json.loads(self.run_jot("--json", "trash-list").stdout)["items"]
+        self.assertEqual(len(after_repair), 1)
+        self.assertNotIn("orphaned", after_repair[0])
+        restored = self.run_jot("--json", "trash-restore", "1")
+        self.assertEqual(restored.returncode, 0, restored.stderr)
+        self.assertTrue(note_path.exists())
 
     def test_task_and_chain_cat_contracts(self) -> None:
         task = {

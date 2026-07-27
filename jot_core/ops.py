@@ -40,14 +40,19 @@ def read_ops(config: AppConfig) -> list[dict[str, Any]]:
         if not path.exists():
             return []
         with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
+            for line_number, line in enumerate(handle, start=1):
                 text = line.strip()
                 if not text:
                     continue
                 try:
                     data = json.loads(text)
-                except Exception:
-                    continue
-                if isinstance(data, dict):
-                    items.append(data)
+                except json.JSONDecodeError as exc:
+                    raise RuntimeError(
+                        f"invalid operations log record at {path}:{line_number}: {exc.msg}"
+                    ) from exc
+                if not isinstance(data, dict):
+                    raise RuntimeError(
+                        f"invalid operations log record at {path}:{line_number}: expected an object"
+                    )
+                items.append(data)
     return items

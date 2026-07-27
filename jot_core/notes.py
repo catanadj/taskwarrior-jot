@@ -4,11 +4,12 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import shutil
 import re
 
-from .frontmatter import exclusive_file_lock, read_document, update_metadata, write_document
+from .frontmatter import atomic_write_text, exclusive_file_lock, read_document, update_metadata, write_document
 from .models import AppConfig, AppendResult, DeleteResult, NotePaths, ResolvedTask
 from .nautical import chain_id_for_task
 from .ops import iso_now
@@ -162,6 +163,7 @@ def delete_task_note(config: AppConfig, task: ResolvedTask) -> DeleteResult:
         raise RuntimeError(f"task note does not exist for {task.task_short_uuid}")
     trash_path = _trash_note_path(config, note_path)
     _move_to_trash(note_path, trash_path)
+    _write_trash_manifest(config, note_path, trash_path, kind="task-note")
     return DeleteResult(note_path=note_path, trash_path=trash_path, existed=True)
 
 
@@ -171,6 +173,7 @@ def delete_chain_note(config: AppConfig, task: ResolvedTask) -> DeleteResult:
         raise RuntimeError(f"chain note does not exist for {task.task_short_uuid}")
     trash_path = _trash_note_path(config, note_path)
     _move_to_trash(note_path, trash_path)
+    _write_trash_manifest(config, note_path, trash_path, kind="chain-note")
     return DeleteResult(note_path=note_path, trash_path=trash_path, existed=True)
 
 
@@ -180,6 +183,7 @@ def delete_project_note(config: AppConfig, project_name: str) -> DeleteResult:
         raise RuntimeError(f"project note does not exist for {project_name}")
     trash_path = _trash_note_path(config, note_path)
     _move_to_trash(note_path, trash_path)
+    _write_trash_manifest(config, note_path, trash_path, kind="project-note")
     return DeleteResult(note_path=note_path, trash_path=trash_path, existed=True)
 
 
@@ -568,6 +572,30 @@ def _trash_note_path(config: AppConfig, note_path: Path) -> Path:
 def _move_to_trash(note_path: Path, trash_path: Path) -> None:
     trash_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(note_path), str(trash_path))
+
+
+def trash_manifest_path(trash_path: Path) -> Path:
+    return trash_path.with_name(f".{trash_path.name}.jot-manifest.json")
+
+
+def _write_trash_manifest(config: AppConfig, note_path: Path, trash_path: Path, *, kind: str) -> None:
+    metadata, _body = read_document(trash_path)
+    payload: dict[str, object] = {
+        "version": 1,
+        "kind": kind,
+        "deleted_at": iso_now(),
+        "path": str(note_path),
+        "trash_path": str(trash_path),
+    }
+    for key in ("task_uuid", "task_short_uuid", "chain_id", "project"):
+        value = str(metadata.get(key) or "").strip()
+        if value:
+            payload[key] = value
+    manifest_path = trash_manifest_path(trash_path)
+    atomic_write_text(
+        manifest_path,
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+    )
 
 
 def _append_under_heading(
