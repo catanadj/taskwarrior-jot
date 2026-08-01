@@ -939,7 +939,7 @@ def main(argv: list[str] | None = None) -> int:
         else:  # pragma: no cover
             parser.error(f"unknown command {args.command}")
             return 2
-    except RuntimeError as exc:
+    except (RuntimeError, OSError, ValueError, TypeError) as exc:
         warn(str(exc))
         return 1
 

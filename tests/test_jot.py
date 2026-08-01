@@ -1851,6 +1851,17 @@ class CliIntegrationTests(JotCliTestCase):
         with self.assertRaisesRegex(ValueError, "greater than zero"):
             TaskwarriorClient(timeout_seconds=0)
 
+    def test_taskwarrior_invalid_export_json_is_actionable(self) -> None:
+        path = self.bin_dir / "task"
+        path.write_text("#!/bin/sh\nprintf '%s\\n' 'not json'\n", encoding="utf-8")
+        path.chmod(0o755)
+
+        result = self.run_jot("--json", "show", "1")
+
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("Taskwarrior export returned invalid JSON", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_no_arguments_prints_command_overview(self) -> None:
         result = self.run_jot()
         self.assertEqual(result.returncode, 0, result.stderr)

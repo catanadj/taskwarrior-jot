@@ -198,7 +198,12 @@ class TaskwarriorClient:
         body = (proc.stdout or "").strip()
         if not body:
             return []
-        data = json.loads(body)
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Taskwarrior export returned invalid JSON: {exc.msg} (line {exc.lineno}, column {exc.colno})"
+            ) from exc
         if not isinstance(data, list):
             raise RuntimeError("task export returned non-array JSON")
         return [item for item in data if isinstance(item, dict)]
