@@ -2031,7 +2031,7 @@ class CliIntegrationTests(JotCliTestCase):
         bad_config = self.root / "broken.toml"
         bad_config.write_text("[paths\nroot = '/tmp'\n", encoding="utf-8")
         result = self.run_jot_with_env("--json", "doctor", extra_env={"JOT_CONFIG": str(bad_config)})
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
         payload = json.loads(result.stdout)
         checks = {item["name"]: item for item in payload["checks"]}
         self.assertFalse(checks["config"]["ok"])
@@ -2079,7 +2079,7 @@ class CliIntegrationTests(JotCliTestCase):
         config = self.root / "invalid-choice.toml"
         config.write_text("[display]\ncolor = \"sometimes\"\n", encoding="utf-8")
         result = self.run_jot_with_env("--json", "doctor", extra_env={"JOT_CONFIG": str(config)})
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
         payload = json.loads(result.stdout)
         checks = {item["name"]: item for item in payload["checks"]}
         self.assertFalse(checks["config"]["ok"])
@@ -2089,7 +2089,7 @@ class CliIntegrationTests(JotCliTestCase):
         config = self.root / "invalid-boolean.toml"
         config.write_text("[timewarrior]\nenabled = \"sometimes\"\n", encoding="utf-8")
         result = self.run_jot_with_env("--json", "doctor", extra_env={"JOT_CONFIG": str(config)})
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
         payload = json.loads(result.stdout)
         checks = {item["name"]: item for item in payload["checks"]}
         self.assertFalse(checks["config"]["ok"])
@@ -2099,7 +2099,7 @@ class CliIntegrationTests(JotCliTestCase):
         config = self.root / "unknown-key.toml"
         config.write_text("[timewarrior]\nenabled = true\nenabeld = false\n", encoding="utf-8")
         result = self.run_jot_with_env("--json", "doctor", extra_env={"JOT_CONFIG": str(config)})
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
         payload = json.loads(result.stdout)
         checks = {item["name"]: item for item in payload["checks"]}
         self.assertFalse(checks["config"]["ok"])
@@ -2121,7 +2121,7 @@ class CliIntegrationTests(JotCliTestCase):
 
         result = self.run_jot("--json", "doctor")
 
-        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
         checks = {item["name"]: item for item in json.loads(result.stdout)["checks"]}
         self.assertFalse(checks["ops"]["ok"])
         self.assertIn("ops.jsonl:2", checks["ops"]["detail"])
@@ -2212,7 +2212,7 @@ class CliIntegrationTests(JotCliTestCase):
         )
 
         before = self.run_jot("--json", "doctor")
-        self.assertEqual(before.returncode, 0, before.stderr)
+        self.assertEqual(before.returncode, 1, before.stderr)
         before_checks = {item["name"]: item for item in json.loads(before.stdout)["checks"]}
         self.assertFalse(before_checks["locks"]["ok"])
         self.assertFalse(before_checks["note_schema"]["ok"])

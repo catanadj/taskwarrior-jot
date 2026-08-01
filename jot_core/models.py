@@ -65,6 +65,7 @@ class DoctorCheck:
     name: str
     ok: bool
     detail: str
+    severity: str = "error"
 
 
 @dataclass(slots=True)

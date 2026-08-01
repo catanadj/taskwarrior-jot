@@ -836,7 +836,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         if args.command == "doctor":
             emit_result(run_doctor_config_error(f"failed to load config: {exc}"), json_mode=args.json)
-            return 0
+            return 1
         warn(str(exc))
         return 1
 
@@ -944,6 +944,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     emit_result(result, json_mode=args.json or ctx.config.default_format == "json")
+    if result.command == "doctor":
+        failed = [
+            item
+            for item in result.payload.get("checks") or []
+            if not item.get("ok") and str(item.get("severity") or "error") != "warning"
+        ]
+        if failed:
+            return 1
     if result.command == "migrate" and result.payload.get("blocked"):
         return 1
     return 0

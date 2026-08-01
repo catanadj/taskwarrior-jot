@@ -180,10 +180,17 @@ def _emit_doctor(payload: dict[str, Any]) -> None:
         _write_title("Checks")
     checks = payload.get("checks") or []
     for item in checks:
-        label = "OK" if item.get("ok") else "FAIL"
+        if item.get("ok"):
+            label = "OK"
+        elif str(item.get("severity") or "error") == "warning":
+            label = "WARN"
+        else:
+            label = "FAIL"
         name = str(item.get("name") or "check")
         detail = str(item.get("detail") or "")
-        color = "success" if item.get("ok") else "error"
+        color = "success" if item.get("ok") else (
+            "warning" if label == "WARN" else "error"
+        )
         status = _style(f"[{label}]", color=color, bold=True)
         sys.stdout.write(f"{status} {_style(name, color='label', bold=True)}: {detail}\n")
 

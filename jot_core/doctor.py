@@ -135,7 +135,12 @@ def _timewarrior_check(config: AppConfig) -> DoctorCheck:
         return DoctorCheck(name="timewarrior", ok=True, detail="integration disabled")
     resolved = shutil.which("timew")
     if not resolved:
-        return DoctorCheck(name="timewarrior", ok=False, detail="integration enabled; timew not found in PATH")
+        return DoctorCheck(
+            name="timewarrior",
+            ok=False,
+            detail="integration enabled; timew not found in PATH",
+            severity="warning",
+        )
     return DoctorCheck(name="timewarrior", ok=True, detail=f"integration enabled; timew -> {resolved}")
 
 
