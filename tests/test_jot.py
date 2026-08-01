@@ -23,7 +23,14 @@ from jot_core.cli import _offer_post_save_task_action, build_parser
 from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from jot_core.editor import colorize_diff, note_diff
-from jot_core.frontmatter import atomic_write_text, parse_document, read_document, render_document, write_document
+from jot_core.frontmatter import (
+    atomic_write_text,
+    parse_document,
+    read_document,
+    render_document,
+    update_metadata,
+    write_document,
+)
 from jot_core.models import AppConfig, CommandResult, ResolvedTask, TaskRef
 from jot_core.notes import append_to_task_note
 from jot_core.output import (
@@ -233,6 +240,22 @@ class FrontMatterTests(unittest.TestCase):
         reparsed, rebody = parse_document(rendered)
         self.assertEqual(metadata, reparsed)
         self.assertEqual(body, rebody)
+
+    def test_unterminated_front_matter_is_rejected(self) -> None:
+        source = "---\nkind: task-note\n\n# Body that must not be discarded\n"
+        with self.assertRaisesRegex(RuntimeError, "unterminated front matter"):
+            parse_document(source)
+
+    def test_metadata_update_does_not_rewrite_unterminated_note(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="jot-front-matter-") as tempdir:
+            path = Path(tempdir) / "note.md"
+            original = "---\nkind: task-note\n\n# Body that must not be discarded\n"
+            path.write_text(original, encoding="utf-8")
+
+            with self.assertRaisesRegex(RuntimeError, "unterminated front matter"):
+                update_metadata(path, {"updated": "2026-08-01T00:00:00Z"})
+
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
 
     def test_atomic_write_preserves_original_when_replace_fails(self) -> None:
         with tempfile.TemporaryDirectory(prefix="jot-atomic-") as tempdir:

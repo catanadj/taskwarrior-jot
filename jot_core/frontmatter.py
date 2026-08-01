@@ -212,19 +212,22 @@ def locked_document(path: Path) -> Iterator[tuple[FrontMatter, str]]:
 
 
 def parse_document(text: str) -> tuple[FrontMatter, str]:
-    lines = str(text or "").splitlines()
-    if len(lines) < 3 or lines[0].strip() != "---":
-        return OrderedDict(), str(text or "")
+    raw_text = str(text or "")
+    lines = raw_text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return OrderedDict(), raw_text
 
     metadata: FrontMatter = OrderedDict()
     idx = 1
     current_key: str | None = None
     current_list: list[str] = []
+    closed = False
 
     while idx < len(lines):
         line = lines[idx]
         idx += 1
         if line.strip() == "---":
+            closed = True
             break
         if current_key and line.startswith("  - "):
             current_list.append(line[4:].strip())
@@ -246,12 +249,15 @@ def parse_document(text: str) -> tuple[FrontMatter, str]:
             current_key = key
             current_list = []
 
+    if not closed:
+        raise RuntimeError("unterminated front matter: missing closing '---'")
+
     if current_key is not None:
         metadata[current_key] = list(current_list)
 
     body_lines = lines[idx:]
     body = "\n".join(body_lines)
-    if str(text or "").endswith("\n"):
+    if raw_text.endswith("\n"):
         body += "\n"
     return metadata, body
 
