@@ -60,22 +60,30 @@ def read_ops(config: AppConfig) -> list[dict[str, Any]]:
     path = ops_log_path(config)
     items: list[dict[str, Any]] = []
     with exclusive_file_lock(path):
-        if not path.exists():
-            return []
-        with path.open("r", encoding="utf-8") as handle:
-            for line_number, line in enumerate(handle, start=1):
-                text = line.strip()
-                if not text:
-                    continue
-                try:
-                    data = json.loads(text)
-                except json.JSONDecodeError as exc:
-                    raise RuntimeError(
-                        f"invalid operations log record at {path}:{line_number}: {exc.msg}"
-                    ) from exc
-                if not isinstance(data, dict):
-                    raise RuntimeError(
-                        f"invalid operations log record at {path}:{line_number}: expected an object"
-                    )
-                items.append(data)
+        for source in (*_ops_archive_paths(config), path):
+            if not source.exists():
+                continue
+            with source.open("r", encoding="utf-8") as handle:
+                for line_number, line in enumerate(handle, start=1):
+                    text = line.strip()
+                    if not text:
+                        continue
+                    try:
+                        data = json.loads(text)
+                    except json.JSONDecodeError as exc:
+                        raise RuntimeError(
+                            f"invalid operations log record at {source}:{line_number}: {exc.msg}"
+                        ) from exc
+                    if not isinstance(data, dict):
+                        raise RuntimeError(
+                            f"invalid operations log record at {source}:{line_number}: expected an object"
+                        )
+                    items.append(data)
     return items
+
+
+def _ops_archive_paths(config: AppConfig) -> list[Path]:
+    archive_dir = config.root_dir / "ops-archive"
+    if not archive_dir.exists():
+        return []
+    return sorted(archive_dir.glob("ops-*.jsonl"))

@@ -2382,6 +2382,10 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(len(archived_lines), 2)
         self.assertEqual(len(active_lines) + len(archived_lines), 5)
 
+        stats = self.run_jot("--json", "stats")
+        self.assertEqual(stats.returncode, 0, stats.stderr)
+        self.assertEqual(json.loads(stats.stdout)["ops"]["entries"], 5)
+
     def test_note_templates_are_applied_for_task_chain_and_project(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
