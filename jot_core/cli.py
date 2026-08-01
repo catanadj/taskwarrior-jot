@@ -92,7 +92,7 @@ from .timewarrior import (
     resolve_timewarrior_tags,
     set_timewarrior_tags,
 )
-from .trash import list_trash, restore_trash_item
+from .trash import cleanup_trash, list_trash, restore_trash_item
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -135,6 +135,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  jot section task 42 \"Next steps\"\n"
             "  jot trash-list\n"
             "  jot trash-restore 1\n"
+            "  jot cleanup --trash-older-than 365 --yes\n"
             "  jot migrate --dry-run\n"
             "  jot stats\n"
             "  jot paths\n"
@@ -230,6 +231,23 @@ def build_parser() -> argparse.ArgumentParser:
         description="Restore a trashed note by the ID shown by trash-list.",
     )
     trash_restore.add_argument("trash_id", type=int, help="ID shown by trash-list")
+    cleanup = subparsers.add_parser(
+        "cleanup",
+        help="permanently remove old items from jot trash",
+        description="Preview or permanently remove trashed notes and timelog archives older than the selected age.",
+    )
+    cleanup.add_argument(
+        "--trash-older-than",
+        type=int,
+        default=365,
+        metavar="DAYS",
+        help="select trash items older than DAYS (default: 365)",
+    )
+    cleanup.add_argument(
+        "--yes",
+        action="store_true",
+        help="permanently remove the selected items; without this flag, only preview",
+    )
     report = subparsers.add_parser(
         "report",
         help="show read-only reports from local jot state",
@@ -864,6 +882,15 @@ def main(argv: list[str] | None = None) -> int:
             result = _run_trash_list(ctx)
         elif args.command == "trash-restore":
             result = _run_trash_restore(ctx, args.trash_id)
+        elif args.command == "cleanup":
+            result = CommandResult(
+                command="cleanup",
+                payload=cleanup_trash(
+                    ctx.config,
+                    older_than_days=args.trash_older_than,
+                    apply=bool(args.yes),
+                ),
+            )
         elif args.command == "report":
             result = _run_report(ctx, args)
         elif args.command == "recent":

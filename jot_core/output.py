@@ -63,6 +63,9 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "trash-restore":
         _emit_trash_restore(payload)
         return
+    if command == "cleanup":
+        _emit_cleanup(payload)
+        return
     if command == "report-recent":
         _emit_report_recent(payload)
         return
@@ -347,6 +350,14 @@ def _emit_trash_restore(payload: dict[str, Any]) -> None:
     _emit_field("kind", payload.get("kind"), indent=0)
     _emit_field("to", payload.get("path"), indent=0)
     _emit_field("from", payload.get("trash_path"), indent=0)
+
+
+def _emit_cleanup(payload: dict[str, Any]) -> None:
+    action = "Removed" if payload.get("applied") else "Would remove"
+    _write_status(f"{action} {payload.get('count', 0)} old trash item(s)", color="warning")
+    _emit_field("older than", f"{payload.get('older_than_days')} days", indent=0)
+    if not payload.get("applied"):
+        _emit_field("apply", "rerun with --yes", indent=0)
 
 
 def _emit_report_recent(payload: dict[str, Any]) -> None:

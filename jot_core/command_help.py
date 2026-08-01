@@ -78,6 +78,7 @@ COMMAND_EXAMPLES = {
     "stats": "jot stats",
     "trash-list": "jot trash-list",
     "trash-restore": "jot trash-restore 1",
+    "cleanup": "jot cleanup --trash-older-than 365 --yes",
 }
 
 

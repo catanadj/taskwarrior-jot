@@ -2086,6 +2086,26 @@ class CliIntegrationTests(JotCliTestCase):
         ):
             self.assertIn(name, checks)
 
+    def test_cleanup_previews_and_then_removes_old_timelog_archives(self) -> None:
+        archive = self.home / ".task" / "jot" / ".jot_trash" / "timelog" / "old.json"
+        archive.parent.mkdir(parents=True)
+        archive.write_text(
+            json.dumps({"archived_at": "2020-01-01T00:00:00Z", "record": {}}),
+            encoding="utf-8",
+        )
+
+        preview = self.run_jot("--json", "cleanup", "--trash-older-than", "30")
+        self.assertEqual(preview.returncode, 0, preview.stderr)
+        preview_payload = json.loads(preview.stdout)
+        self.assertFalse(preview_payload["applied"])
+        self.assertEqual(preview_payload["count"], 1)
+        self.assertTrue(archive.exists())
+
+        applied = self.run_jot("--json", "cleanup", "--trash-older-than", "30", "--yes")
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        self.assertTrue(json.loads(applied.stdout)["applied"])
+        self.assertFalse(archive.exists())
+
     def test_doctor_reports_invalid_config_without_crashing(self) -> None:
         bad_config = self.root / "broken.toml"
         bad_config.write_text("[paths\nroot = '/tmp'\n", encoding="utf-8")

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import shutil
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .frontmatter import read_document
+from .frontmatter import exclusive_file_lock, read_document
 from .index import rebuild_index, save_index
 from .models import AppConfig
 from .notes import trash_manifest_path
@@ -116,6 +117,93 @@ def repair_trash(config: AppConfig) -> list[dict[str, Any]]:
         )
         repaired.append(item)
     return repaired
+
+
+def cleanup_trash(config: AppConfig, *, older_than_days: int, apply: bool = False) -> dict[str, Any]:
+    if older_than_days < 1:
+        raise RuntimeError("cleanup age must be at least 1 day")
+    cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
+    candidates = _old_trash_items(config, cutoff)
+    removed: list[dict[str, Any]] = []
+    if apply:
+        for item in candidates:
+            path = Path(str(item["path"]))
+            if not path.exists():
+                continue
+            with exclusive_file_lock(path):
+                if not path.exists():
+                    continue
+                if path.is_dir():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+                manifest = path.with_name(f".{path.name}.jot-manifest.json")
+                manifest.unlink(missing_ok=True)
+            removed.append(item)
+        _remove_empty_trash_dirs(config.trash_dir)
+    return {
+        "older_than_days": older_than_days,
+        "cutoff": cutoff.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "applied": apply,
+        "count": len(removed) if apply else len(candidates),
+        "items": removed if apply else candidates,
+    }
+
+
+def _old_trash_items(config: AppConfig, cutoff: datetime) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for item in list_trash(config):
+        deleted_at = _parse_trash_timestamp(item.get("deleted_at"))
+        if deleted_at is not None and deleted_at < cutoff:
+            items.append(
+                {
+                    "kind": item.get("kind"),
+                    "path": item.get("trash_path"),
+                    "deleted_at": item.get("deleted_at"),
+                }
+            )
+
+    archive_root = config.trash_dir / "timelog"
+    if archive_root.exists():
+        for path in sorted(archive_root.rglob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            archived_at = _parse_trash_timestamp(payload.get("archived_at"))
+            if archived_at is not None and archived_at < cutoff:
+                items.append(
+                    {
+                        "kind": "timelog-archive",
+                        "path": str(path),
+                        "deleted_at": payload.get("archived_at"),
+                    }
+                )
+    return items
+
+
+def _parse_trash_timestamp(value: object) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _remove_empty_trash_dirs(root: Path) -> None:
+    if not root.exists():
+        return
+    for path in sorted(root.rglob("*"), reverse=True):
+        if path.is_dir():
+            try:
+                path.rmdir()
+            except OSError:
+                pass
 
 
 def _orphaned_trash_notes(config: AppConfig, known_paths: set[str]) -> list[Path]:
