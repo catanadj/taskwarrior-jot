@@ -22,7 +22,7 @@ from unittest import mock
 from jot_core.cli import _offer_post_save_task_action, build_parser
 from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
-from jot_core.editor import colorize_diff, note_diff
+from jot_core.editor import colorize_diff, note_diff, open_in_editor
 from jot_core.frontmatter import (
     atomic_write_text,
     parse_document,
@@ -407,6 +407,25 @@ class EditorDiffTests(unittest.TestCase):
             self.assertIn("\033[31m-old\033[0m", colorize_diff(diff, color_mode="always"))
             self.assertIn("\033[32m+new\033[0m", colorize_diff(diff, color_mode="always"))
         self.assertEqual(colorize_diff(diff, color_mode="never"), diff)
+
+    def test_editor_preserves_external_changes_and_saves_conflict_copy(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="jot-editor-conflict-") as tempdir:
+            path = Path(tempdir) / "note.md"
+            path.write_text("original\n", encoding="utf-8")
+
+            def edit_and_race(command: list[str], *, check: bool) -> subprocess.CompletedProcess[str]:
+                temporary_path = Path(command[-1])
+                temporary_path.write_text("edited\n", encoding="utf-8")
+                path.write_text("external change\n", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0)
+
+            with mock.patch("jot_core.editor.subprocess.run", side_effect=edit_and_race):
+                with self.assertRaisesRegex(RuntimeError, "note changed while editor was open"):
+                    open_in_editor(path, "true")
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "external change\n")
+            conflict = next(path.parent.glob("note.conflict-*.md"))
+            self.assertEqual(conflict.read_text(encoding="utf-8"), "edited\n")
 
 
 class PaletteTests(unittest.TestCase):

@@ -6,8 +6,10 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
+from .frontmatter import atomic_write_text, exclusive_file_lock
 
 def split_editor_command(editor_command: str) -> list[str]:
     cmd = shlex.split(editor_command)
@@ -34,11 +36,44 @@ def open_in_editor(
 ) -> str:
     before = path.read_text(encoding="utf-8") if path.exists() else ""
     cmd = split_editor_command(editor_command)
-    cmd.append(str(path))
-    completed = subprocess.run(cmd, check=False)
-    if completed.returncode != 0:
-        raise RuntimeError(f"editor exited with code {completed.returncode}")
-    after = path.read_text(encoding="utf-8") if path.exists() else ""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.edit-",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            handle.write(before)
+        editor_cmd = [*cmd, str(temporary_path)]
+        completed = subprocess.run(editor_cmd, check=False)
+        if completed.returncode != 0:
+            raise RuntimeError(f"editor exited with code {completed.returncode}")
+        after = temporary_path.read_text(encoding="utf-8")
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+    with exclusive_file_lock(path):
+        current = path.read_text(encoding="utf-8") if path.exists() else ""
+        if current != before:
+            conflict_path = path.with_name(f"{path.stem}.conflict-{os.getpid()}{path.suffix}")
+            counter = 1
+            while conflict_path.exists():
+                conflict_path = path.with_name(
+                    f"{path.stem}.conflict-{os.getpid()}-{counter}{path.suffix}"
+                )
+                counter += 1
+            atomic_write_text(conflict_path, after)
+            raise RuntimeError(
+                f"note changed while editor was open; edited copy saved to {conflict_path}"
+            )
+        atomic_write_text(path, after)
+
     diff = note_diff(before, after, path=path)
     if diff and show_diff:
         sys.stderr.write(colorize_diff(diff, color_mode=color_mode))
