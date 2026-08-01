@@ -110,10 +110,11 @@ def project_note_path(config: AppConfig, project_name: str) -> Path:
 
 def ensure_task_note(config: AppConfig, task: ResolvedTask) -> NotePaths:
     note_path = task_note_path(config, task)
-    existed = note_path.exists()
-    if not existed:
-        metadata, body = _build_task_note_document(config, task)
-        write_document(note_path, metadata, body)
+    with exclusive_file_lock(note_path):
+        existed = note_path.exists()
+        if not existed:
+            metadata, body = _build_task_note_document(config, task)
+            write_document(note_path, metadata, body)
     return NotePaths(note_path=note_path, existed=existed)
 
 
@@ -137,10 +138,11 @@ def ensure_chain_note(config: AppConfig, task: ResolvedTask) -> NotePaths:
     if not chain_id:
         raise RuntimeError("task is not part of a Nautical chain")
     note_path = chain_note_path(config, chain_id, task.description or chain_id)
-    existed = note_path.exists()
-    if not existed:
-        metadata, body = _build_chain_note_document(config, task)
-        write_document(note_path, metadata, body)
+    with exclusive_file_lock(note_path):
+        existed = note_path.exists()
+        if not existed:
+            metadata, body = _build_chain_note_document(config, task)
+            write_document(note_path, metadata, body)
     return NotePaths(note_path=note_path, existed=existed)
 
 
@@ -150,35 +152,44 @@ def ensure_project_note(config: AppConfig, project_name: str) -> NotePaths:
         raise RuntimeError("project name is empty")
     existing = find_project_note(config, normalized)
     note_path = existing or project_note_path(config, normalized)
-    existed = existing is not None
-    if not existed:
-        metadata, body = _build_project_note_document(config, normalized)
-        write_document(note_path, metadata, body)
+    with exclusive_file_lock(note_path):
+        existed = note_path.exists()
+        if not existed:
+            metadata, body = _build_project_note_document(config, normalized)
+            write_document(note_path, metadata, body)
     return NotePaths(note_path=note_path, existed=existed)
 
 
 def touch_updated(path: Path) -> None:
+    with exclusive_file_lock(path):
+        _touch_updated_unlocked(path)
+
+
+def _touch_updated_unlocked(path: Path) -> None:
     update_metadata(path, {"updated": iso_now()})
 
 
 def append_to_task_note(config: AppConfig, task: ResolvedTask, text: str) -> AppendResult:
     note = ensure_task_note(config, task)
-    _append_text(note.note_path, text)
-    touch_updated(note.note_path)
+    with exclusive_file_lock(note.note_path):
+        _append_text(note.note_path, text)
+        _touch_updated_unlocked(note.note_path)
     return AppendResult(note_path=note.note_path, existed=note.existed, appended_text=text)
 
 
 def append_to_chain_note(config: AppConfig, task: ResolvedTask, text: str) -> AppendResult:
     note = ensure_chain_note(config, task)
-    _append_text(note.note_path, text)
-    touch_updated(note.note_path)
+    with exclusive_file_lock(note.note_path):
+        _append_text(note.note_path, text)
+        _touch_updated_unlocked(note.note_path)
     return AppendResult(note_path=note.note_path, existed=note.existed, appended_text=text)
 
 
 def append_to_project_note(config: AppConfig, project_name: str, text: str) -> AppendResult:
     note = ensure_project_note(config, project_name)
-    _append_text(note.note_path, text)
-    touch_updated(note.note_path)
+    with exclusive_file_lock(note.note_path):
+        _append_text(note.note_path, text)
+        _touch_updated_unlocked(note.note_path)
     return AppendResult(note_path=note.note_path, existed=note.existed, appended_text=text)
 
 
@@ -187,8 +198,11 @@ def delete_task_note(config: AppConfig, task: ResolvedTask) -> DeleteResult:
     if note_path is None:
         raise RuntimeError(f"task note does not exist for {task.task_short_uuid}")
     trash_path = _trash_note_path(config, note_path)
-    _move_to_trash(note_path, trash_path)
-    _write_trash_manifest(config, note_path, trash_path, kind="task-note")
+    with exclusive_file_lock(note_path):
+        if not note_path.exists():
+            raise RuntimeError(f"task note disappeared during delete: {note_path}")
+        _move_to_trash(note_path, trash_path)
+        _write_trash_manifest(config, note_path, trash_path, kind="task-note")
     return DeleteResult(note_path=note_path, trash_path=trash_path, existed=True)
 
 
@@ -197,8 +211,11 @@ def delete_chain_note(config: AppConfig, task: ResolvedTask) -> DeleteResult:
     if note_path is None:
         raise RuntimeError(f"chain note does not exist for {task.task_short_uuid}")
     trash_path = _trash_note_path(config, note_path)
-    _move_to_trash(note_path, trash_path)
-    _write_trash_manifest(config, note_path, trash_path, kind="chain-note")
+    with exclusive_file_lock(note_path):
+        if not note_path.exists():
+            raise RuntimeError(f"chain note disappeared during delete: {note_path}")
+        _move_to_trash(note_path, trash_path)
+        _write_trash_manifest(config, note_path, trash_path, kind="chain-note")
     return DeleteResult(note_path=note_path, trash_path=trash_path, existed=True)
 
 
@@ -207,8 +224,11 @@ def delete_project_note(config: AppConfig, project_name: str) -> DeleteResult:
     if note_path is None:
         raise RuntimeError(f"project note does not exist for {project_name}")
     trash_path = _trash_note_path(config, note_path)
-    _move_to_trash(note_path, trash_path)
-    _write_trash_manifest(config, note_path, trash_path, kind="project-note")
+    with exclusive_file_lock(note_path):
+        if not note_path.exists():
+            raise RuntimeError(f"project note disappeared during delete: {note_path}")
+        _move_to_trash(note_path, trash_path)
+        _write_trash_manifest(config, note_path, trash_path, kind="project-note")
     return DeleteResult(note_path=note_path, trash_path=trash_path, existed=True)
 
 
@@ -226,14 +246,15 @@ def add_to_task_heading(
     exact: bool = False,
 ) -> HeadingInsertResult:
     note = ensure_task_note(config, task)
-    result = _append_under_heading(
-        note.note_path,
-        heading,
-        text,
-        create_heading=create_heading,
-        exact=exact,
-    )
-    touch_updated(note.note_path)
+    with exclusive_file_lock(note.note_path):
+        result = _append_under_heading(
+            note.note_path,
+            heading,
+            text,
+            create_heading=create_heading,
+            exact=exact,
+        )
+        _touch_updated_unlocked(note.note_path)
     return HeadingInsertResult(note_path=note.note_path, existed=note.existed, **result)
 
 
@@ -247,14 +268,15 @@ def add_to_chain_heading(
     exact: bool = False,
 ) -> HeadingInsertResult:
     note = ensure_chain_note(config, task)
-    result = _append_under_heading(
-        note.note_path,
-        heading,
-        text,
-        create_heading=create_heading,
-        exact=exact,
-    )
-    touch_updated(note.note_path)
+    with exclusive_file_lock(note.note_path):
+        result = _append_under_heading(
+            note.note_path,
+            heading,
+            text,
+            create_heading=create_heading,
+            exact=exact,
+        )
+        _touch_updated_unlocked(note.note_path)
     return HeadingInsertResult(note_path=note.note_path, existed=note.existed, **result)
 
 
@@ -283,7 +305,7 @@ def append_under_heading_once(
             exact=exact,
             compact=compact,
         )
-        touch_updated(note_path)
+        _touch_updated_unlocked(note_path)
         return result
 
 
@@ -297,14 +319,15 @@ def add_to_project_heading(
     exact: bool = False,
 ) -> HeadingInsertResult:
     note = ensure_project_note(config, project_name)
-    result = _append_under_heading(
-        note.note_path,
-        heading,
-        text,
-        create_heading=create_heading,
-        exact=exact,
-    )
-    touch_updated(note.note_path)
+    with exclusive_file_lock(note.note_path):
+        result = _append_under_heading(
+            note.note_path,
+            heading,
+            text,
+            create_heading=create_heading,
+            exact=exact,
+        )
+        _touch_updated_unlocked(note.note_path)
     return HeadingInsertResult(note_path=note.note_path, existed=note.existed, **result)
 
 
@@ -345,42 +368,44 @@ def list_note_resources(note_path: Path) -> ResourceListResult:
 
 
 def attach_note_resource(note_path: Path, target: str, label: str | None = None) -> ResourceMutationResult:
-    metadata, body = read_document(note_path)
-    line = format_resource_line(target, label)
-    lines = body.splitlines()
-    headings = _collect_headings(lines)
-    selected = _resolve_resource_heading(headings)
-    if selected is None:
-        lines = _append_new_heading(lines, "Resources")
+    with exclusive_file_lock(note_path):
+        metadata, body = read_document(note_path)
+        line = format_resource_line(target, label)
+        lines = body.splitlines()
         headings = _collect_headings(lines)
         selected = _resolve_resource_heading(headings)
-    if selected is None:
-        raise RuntimeError("failed to create Resources heading")
-    lines = _insert_entry(lines, selected, line)
-    write_document(note_path, metadata, "\n".join(lines))
-    touch_updated(note_path)
-    resources = _note_resources(lines)
-    resource = resources[-1] if resources else {}
-    return ResourceMutationResult(note_path=note_path, resource=resource, resources=resources)
+        if selected is None:
+            lines = _append_new_heading(lines, "Resources")
+            headings = _collect_headings(lines)
+            selected = _resolve_resource_heading(headings)
+        if selected is None:
+            raise RuntimeError("failed to create Resources heading")
+        lines = _insert_entry(lines, selected, line)
+        write_document(note_path, metadata, "\n".join(lines))
+        _touch_updated_unlocked(note_path)
+        resources = _note_resources(lines)
+        resource = resources[-1] if resources else {}
+        return ResourceMutationResult(note_path=note_path, resource=resource, resources=resources)
 
 
 def detach_note_resource(note_path: Path, resource_id: int) -> ResourceMutationResult:
-    metadata, body = read_document(note_path)
-    lines = body.splitlines()
-    section_lines = _resource_section_lines(lines)
-    resources = parse_resource_bullets(section_lines)
-    selected = next((item for item in resources if item.id == resource_id), None)
-    if selected is None:
-        raise RuntimeError(f"resource {resource_id} not found")
-    del lines[selected.line - 1]
-    write_document(note_path, metadata, "\n".join(lines))
-    touch_updated(note_path)
-    updated_resources = _note_resources(lines)
-    return ResourceMutationResult(
-        note_path=note_path,
-        resource=selected.to_dict(),
-        resources=updated_resources,
-    )
+    with exclusive_file_lock(note_path):
+        metadata, body = read_document(note_path)
+        lines = body.splitlines()
+        section_lines = _resource_section_lines(lines)
+        resources = parse_resource_bullets(section_lines)
+        selected = next((item for item in resources if item.id == resource_id), None)
+        if selected is None:
+            raise RuntimeError(f"resource {resource_id} not found")
+        del lines[selected.line - 1]
+        write_document(note_path, metadata, "\n".join(lines))
+        _touch_updated_unlocked(note_path)
+        updated_resources = _note_resources(lines)
+        return ResourceMutationResult(
+            note_path=note_path,
+            resource=selected.to_dict(),
+            resources=updated_resources,
+        )
 
 
 def find_chain_note(config: AppConfig, task: ResolvedTask) -> Path | None:

@@ -24,7 +24,8 @@ from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from jot_core.editor import colorize_diff, note_diff
 from jot_core.frontmatter import atomic_write_text, parse_document, read_document, render_document, write_document
-from jot_core.models import AppConfig, CommandResult
+from jot_core.models import AppConfig, CommandResult, ResolvedTask, TaskRef
+from jot_core.notes import append_to_task_note
 from jot_core.output import (
     _progress_bar,
     _progress_color,
@@ -320,6 +321,49 @@ class FrontMatterTests(unittest.TestCase):
             self.assertEqual(len(results), 40)
             self.assertEqual(body.count("change +1"), 40)
             self.assertTrue((path.parent / f".{path.name}.lock").exists())
+
+    def test_concurrent_task_note_appends_are_not_lost(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="jot-note-lock-") as tempdir:
+            root = Path(tempdir)
+            config = AppConfig(
+                config_path=root / "config-jot.toml",
+                root_dir=root,
+                trash_dir=root / ".jot_trash",
+                tasks_dir=root / "tasks",
+                chains_dir=root / "chains",
+                projects_dir=root / "projects",
+                templates_dir=root / "templates",
+                editor_command="true",
+                editor_show_diff_on_save=True,
+                editor_diff_color="auto",
+                editor_post_save_actions=True,
+                color_mode="auto",
+                default_format="text",
+                nautical_enabled=True,
+                timewarrior_enabled=False,
+            )
+            task = ResolvedTask(
+                ref=TaskRef("abcdef12"),
+                task_uuid="abcdef1234567890",
+                task_short_uuid="abcdef12",
+                description="Concurrent note",
+                project="",
+                tags=[],
+                task={"uuid": "abcdef1234567890", "description": "Concurrent note"},
+            )
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                list(
+                    executor.map(
+                        lambda index: append_to_task_note(config, task, f"entry-{index}"),
+                        range(40),
+                    )
+                )
+
+            note_path = config.tasks_dir / "abcdef12--concurrent-note.md"
+            _metadata, body = read_document(note_path)
+            self.assertEqual(sum(f"entry-{index}" in body for index in range(40)), 40)
+            self.assertTrue((note_path.parent / f".{note_path.name}.lock").exists())
 
 
 class EditorDiffTests(unittest.TestCase):
