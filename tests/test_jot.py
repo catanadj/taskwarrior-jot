@@ -1477,6 +1477,54 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertTrue(retry_payload["timewarrior"]["started"])
         self.assertEqual(len(json.loads(timew_log.read_text())), 2)
 
+    def test_timelog_start_recovers_a_stale_interrupted_timewarrior_attempt(self) -> None:
+        task = {
+            "uuid": "986e9d97-1111-2222-3333-444444444444",
+            "description": "Interrupted start",
+            "project": "work",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "2": [task]})
+        config_path = self.home / ".task" / "jot" / "config-jot.toml"
+        config_path.parent.mkdir(parents=True)
+        config_path.write_text("[timewarrior]\nenabled = true\n", encoding="utf-8")
+        timew_log = self.root / "timew-calls.json"
+        _write_fake_timew_script(self.bin_dir, timew_log)
+        self.assertEqual(self.run_jot("timew", "set", "task", "2", "focus").returncode, 0)
+
+        session_path = self.home / ".task" / "jot" / "timelog-pending.json"
+        session_path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "sessions": {
+                        task["uuid"]: {
+                            "task_uuid": task["uuid"],
+                            "task_short_uuid": "986e9d97",
+                            "description": task["description"],
+                            "project": task["project"],
+                            "started": "2026-08-01T08:00:00Z",
+                            "timewarrior_attempted": False,
+                            "timewarrior_started": False,
+                            "timewarrior_state": "attempting",
+                            "timewarrior_attempted_at": "2020-01-01T00:00:00Z",
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.run_jot("--json", "timelog", "start", "2")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["already_started"])
+        self.assertTrue(payload["timewarrior_retry"])
+        self.assertTrue(payload["timewarrior"]["started"])
+        self.assertEqual(len(json.loads(timew_log.read_text())), 1)
+
     def test_timelog_start_stop_records_session_and_writes_note(self) -> None:
         task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
         task = {

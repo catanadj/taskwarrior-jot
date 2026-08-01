@@ -21,6 +21,7 @@ TIME_LOG_DATA_RE = re.compile(r"<!--\s*jot-time-log\s+({.*?})\s*-->")
 DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TIME_LOG_HEADING_RE = re.compile(r"^##\s+Time log\s*$", re.IGNORECASE)
 SECTION_END_RE = re.compile(r"^#{1,2}\s+")
+TIMEW_ATTEMPT_LEASE_SECONDS = 60
 
 
 def ingest_time_log(config, old: dict[str, Any], new: dict[str, Any], *, scope: str = "auto", stopped_at: str = "") -> dict[str, Any]:
@@ -64,6 +65,7 @@ def start_time_session(config, task: ResolvedTask, *, started_at: str = "") -> d
                 "started": _iso_z(started),
                 "timewarrior_attempted": False,
                 "timewarrior_started": False,
+                "timewarrior_state": "pending",
             }
             _write_sessions_unlocked(path, sessions)
             result = {
@@ -74,21 +76,16 @@ def start_time_session(config, task: ResolvedTask, *, started_at: str = "") -> d
                 "path": str(path),
             }
 
-    # A successful external start is idempotent. Failed starts, including
-    # legacy sessions without these fields, remain retryable.
-    retry_timewarrior = isinstance(existing, dict) and (
-        existing.get("timewarrior_started") is not True
-        and (
-            existing.get("timewarrior_attempted") is True
-            or "timewarrior_attempted" not in existing
-        )
-    )
+    # A successful external start is idempotent. Failed and interrupted
+    # attempts remain retryable; a recent in-flight attempt gets a short lease
+    # so two concurrent starts do not invoke Timewarrior twice.
+    retry_timewarrior, attempt_in_progress = _timewarrior_retry_state(existing)
     if isinstance(existing, dict) and not retry_timewarrior:
         result["timewarrior"] = {
             "enabled": bool(config.timewarrior_enabled),
             "attempted": False,
             "started": False,
-            "reason": "already-started",
+            "reason": "timewarrior-attempt-in-progress" if attempt_in_progress else "already-started",
             "error": None,
         }
         return result
@@ -103,6 +100,14 @@ def start_time_session(config, task: ResolvedTask, *, started_at: str = "") -> d
             started=_iso_z(started),
         )
 
+    with exclusive_file_lock(path):
+        sessions = _read_sessions_unlocked(path)
+        current = sessions.get(task.task_uuid)
+        if isinstance(current, dict) and current.get("started") == result.get("started"):
+            current["timewarrior_state"] = "attempting"
+            current["timewarrior_attempted_at"] = _iso_z(datetime.now(timezone.utc))
+            _write_sessions_unlocked(path, sessions)
+
     result["timewarrior"] = start_timewarrior_for_task(config, task)
     if retry_timewarrior:
         result["timewarrior_retry"] = True
@@ -114,12 +119,54 @@ def start_time_session(config, task: ResolvedTask, *, started_at: str = "") -> d
             timewarrior = result["timewarrior"]
             current["timewarrior_attempted"] = bool(timewarrior.get("attempted"))
             current["timewarrior_started"] = bool(timewarrior.get("started"))
+            current["timewarrior_state"] = _timewarrior_result_state(timewarrior)
+            current.pop("timewarrior_attempted_at", None)
             if timewarrior.get("error"):
                 current["timewarrior_error"] = str(timewarrior["error"])
             else:
                 current.pop("timewarrior_error", None)
             _write_sessions_unlocked(path, sessions)
     return result
+
+
+def _timewarrior_retry_state(existing: dict[str, Any] | None) -> tuple[bool, bool]:
+    if not isinstance(existing, dict):
+        return True, False
+    state = str(existing.get("timewarrior_state") or "").strip().lower()
+    if state in {"succeeded", "skipped"}:
+        return False, False
+    if state == "attempting":
+        raw_attempted_at = str(existing.get("timewarrior_attempted_at") or "").strip()
+        if raw_attempted_at:
+            try:
+                attempted_at = _parse_datetime(raw_attempted_at)
+            except RuntimeError:
+                return True, False
+            age = (datetime.now(timezone.utc) - attempted_at).total_seconds()
+            if age < TIMEW_ATTEMPT_LEASE_SECONDS:
+                return False, True
+        return True, False
+    if state in {"pending", "failed"}:
+        return True, False
+
+    # Legacy sessions have no explicit state. Preserve their old behavior:
+    # only attempted or incomplete records are retryable.
+    return (
+        existing.get("timewarrior_started") is not True
+        and (
+            existing.get("timewarrior_attempted") is True
+            or "timewarrior_attempted" not in existing
+        ),
+        False,
+    )
+
+
+def _timewarrior_result_state(result: dict[str, Any]) -> str:
+    if result.get("started") is True:
+        return "succeeded"
+    if result.get("attempted") is True:
+        return "failed"
+    return "skipped"
 
 
 def stop_time_session(config, task: ResolvedTask, *, stopped_at: str = "", scope: str = "auto") -> dict[str, Any]:
