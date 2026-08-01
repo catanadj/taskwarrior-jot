@@ -2354,6 +2354,34 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(len(ops_lines), 1)
         self.assertIn('"op":"task_note_append"', ops_lines[0])
 
+    def test_ops_log_rotates_to_an_archive_at_configured_limit(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Rotate ops",
+            "project": "testing",
+            "tags": [],
+            "status": "pending",
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        config_path = self.home / ".task" / "jot" / "config-jot.toml"
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            "[ops]\nmax_entries = 3\nkeep_entries = 2\n",
+            encoding="utf-8",
+        )
+
+        for index in range(5):
+            result = self.run_jot("note-append", "1", f"entry {index}")
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+        root = self.home / ".task" / "jot"
+        active_lines = (root / "ops.jsonl").read_text(encoding="utf-8").splitlines()
+        archives = sorted((root / "ops-archive").glob("*.jsonl"))
+        archived_lines = [line for path in archives for line in path.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(len(active_lines), 3)
+        self.assertEqual(len(archived_lines), 2)
+        self.assertEqual(len(active_lines) + len(archived_lines), 5)
+
     def test_note_templates_are_applied_for_task_chain_and_project(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",

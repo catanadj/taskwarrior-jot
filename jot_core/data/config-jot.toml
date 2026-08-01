@@ -20,3 +20,7 @@ enabled = true
 
 [timewarrior]
 enabled = true
+
+[ops]
+max_entries = 10000
+keep_entries = 5000

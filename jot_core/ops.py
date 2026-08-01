@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .frontmatter import exclusive_file_lock
+from .frontmatter import atomic_write_text, exclusive_file_lock
 from .models import AppConfig
 
 
@@ -31,6 +31,29 @@ def append_op(config: AppConfig, op: str, **fields: Any) -> None:
             handle.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
+        _rotate_ops_unlocked(config, path)
+
+
+def _rotate_ops_unlocked(config: AppConfig, path: Path) -> None:
+    maximum = int(getattr(config, "ops_max_entries", 0) or 0)
+    keep = int(getattr(config, "ops_keep_entries", 0) or 0)
+    if maximum <= 0 or keep >= maximum:
+        return
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    if len(lines) <= maximum:
+        return
+    archived = lines[:-keep] if keep else lines
+    retained = lines[-keep:] if keep else []
+    archive_dir = config.root_dir / "ops-archive"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    archive_path = archive_dir / f"ops-{stamp}.jsonl"
+    counter = 1
+    while archive_path.exists():
+        archive_path = archive_dir / f"ops-{stamp}-{counter}.jsonl"
+        counter += 1
+    atomic_write_text(archive_path, "".join(archived))
+    atomic_write_text(path, "".join(retained))
 
 
 def read_ops(config: AppConfig) -> list[dict[str, Any]]:

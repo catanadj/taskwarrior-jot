@@ -17,6 +17,7 @@ CONFIG_KEYS = {
     "display": {"color", "default_format"},
     "nautical": {"enabled"},
     "timewarrior": {"enabled"},
+    "ops": {"max_entries", "keep_entries"},
 }
 
 
@@ -56,6 +57,18 @@ def _config_choice(value: object, default: str, *, key: str, allowed: set[str]) 
     return normalized
 
 
+def _config_int(value: object, default: int, *, key: str, minimum: int = 0) -> int:
+    if value is None:
+        return default
+    try:
+        parsed = int(str(value).strip())
+    except ValueError as exc:
+        raise RuntimeError(f"invalid {key} value '{value}'; expected an integer") from exc
+    if parsed < minimum:
+        raise RuntimeError(f"invalid {key} value '{value}'; expected at least {minimum}")
+    return parsed
+
+
 def _taskdata_root() -> Path:
     taskdata = str(os.environ.get("TASKDATA") or "").strip()
     if taskdata:
@@ -90,6 +103,7 @@ def load_config() -> AppConfig:
     display_cfg = data.get("display") if isinstance(data.get("display"), dict) else {}
     nautical_cfg = data.get("nautical") if isinstance(data.get("nautical"), dict) else {}
     timewarrior_cfg = data.get("timewarrior") if isinstance(data.get("timewarrior"), dict) else {}
+    ops_cfg = data.get("ops") if isinstance(data.get("ops"), dict) else {}
 
     root_dir = _expand_path(paths_cfg.get("root"), default_root)
     trash_dir = root_dir / ".jot_trash"
@@ -127,6 +141,10 @@ def load_config() -> AppConfig:
     timewarrior_enabled = _config_bool(
         timewarrior_cfg.get("enabled"), True, key="timewarrior.enabled"
     )
+    ops_max_entries = _config_int(ops_cfg.get("max_entries"), 10000, key="ops.max_entries")
+    ops_keep_entries = _config_int(ops_cfg.get("keep_entries"), 5000, key="ops.keep_entries")
+    if ops_max_entries and ops_keep_entries > ops_max_entries:
+        raise RuntimeError("ops.keep_entries cannot exceed ops.max_entries")
 
     return AppConfig(
         config_path=config_path,
@@ -144,6 +162,8 @@ def load_config() -> AppConfig:
         default_format=default_format,
         nautical_enabled=nautical_enabled,
         timewarrior_enabled=timewarrior_enabled,
+        ops_max_entries=ops_max_entries,
+        ops_keep_entries=ops_keep_entries,
     )
 
 

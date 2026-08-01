@@ -38,6 +38,8 @@ class AppConfig:
     default_format: str
     nautical_enabled: bool
     timewarrior_enabled: bool
+    ops_max_entries: int = 10000
+    ops_keep_entries: int = 5000
 
 
 @dataclass(slots=True)
