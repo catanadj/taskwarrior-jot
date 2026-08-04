@@ -9,7 +9,7 @@ from .command_help import build_command_catalog
 from .command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from .config import ensure_app_dirs
 from .doctor import run_doctor, run_doctor_config_error
-from .editor import open_in_editor
+from .editor import colorize_diff, note_diff, open_in_editor
 from .events import collect_event_text, format_event_text, validate_event_type
 from .frontmatter import read_document
 from .index import rebuild_index, read_index_status, save_index
@@ -26,6 +26,7 @@ from .notes import (
     find_task_note,
     list_note_headings,
     list_note_resources,
+    NoteIdentityConflictError,
     project_note_path,
     read_note_section,
     task_note_path,
@@ -828,6 +829,9 @@ def main(argv: list[str] | None = None) -> int:
             ensure_app_dirs(ctx.config)
             configure_output(color_mode=ctx.config.color_mode)
             result = _run_auto_note(ctx, shorthand_ref)
+        except NoteIdentityConflictError as exc:
+            _handle_note_identity_conflict(exc, color_mode=ctx.config.color_mode)
+            return 1
         except RuntimeError as exc:
             warn(str(exc))
             return 1
@@ -966,6 +970,9 @@ def main(argv: list[str] | None = None) -> int:
         else:  # pragma: no cover
             parser.error(f"unknown command {args.command}")
             return 2
+    except NoteIdentityConflictError as exc:
+        _handle_note_identity_conflict(exc, color_mode=ctx.config.color_mode)
+        return 1
     except (RuntimeError, OSError, ValueError, TypeError) as exc:
         warn(str(exc))
         return 1
@@ -1014,6 +1021,37 @@ def _open_note_in_editor(ctx, path) -> None:
         show_diff=ctx.config.editor_show_diff_on_save,
         color_mode=ctx.config.editor_diff_color,
     )
+
+
+def _handle_note_identity_conflict(
+    error: NoteIdentityConflictError,
+    *,
+    color_mode: str = "auto",
+) -> None:
+    warn(str(error))
+    if len(error.candidates) < 2 or not sys.stdin.isatty():
+        return
+    sys.stderr.write("Show a diff between the candidate notes? [d/N] ")
+    sys.stderr.flush()
+    if sys.stdin.readline().strip().casefold() != "d":
+        return
+    base = error.candidates[0]
+    try:
+        before = base.read_text(encoding="utf-8")
+    except OSError as exc:
+        warn(f"could not read conflict candidate {base}: {exc}")
+        return
+    for candidate in error.candidates[1:]:
+        try:
+            after = candidate.read_text(encoding="utf-8")
+        except OSError as exc:
+            warn(f"could not read conflict candidate {candidate}: {exc}")
+            continue
+        diff = note_diff(before, after, path=candidate)
+        if not diff:
+            sys.stderr.write(f"No differences between {base} and {candidate}\n")
+            continue
+        sys.stderr.write(colorize_diff(diff, color_mode=color_mode))
 
 
 def _offer_post_save_task_action(ctx, task) -> dict | None:

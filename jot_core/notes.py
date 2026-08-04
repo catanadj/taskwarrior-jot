@@ -23,6 +23,17 @@ HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 HEADING_NORMALIZE_RE = re.compile(r"[^a-z0-9]+")
 
 
+class NoteIdentityConflictError(RuntimeError):
+    def __init__(self, label: str, candidates: list[Path], detail: str = "") -> None:
+        self.label = label
+        self.candidates = tuple(candidates)
+        if candidates and len(candidates) > 1:
+            message = f"multiple matching {label} notes found: {', '.join(map(str, candidates))}"
+        else:
+            message = f"note identity conflict for {label}: {detail or 'no matching identity metadata'}"
+        super().__init__(message)
+
+
 @dataclass(slots=True)
 class HeadingInsertResult:
     note_path: Path
@@ -472,11 +483,10 @@ def _select_identity_note(
         matches.append(path)
 
     if len(matches) > 1:
-        paths = ", ".join(str(path) for path in matches)
-        raise RuntimeError(f"multiple matching {label} notes found: {paths}")
+        raise NoteIdentityConflictError(label, matches)
     if not matches:
         details = "; ".join(conflicts) or "no matching identity metadata"
-        raise RuntimeError(f"note identity conflict for {label}: {details}")
+        raise NoteIdentityConflictError(label, [], details)
     return matches[0]
 
 

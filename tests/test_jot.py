@@ -19,7 +19,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from jot_core.cli import _offer_post_save_task_action, build_parser
+from jot_core.cli import _handle_note_identity_conflict, _offer_post_save_task_action, build_parser
 from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from jot_core.editor import colorize_diff, note_diff, open_in_editor
@@ -32,7 +32,7 @@ from jot_core.frontmatter import (
     write_document,
 )
 from jot_core.models import AppConfig, CommandResult, ResolvedTask, TaskRef
-from jot_core.notes import append_to_task_note
+from jot_core.notes import NoteIdentityConflictError, append_to_task_note
 from jot_core.output import (
     _progress_bar,
     _progress_color,
@@ -426,6 +426,28 @@ class EditorDiffTests(unittest.TestCase):
             self.assertEqual(path.read_text(encoding="utf-8"), "external change\n")
             conflict = next(path.parent.glob("note.conflict-*.md"))
             self.assertEqual(conflict.read_text(encoding="utf-8"), "edited\n")
+
+    def test_identity_conflict_can_show_candidate_diff_interactively(self) -> None:
+        class TtyInput(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        with tempfile.TemporaryDirectory(prefix="jot-note-conflict-") as tempdir:
+            root = Path(tempdir)
+            first = root / "first.md"
+            second = root / "second.md"
+            first.write_text("# Note\n\nKeep this\n", encoding="utf-8")
+            second.write_text("# Note\n\nChanged this\n", encoding="utf-8")
+            error = NoteIdentityConflictError("task abcdef12", [first, second])
+            stderr = io.StringIO()
+
+            with mock.patch("sys.stdin", TtyInput("d\n")), mock.patch("sys.stderr", stderr):
+                _handle_note_identity_conflict(error, color_mode="never")
+
+            output = stderr.getvalue()
+            self.assertIn("Show a diff", output)
+            self.assertIn("-Keep this", output)
+            self.assertIn("+Changed this", output)
 
 
 class PaletteTests(unittest.TestCase):
