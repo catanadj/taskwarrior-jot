@@ -447,6 +447,7 @@ class EditorDiffTests(unittest.TestCase):
 
             output = stderr.getvalue()
             self.assertIn("Show a diff", output)
+            self.assertIn("Automatic merge was not safe", output)
             self.assertIn("-Keep this", output)
             self.assertIn("+Changed this", output)
 

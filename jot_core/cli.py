@@ -1054,6 +1054,7 @@ def _handle_note_identity_conflict(
     if automatic is not None:
         if _commit_merged_note(error, ctx, before=before, merged=automatic):
             return
+    sys.stderr.write("Automatic merge was not safe for these changes; manual merge is required.\n")
 
     if len(error.candidates) != 2:
         return
