@@ -6,6 +6,7 @@ import difflib
 import os
 import shutil
 import sys
+import textwrap
 from pathlib import Path
 
 from . import __version__
@@ -16,7 +17,7 @@ from .config import ensure_app_dirs
 from .doctor import run_doctor, run_doctor_config_error
 from .editor import colorize_diff, note_diff, open_in_editor
 from .events import collect_event_text, format_event_text, validate_event_type
-from .frontmatter import atomic_write_text, exclusive_file_lock, read_document
+from .frontmatter import atomic_write_text, exclusive_file_lock, parse_document, read_document
 from .index import rebuild_index, read_index_status, save_index
 from .migrations import migrate_notes
 from .models import CommandResult
@@ -1060,19 +1061,230 @@ def _handle_note_identity_conflict(
         return
     if not sys.stdin.isatty():
         return
-    sys.stderr.write("Show a diff between the candidate notes? [d/N] ")
-    sys.stderr.flush()
-    if sys.stdin.readline().strip().casefold() != "d":
+    while True:
+        sys.stderr.write(
+            "Conflict options: [s] side-by-side resolver  [d] unified diff  "
+            "[m] marker editor  [enter] abort\nChoice: "
+        )
+        sys.stderr.flush()
+        choice = sys.stdin.readline().strip().casefold()
+        if choice == "s":
+            merged = _resolve_note_conflict_side_by_side(error, ctx, before=before, after=after)
+            if merged is not None:
+                _commit_merged_note(error, ctx, before=before, merged=merged)
+            return
+        if choice == "d":
+            diff = note_diff(before, after, path=secondary)
+            if not diff:
+                sys.stderr.write(f"No differences between {base} and {secondary}\n")
+            else:
+                sys.stderr.write(colorize_diff(diff, color_mode=color_mode))
+            continue
+        if choice == "m":
+            _merge_note_identity_conflict(
+                error,
+                ctx,
+                before=before,
+                after=after,
+                color_mode=color_mode,
+            )
         return
-    diff = note_diff(before, after, path=secondary)
-    if not diff:
-        sys.stderr.write(f"No differences between {base} and {secondary}\n")
-    else:
-        sys.stderr.write(colorize_diff(diff, color_mode=color_mode))
-    sys.stderr.write("Merge these two notes in an editor? [m/N] ")
+
+
+def _resolve_note_conflict_side_by_side(
+    error: NoteIdentityConflictError,
+    ctx,
+    *,
+    before: str,
+    after: str,
+) -> str | None:
+    base, secondary = error.candidates
+    before_lines = before.splitlines()
+    after_lines = after.splitlines()
+    opcodes = difflib.SequenceMatcher(
+        a=before_lines,
+        b=after_lines,
+        autojunk=False,
+    ).get_opcodes()
+    changed = [opcode for opcode in opcodes if opcode[0] != "equal"]
+    merged: list[str] = []
+    hunk_number = 0
+    for tag, i1, i2, j1, j2 in opcodes:
+        left = before_lines[i1:i2]
+        right = after_lines[j1:j2]
+        if tag == "equal":
+            merged.extend(left)
+            continue
+        hunk_number += 1
+        in_frontmatter = _hunk_is_frontmatter(before_lines, after_lines, i1, j1)
+        while True:
+            _write_side_by_side_hunk(
+                base,
+                secondary,
+                left,
+                right,
+                left_start=i1 + 1,
+                right_start=j1 + 1,
+                number=hunk_number,
+                total=len(changed),
+            )
+            options = "[1] current  [2] conflict"
+            if not in_frontmatter:
+                options += "  [b] both"
+            options += "  [e] edit  [q] abort"
+            sys.stderr.write(f"{options}\nChoice: ")
+            sys.stderr.flush()
+            choice = sys.stdin.readline().strip().casefold()
+            if choice == "1":
+                merged.extend(left)
+                break
+            if choice == "2":
+                merged.extend(right)
+                break
+            if choice == "b" and not in_frontmatter:
+                merged.extend(left)
+                merged.extend(line for line in right if line not in left)
+                break
+            if choice == "e":
+                edited = _edit_conflict_hunk(
+                    base,
+                    secondary,
+                    ctx,
+                    left=left,
+                    right=right,
+                    number=hunk_number,
+                )
+                if edited is not None:
+                    merged.extend(edited)
+                    break
+                continue
+            if choice in {"q", "", "abort"}:
+                sys.stderr.write("Merge aborted; both notes were left unchanged.\n")
+                return None
+            sys.stderr.write("Choose one of the listed actions.\n")
+
+    result = _join_merged_lines(merged, before, after)
+    try:
+        parse_document(result)
+    except RuntimeError as exc:
+        warn(f"resolved note is invalid: {exc}")
+        return None
+    sys.stderr.write(f"Resolved {len(changed)} changed block(s). Save merged note? [y/N] ")
     sys.stderr.flush()
-    if sys.stdin.readline().strip().casefold() == "m":
-        _merge_note_identity_conflict(error, ctx, before=before, after=after, color_mode=color_mode)
+    if sys.stdin.readline().strip().casefold() not in {"y", "yes"}:
+        sys.stderr.write("Merge aborted; both notes were left unchanged.\n")
+        return None
+    return result
+
+
+def _write_side_by_side_hunk(
+    base: Path,
+    secondary: Path,
+    left: list[str],
+    right: list[str],
+    *,
+    left_start: int,
+    right_start: int,
+    number: int,
+    total: int,
+) -> None:
+    terminal_width = min(180, max(80, shutil.get_terminal_size((120, 24)).columns))
+    column_width = max(24, (terminal_width - 15) // 2)
+    divider = " | "
+    sys.stderr.write(f"\nChange {number}/{total}\n")
+    left_title = f"CURRENT: {base.name}"[:column_width]
+    right_title = f"CONFLICT: {secondary.name}"[:column_width]
+    sys.stderr.write(f"     {left_title:<{column_width}}{divider}     {right_title:<{column_width}}\n")
+    sys.stderr.write(f"     {'-' * column_width}{divider}     {'-' * column_width}\n")
+    count = max(len(left), len(right), 1)
+    for index in range(count):
+        left_line = left[index] if index < len(left) else ""
+        right_line = right[index] if index < len(right) else ""
+        left_parts = _wrap_conflict_line(left_line, column_width)
+        right_parts = _wrap_conflict_line(right_line, column_width)
+        wrapped_count = max(len(left_parts), len(right_parts))
+        for wrapped_index in range(wrapped_count):
+            left_part = left_parts[wrapped_index] if wrapped_index < len(left_parts) else ""
+            right_part = right_parts[wrapped_index] if wrapped_index < len(right_parts) else ""
+            left_number = str(left_start + index) if index < len(left) and wrapped_index == 0 else ""
+            right_number = str(right_start + index) if index < len(right) and wrapped_index == 0 else ""
+            left_cell = f"{left_number:>4} {left_part:<{column_width}}"
+            right_cell = f"{right_number:>4} {right_part:<{column_width}}"
+            left_cell = style_text(left_cell, role="error", stream=sys.stderr)
+            right_cell = style_text(right_cell, role="success", stream=sys.stderr)
+            sys.stderr.write(f"{left_cell}{divider}{right_cell}\n")
+
+
+def _wrap_conflict_line(line: str, width: int) -> list[str]:
+    return textwrap.wrap(
+        line,
+        width=width,
+        replace_whitespace=False,
+        drop_whitespace=False,
+        break_long_words=True,
+        break_on_hyphens=False,
+    ) or [""]
+
+
+def _hunk_is_frontmatter(
+    before_lines: list[str],
+    after_lines: list[str],
+    before_index: int,
+    after_index: int,
+) -> bool:
+    return (
+        0 <= _frontmatter_end(before_lines) >= before_index
+        or 0 <= _frontmatter_end(after_lines) >= after_index
+    )
+
+
+def _frontmatter_end(lines: list[str]) -> int:
+    if not lines or lines[0].strip() != "---":
+        return -1
+    for index, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            return index
+    return -1
+
+
+def _edit_conflict_hunk(
+    base: Path,
+    secondary: Path,
+    ctx,
+    *,
+    left: list[str],
+    right: list[str],
+    number: int,
+) -> list[str] | None:
+    edit_path = base.with_name(f".{base.name}.hunk-{number}-{os.getpid()}.tmp")
+    left_text = "\n".join(left)
+    right_text = "\n".join(right)
+    content = (
+        f"<<<<<<< {base.name}\n"
+        f"{left_text}\n"
+        f"=======\n"
+        f"{right_text}\n"
+        f">>>>>>> {secondary.name}\n"
+    )
+    atomic_write_text(edit_path, content)
+    try:
+        open_in_editor(
+            edit_path,
+            ctx.config.editor_command,
+            show_diff=False,
+            color_mode=ctx.config.editor_diff_color,
+        )
+        edited = edit_path.read_text(encoding="utf-8")
+        if any(
+            line.startswith(("<<<<<<<", "=======", ">>>>>>>"))
+            for line in edited.splitlines()
+        ):
+            warn(f"edited block still contains conflict markers: {edit_path}")
+            return None
+        edit_path.unlink(missing_ok=True)
+        return edited.splitlines()
+    except Exception:
+        raise
 
 
 def _automatic_note_merge(before: str, after: str) -> str | None:

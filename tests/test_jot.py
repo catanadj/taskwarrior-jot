@@ -446,10 +446,44 @@ class EditorDiffTests(unittest.TestCase):
                 _handle_note_identity_conflict(error, ctx, color_mode="never")
 
             output = stderr.getvalue()
-            self.assertIn("Show a diff", output)
+            self.assertIn("side-by-side resolver", output)
             self.assertIn("Automatic merge was not safe", output)
             self.assertIn("-Keep this", output)
             self.assertIn("+Changed this", output)
+
+    def test_identity_conflict_can_be_resolved_hunk_by_hunk(self) -> None:
+        class TtyInput(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        with tempfile.TemporaryDirectory(prefix="jot-note-side-by-side-") as tempdir:
+            root = Path(tempdir)
+            first = root / "first.md"
+            second = root / "second.md"
+            trash = root / "trash"
+            first.write_text("# Note\n\nCurrent wording\n", encoding="utf-8")
+            second.write_text("# Note\n\nConflict wording\n", encoding="utf-8")
+            error = NoteIdentityConflictError("task abcdef12", [first, second])
+            ctx = SimpleNamespace(
+                config=SimpleNamespace(
+                    editor_command="true",
+                    editor_diff_color="never",
+                    trash_dir=trash,
+                )
+            )
+            stderr = io.StringIO()
+
+            with mock.patch("sys.stdin", TtyInput("s\nb\ny\n")), mock.patch("sys.stderr", stderr):
+                _handle_note_identity_conflict(error, ctx, color_mode="never")
+
+            merged = first.read_text(encoding="utf-8")
+            self.assertIn("Current wording", merged)
+            self.assertIn("Conflict wording", merged)
+            self.assertFalse(second.exists())
+            output = stderr.getvalue()
+            self.assertIn("CURRENT: first.md", output)
+            self.assertIn("CONFLICT: second.md", output)
+            self.assertIn("[b] both", output)
 
     def test_identity_conflict_can_merge_and_archive_secondary_note(self) -> None:
         class TtyInput(io.StringIO):
