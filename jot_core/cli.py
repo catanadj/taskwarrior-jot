@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
+import os
+import shutil
 import sys
+from pathlib import Path
 
 from . import __version__
 from .app import build_app_context
@@ -11,7 +15,7 @@ from .config import ensure_app_dirs
 from .doctor import run_doctor, run_doctor_config_error
 from .editor import colorize_diff, note_diff, open_in_editor
 from .events import collect_event_text, format_event_text, validate_event_type
-from .frontmatter import read_document
+from .frontmatter import atomic_write_text, exclusive_file_lock, read_document
 from .index import rebuild_index, read_index_status, save_index
 from .migrations import migrate_notes
 from .models import CommandResult
@@ -830,7 +834,7 @@ def main(argv: list[str] | None = None) -> int:
             configure_output(color_mode=ctx.config.color_mode)
             result = _run_auto_note(ctx, shorthand_ref)
         except NoteIdentityConflictError as exc:
-            _handle_note_identity_conflict(exc, color_mode=ctx.config.color_mode)
+            _handle_note_identity_conflict(exc, ctx, color_mode=ctx.config.color_mode)
             return 1
         except RuntimeError as exc:
             warn(str(exc))
@@ -971,7 +975,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(f"unknown command {args.command}")
             return 2
     except NoteIdentityConflictError as exc:
-        _handle_note_identity_conflict(exc, color_mode=ctx.config.color_mode)
+        _handle_note_identity_conflict(exc, ctx, color_mode=ctx.config.color_mode)
         return 1
     except (RuntimeError, OSError, ValueError, TypeError) as exc:
         warn(str(exc))
@@ -1025,6 +1029,7 @@ def _open_note_in_editor(ctx, path) -> None:
 
 def _handle_note_identity_conflict(
     error: NoteIdentityConflictError,
+    ctx,
     *,
     color_mode: str = "auto",
 ) -> None:
@@ -1041,17 +1046,95 @@ def _handle_note_identity_conflict(
     except OSError as exc:
         warn(f"could not read conflict candidate {base}: {exc}")
         return
+    merge_after: str | None = None
     for candidate in error.candidates[1:]:
         try:
             after = candidate.read_text(encoding="utf-8")
         except OSError as exc:
             warn(f"could not read conflict candidate {candidate}: {exc}")
             continue
+        merge_after = after
         diff = note_diff(before, after, path=candidate)
         if not diff:
             sys.stderr.write(f"No differences between {base} and {candidate}\n")
             continue
         sys.stderr.write(colorize_diff(diff, color_mode=color_mode))
+    if len(error.candidates) != 2:
+        return
+    if merge_after is None:
+        return
+    sys.stderr.write("Merge these two notes in an editor? [m/N] ")
+    sys.stderr.flush()
+    if sys.stdin.readline().strip().casefold() == "m":
+        _merge_note_identity_conflict(error, ctx, before=before, after=merge_after, color_mode=color_mode)
+
+
+def _merge_note_identity_conflict(
+    error: NoteIdentityConflictError,
+    ctx,
+    *,
+    before: str,
+    after: str,
+    color_mode: str,
+) -> None:
+    base, secondary = error.candidates
+    merge_path = base.with_name(f".{base.name}.merge-{os.getpid()}.tmp")
+    merge_text = (
+        f"<<<<<<< {base.name}\n"
+        f"{before.rstrip(chr(10))}\n"
+        f"=======\n"
+        f"{after.rstrip(chr(10))}\n"
+        f">>>>>>> {secondary.name}\n"
+    )
+    atomic_write_text(merge_path, merge_text)
+    keep_merge_file = False
+    try:
+        open_in_editor(
+            merge_path,
+            ctx.config.editor_command,
+            show_diff=False,
+            color_mode=color_mode,
+        )
+        merged = merge_path.read_text(encoding="utf-8")
+        if any(
+            line.startswith(("<<<<<<<", "=======", ">>>>>>>"))
+            for line in merged.splitlines()
+        ):
+            keep_merge_file = True
+            warn(f"merge still contains conflict markers; resolve and save {merge_path}")
+            return
+
+        with exclusive_file_lock(base):
+            current = base.read_text(encoding="utf-8") if base.exists() else ""
+            if current != before:
+                keep_merge_file = True
+                warn(f"primary note changed during merge; resolve {merge_path} manually")
+                return
+            if not secondary.exists():
+                keep_merge_file = True
+                warn(f"secondary note disappeared during merge; resolve {merge_path} manually")
+                return
+            archive_path = _merged_conflict_archive_path(ctx.config, secondary)
+            with exclusive_file_lock(secondary):
+                archive_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(secondary), str(archive_path))
+            atomic_write_text(base, merged)
+        sys.stderr.write(f"Merged note saved to {base}\n")
+        sys.stderr.write(f"Secondary note preserved at {archive_path}\n")
+    finally:
+        if not keep_merge_file:
+            merge_path.unlink(missing_ok=True)
+
+
+def _merged_conflict_archive_path(config, secondary: Path) -> Path:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    directory = config.trash_dir / "merged-conflicts" / stamp
+    candidate = directory / secondary.name
+    counter = 1
+    while candidate.exists():
+        candidate = directory / f"{secondary.stem}-{counter}{secondary.suffix}"
+        counter += 1
+    return candidate
 
 
 def _offer_post_save_task_action(ctx, task) -> dict | None:

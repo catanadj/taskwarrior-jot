@@ -439,15 +439,53 @@ class EditorDiffTests(unittest.TestCase):
             first.write_text("# Note\n\nKeep this\n", encoding="utf-8")
             second.write_text("# Note\n\nChanged this\n", encoding="utf-8")
             error = NoteIdentityConflictError("task abcdef12", [first, second])
+            ctx = SimpleNamespace(config=SimpleNamespace(editor_command="true", trash_dir=root / "trash"))
             stderr = io.StringIO()
 
             with mock.patch("sys.stdin", TtyInput("d\n")), mock.patch("sys.stderr", stderr):
-                _handle_note_identity_conflict(error, color_mode="never")
+                _handle_note_identity_conflict(error, ctx, color_mode="never")
 
             output = stderr.getvalue()
             self.assertIn("Show a diff", output)
             self.assertIn("-Keep this", output)
             self.assertIn("+Changed this", output)
+
+    def test_identity_conflict_can_merge_and_archive_secondary_note(self) -> None:
+        class TtyInput(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        with tempfile.TemporaryDirectory(prefix="jot-note-merge-") as tempdir:
+            root = Path(tempdir)
+            first = root / "first.md"
+            second = root / "second.md"
+            trash = root / "trash"
+            first.write_text("# Note\n\nKeep this\n", encoding="utf-8")
+            second.write_text("# Note\n\nChanged this\n", encoding="utf-8")
+            error = NoteIdentityConflictError("chain abcdef12", [first, second])
+            ctx = SimpleNamespace(
+                config=SimpleNamespace(
+                    editor_command="true",
+                    trash_dir=trash,
+                )
+            )
+            stderr = io.StringIO()
+
+            def save_merged(path: Path, *_args: object, **_kwargs: object) -> None:
+                path.write_text("# Note\n\nKeep this and changed this\n", encoding="utf-8")
+
+            with (
+                mock.patch("sys.stdin", TtyInput("d\nm\n")),
+                mock.patch("sys.stderr", stderr),
+                mock.patch("jot_core.cli.open_in_editor", side_effect=save_merged),
+            ):
+                _handle_note_identity_conflict(error, ctx, color_mode="never")
+
+            self.assertEqual(first.read_text(encoding="utf-8"), "# Note\n\nKeep this and changed this\n")
+            self.assertFalse(second.exists())
+            archived = list((trash / "merged-conflicts").rglob("second.md"))
+            self.assertEqual(len(archived), 1)
+            self.assertIn("Merged note saved", stderr.getvalue())
 
 
 class PaletteTests(unittest.TestCase):
