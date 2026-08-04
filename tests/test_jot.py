@@ -487,6 +487,28 @@ class EditorDiffTests(unittest.TestCase):
             self.assertEqual(len(archived), 1)
             self.assertIn("Merged note saved", stderr.getvalue())
 
+    def test_identity_conflict_auto_merges_non_overlapping_note_entries(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="jot-note-auto-merge-") as tempdir:
+            root = Path(tempdir)
+            first = root / "first.md"
+            second = root / "second.md"
+            trash = root / "trash"
+            first.write_text("# Note\n\n- [2026-08-04 10:00] first\n", encoding="utf-8")
+            second.write_text("# Note\n\n- [2026-08-04 10:01] second\n", encoding="utf-8")
+            error = NoteIdentityConflictError("chain abcdef12", [first, second])
+            ctx = SimpleNamespace(
+                config=SimpleNamespace(editor_command="true", trash_dir=trash)
+            )
+
+            with mock.patch("jot_core.cli.open_in_editor") as editor:
+                _handle_note_identity_conflict(error, ctx, color_mode="never")
+
+            editor.assert_not_called()
+            merged = first.read_text(encoding="utf-8")
+            self.assertIn("first", merged)
+            self.assertIn("second", merged)
+            self.assertFalse(second.exists())
+
 
 class PaletteTests(unittest.TestCase):
     def test_tui_time_inputs_are_local_and_keep_the_same_instant(self) -> None:

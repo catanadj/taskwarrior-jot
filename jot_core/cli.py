@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import difflib
 import os
 import shutil
 import sys
@@ -1034,11 +1035,7 @@ def _handle_note_identity_conflict(
     color_mode: str = "auto",
 ) -> None:
     warn(str(error))
-    if len(error.candidates) < 2 or not sys.stdin.isatty():
-        return
-    sys.stderr.write("Show a diff between the candidate notes? [d/N] ")
-    sys.stderr.flush()
-    if sys.stdin.readline().strip().casefold() != "d":
+    if len(error.candidates) < 2:
         return
     base = error.candidates[0]
     try:
@@ -1046,27 +1043,82 @@ def _handle_note_identity_conflict(
     except OSError as exc:
         warn(f"could not read conflict candidate {base}: {exc}")
         return
-    merge_after: str | None = None
-    for candidate in error.candidates[1:]:
-        try:
-            after = candidate.read_text(encoding="utf-8")
-        except OSError as exc:
-            warn(f"could not read conflict candidate {candidate}: {exc}")
-            continue
-        merge_after = after
-        diff = note_diff(before, after, path=candidate)
-        if not diff:
-            sys.stderr.write(f"No differences between {base} and {candidate}\n")
-            continue
-        sys.stderr.write(colorize_diff(diff, color_mode=color_mode))
+    secondary = error.candidates[1]
+    try:
+        after = secondary.read_text(encoding="utf-8")
+    except OSError as exc:
+        warn(f"could not read conflict candidate {secondary}: {exc}")
+        return
+
+    automatic = _automatic_note_merge(before, after)
+    if automatic is not None:
+        if _commit_merged_note(error, ctx, before=before, merged=automatic):
+            return
+
     if len(error.candidates) != 2:
         return
-    if merge_after is None:
+    if not sys.stdin.isatty():
         return
+    sys.stderr.write("Show a diff between the candidate notes? [d/N] ")
+    sys.stderr.flush()
+    if sys.stdin.readline().strip().casefold() != "d":
+        return
+    diff = note_diff(before, after, path=secondary)
+    if not diff:
+        sys.stderr.write(f"No differences between {base} and {secondary}\n")
+    else:
+        sys.stderr.write(colorize_diff(diff, color_mode=color_mode))
     sys.stderr.write("Merge these two notes in an editor? [m/N] ")
     sys.stderr.flush()
     if sys.stdin.readline().strip().casefold() == "m":
-        _merge_note_identity_conflict(error, ctx, before=before, after=merge_after, color_mode=color_mode)
+        _merge_note_identity_conflict(error, ctx, before=before, after=after, color_mode=color_mode)
+
+
+def _automatic_note_merge(before: str, after: str) -> str | None:
+    if before == after:
+        return before
+    before_lines = before.splitlines()
+    after_lines = after.splitlines()
+    opcodes = difflib.SequenceMatcher(
+        a=before_lines,
+        b=after_lines,
+        autojunk=False,
+    ).get_opcodes()
+    tags = {tag for tag, *_rest in opcodes}
+    if tags <= {"equal", "insert"}:
+        return after
+    if tags <= {"equal", "delete"}:
+        return before
+
+    prefix = 0
+    while prefix < len(before_lines) and prefix < len(after_lines):
+        if before_lines[prefix] != after_lines[prefix]:
+            break
+        prefix += 1
+    before_tail = before_lines[prefix:]
+    after_tail = after_lines[prefix:]
+    if (
+        prefix >= 2
+        and before_tail
+        and after_tail
+        and all(_looks_like_note_entry(line) for line in (*before_tail, *after_tail))
+    ):
+        merged = [*before_lines]
+        merged.extend(line for line in after_tail if line not in before_tail)
+        return _join_merged_lines(merged, before, after)
+    return None
+
+
+def _looks_like_note_entry(line: str) -> bool:
+    stripped = line.strip()
+    return stripped.startswith(("- ", "* "))
+
+
+def _join_merged_lines(lines: list[str], before: str, after: str) -> str:
+    result = "\n".join(lines)
+    if before.endswith("\n") or after.endswith("\n"):
+        result += "\n"
+    return result
 
 
 def _merge_note_identity_conflict(
@@ -1104,26 +1156,37 @@ def _merge_note_identity_conflict(
             warn(f"merge still contains conflict markers; resolve and save {merge_path}")
             return
 
-        with exclusive_file_lock(base):
-            current = base.read_text(encoding="utf-8") if base.exists() else ""
-            if current != before:
-                keep_merge_file = True
-                warn(f"primary note changed during merge; resolve {merge_path} manually")
-                return
-            if not secondary.exists():
-                keep_merge_file = True
-                warn(f"secondary note disappeared during merge; resolve {merge_path} manually")
-                return
-            archive_path = _merged_conflict_archive_path(ctx.config, secondary)
-            with exclusive_file_lock(secondary):
-                archive_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(secondary), str(archive_path))
-            atomic_write_text(base, merged)
-        sys.stderr.write(f"Merged note saved to {base}\n")
-        sys.stderr.write(f"Secondary note preserved at {archive_path}\n")
+        if _commit_merged_note(error, ctx, before=before, merged=merged):
+            return
     finally:
         if not keep_merge_file:
             merge_path.unlink(missing_ok=True)
+
+
+def _commit_merged_note(
+    error: NoteIdentityConflictError,
+    ctx,
+    *,
+    before: str,
+    merged: str,
+) -> bool:
+    base, secondary = error.candidates
+    with exclusive_file_lock(base):
+        current = base.read_text(encoding="utf-8") if base.exists() else ""
+        if current != before:
+            warn(f"primary note changed during merge; retry the conflict resolution")
+            return False
+        if not secondary.exists():
+            warn(f"secondary note disappeared during merge; retry the conflict resolution")
+            return False
+        archive_path = _merged_conflict_archive_path(ctx.config, secondary)
+        with exclusive_file_lock(secondary):
+            archive_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(secondary), str(archive_path))
+        atomic_write_text(base, merged)
+    sys.stderr.write(f"Merged note saved to {base}\n")
+    sys.stderr.write(f"Secondary note preserved at {archive_path}\n")
+    return True
 
 
 def _merged_conflict_archive_path(config, secondary: Path) -> Path:
