@@ -38,7 +38,9 @@ from jot_core.output import (
     _progress_color,
     _style,
     configure_output,
+    error_envelope,
     emit_result,
+    success_envelope,
 )
 from jot_core.progress import (
     adjust_note_progress,
@@ -822,6 +824,7 @@ class OutputColorTests(unittest.TestCase):
         self.assertNotIn("\033[", csv_output)
         self.assertEqual(list(csv.DictReader(csv_output.splitlines()))[0]["key"], "a1b2")
 
+
     def test_color_styling_does_not_change_human_readable_text(self) -> None:
         result = CommandResult(
             command="timelog-report",
@@ -882,6 +885,33 @@ class OutputColorTests(unittest.TestCase):
         self.assertIn("\033[1;38;5;42mc\033[0m", output)
         self.assertEqual(result["action"], "complete-task")
         taskwarrior.complete_task.assert_called_once_with(task.task_uuid)
+
+
+class JsonEnvelopeTests(unittest.TestCase):
+    def test_success_envelope_has_versioned_contract_and_warnings(self) -> None:
+        self.assertEqual(
+            success_envelope("jot.test", {"message": "café"}, warnings=("careful",)),
+            {"schema": "jot.test", "schema_version": 1, "ok": True,
+             "data": {"message": "café"}, "warnings": ["careful"]},
+        )
+
+    def test_error_envelope_has_stable_structured_error(self) -> None:
+        self.assertEqual(
+            error_envelope("jot.test", "not_found", "Task was not found", {"ref": "42"}),
+            {"schema": "jot.test", "schema_version": 1, "ok": False,
+             "error": {"code": "not_found", "message": "Task was not found", "details": {"ref": "42"}}},
+        )
+
+    def test_json_serialization_preserves_unicode(self) -> None:
+        rendered = json.dumps(success_envelope("jot.test", {"message": "café"}), ensure_ascii=False)
+        self.assertIn("café", rendered)
+        self.assertNotIn("\\u00e9", rendered)
+
+    def test_json_flag_is_accepted_after_subcommand(self) -> None:
+        args = build_parser().parse_args(["export", "42", "--json"])
+        self.assertTrue(args.json)
+        self.assertEqual(args.command, "export")
+        self.assertEqual(args.task_ref, "42")
 
 
 class ServiceProgressRowTests(unittest.TestCase):

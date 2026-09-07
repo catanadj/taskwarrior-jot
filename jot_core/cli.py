@@ -102,8 +102,23 @@ from .timewarrior import (
 from .trash import cleanup_trash, list_trash, restore_trash_item
 
 
+def _normalize_json_argv(argv: list[str]) -> list[str]:
+    """Accept the global JSON switch in either position around a command."""
+    args = list(argv)
+    if "--json" not in args:
+        return args
+    return ["--json", *(arg for arg in args if arg != "--json")]
+
+
+class _JotArgumentParser(argparse.ArgumentParser):
+    def parse_args(self, args=None, namespace=None):
+        if args is not None:
+            args = _normalize_json_argv(list(args))
+        return super().parse_args(args, namespace)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _JotArgumentParser(
         prog="jot",
         description=(
             "Note-first companion for Taskwarrior and Taskwarrior-Nautical. "
@@ -118,7 +133,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  jot project Finances.Expense\n"
             "  jot show 42\n"
             "  jot list 42\n"
-            "  jot export 42 --json\n"
+            "  jot --json export 42\n"
             "  jot add --type status 42 waiting on vendor\n"
             "  jot add-to task 42 --heading \"Next steps\" --text \"Call vendor Monday\"\n"
             "  jot attach task 42 ~/invoice.pdf --label invoice\n"
@@ -150,14 +165,15 @@ def build_parser() -> argparse.ArgumentParser:
             "  jot timew show 42\n"
             "  jot tui\n"
             "\n"
-            "Commands accept unique prefixes, for example: jot proj-r Finances.Expense"
+            "Commands accept unique prefixes, for example: jot proj-r Finances.Expense.\n"
+            "The global --json switch may appear before or after a subcommand; JSON responses use a versioned envelope."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--json",
         action="store_true",
-        help="emit machine-readable JSON instead of text",
+        help="emit versioned machine-readable JSON (place before or after the subcommand)",
     )
     parser.add_argument(
         "--version",
@@ -817,6 +833,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
+    argv = _normalize_json_argv(list(argv))
     if not argv:
         parser = build_parser()
         if sys.stdin.isatty() and sys.stdout.isatty():

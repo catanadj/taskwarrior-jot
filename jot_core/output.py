@@ -14,6 +14,39 @@ from .models import CommandResult, DoctorCheck
 _COLOR_MODE = "auto"
 
 
+def success_envelope(
+    schema: str,
+    data: Any,
+    warnings: tuple[str, ...] | list[str] = (),
+) -> dict[str, Any]:
+    """Build the versioned machine-readable success response."""
+    return {
+        "schema": str(schema),
+        "schema_version": 1,
+        "ok": True,
+        "data": data,
+        "warnings": [str(item) for item in warnings],
+    }
+
+
+def error_envelope(
+    schema: str,
+    code: str,
+    message: str,
+    details: Any = None,
+) -> dict[str, Any]:
+    """Build the versioned machine-readable error response."""
+    error: dict[str, Any] = {"code": str(code), "message": str(message)}
+    if details is not None:
+        error["details"] = details
+    return {
+        "schema": str(schema),
+        "schema_version": 1,
+        "ok": False,
+        "error": error,
+    }
+
+
 def configure_output(*, color_mode: str) -> None:
     global _COLOR_MODE
     _COLOR_MODE = str(color_mode or "auto").strip().casefold()

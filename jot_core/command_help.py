@@ -81,6 +81,8 @@ COMMAND_EXAMPLES = {
     "cleanup": "jot cleanup --trash-older-than 365 --yes",
 }
 
+JSON_OUTPUT_NOTE = "Global --json may appear before or after the subcommand; JSON uses a versioned envelope."
+
 
 def build_command_catalog(parser: argparse.ArgumentParser) -> list[CommandHelp]:
     commands: list[CommandHelp] = []
@@ -107,6 +109,8 @@ def _command_help(parser: argparse.ArgumentParser, path: tuple[str, ...]) -> Com
     name = " ".join(path)
     summary = _command_summary(parser)
     description = str(parser.description or summary).strip()
+    if path and path[0] == "export":
+        description = f"{description} {JSON_OUTPUT_NOTE}"
     return CommandHelp(
         name=name,
         category=_command_category(path),
