@@ -2370,6 +2370,9 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertTrue(payload["projects_dir"].endswith(".task/jot/projects"))
         self.assertTrue(payload["index_path"].endswith(".task/jot/index.json"))
         self.assertTrue(payload["ops_path"].endswith(".task/jot/ops.jsonl"))
+        self.assertIn("executable", payload["taskwarrior"])
+        self.assertIn("data_path", payload["taskwarrior"])
+        self.assertIn("hooks_path", payload["taskwarrior"])
 
     def test_paths_default_to_taskdata_when_set(self) -> None:
         taskdata = self.root / "custom-taskdata"

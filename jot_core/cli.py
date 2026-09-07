@@ -1597,6 +1597,7 @@ def _run_note(ctx, task_ref: str) -> CommandResult:
 
 def _run_paths(ctx) -> CommandResult:
     config = ctx.config
+    environment = ctx.taskwarrior.environment()
     return CommandResult(
         command="paths",
         payload={
@@ -1609,6 +1610,14 @@ def _run_paths(ctx) -> CommandResult:
             "templates_dir": str(config.templates_dir),
             "index_path": str(config.root_dir / "index.json"),
             "ops_path": str(config.root_dir / "ops.jsonl"),
+            "taskwarrior": {
+                "executable": environment.executable,
+                "rc_path": str(environment.rc_path),
+                "rc_source": environment.rc_source,
+                "data_path": str(environment.data_path),
+                "hooks_path": str(environment.hooks_path),
+                "warnings": list(environment.warnings),
+            },
         },
     )
 
