@@ -15,42 +15,27 @@ if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) e
   exit 1
 fi
 
-resolve_taskdata_dir() {
-  if [[ -n "${TASKDATA:-}" ]]; then
-    printf '%s\n' "$TASKDATA"
-    return
-  fi
+resolve_taskwarrior_environment() {
+  PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 - <<'PY'
+import sys
 
-  local taskrc="${TASKRC:-$HOME/.taskrc}"
-  if [[ -f "$taskrc" ]]; then
-    local line value
-    while IFS= read -r line; do
-      line="${line%%#*}"
-      line="${line#"${line%%[![:space:]]*}"}"
-      line="${line%"${line##*[![:space:]]}"}"
-      case "$line" in
-        data.location=*|data.location\ =*|rc.data.location=*|rc.data.location\ =*)
-          value="${line#*=}"
-          value="${value#"${value%%[![:space:]]*}"}"
-          value="${value%"${value##*[![:space:]]}"}"
-          value="${value%\"}"
-          value="${value#\"}"
-          value="${value%\'}"
-          value="${value#\'}"
-          if [[ -n "$value" ]]; then
-            printf '%s\n' "$value"
-            return
-          fi
-          ;;
-      esac
-    done < "$taskrc"
-  fi
+from jot_core.config import TaskwarriorEnvironment
 
-  printf '%s\n' "$HOME/.task"
+resolved = TaskwarriorEnvironment.resolve()
+print(resolved.data_path)
+print(resolved.hooks_path)
+for warning in resolved.warnings:
+    print(f"warning: {warning}", file=sys.stderr)
+PY
 }
 
-TASKDATA_DIR="$(resolve_taskdata_dir)"
-TASKDATA_DIR="${TASKDATA_DIR/#\~/$HOME}"
+mapfile -t TASK_ENVIRONMENT < <(resolve_taskwarrior_environment)
+if [[ "${#TASK_ENVIRONMENT[@]}" -lt 2 ]]; then
+  echo "error: could not resolve the Taskwarrior environment" >&2
+  exit 1
+fi
+TASKDATA_DIR="${TASK_ENVIRONMENT[0]}"
+TASK_HOOKS_DIR="${TASK_ENVIRONMENT[1]}"
 CONFIG_DIR="${JOT_HOME:-$TASKDATA_DIR/jot}"
 CONFIG_PATH="$CONFIG_DIR/config-jot.toml"
 TEMPLATES_DIR="$CONFIG_DIR/templates"
@@ -73,8 +58,9 @@ if that file does not already exist.
 Default prefix:
   ~/.local
 
-Task data directory is resolved from TASKDATA, then TASKRC/~/.taskrc
-data.location, then ~/.task. Set JOT_HOME to override the jot data directory.
+Task data and hooks directories are resolved from the effective Taskwarrior
+environment, including TASKDATA, TASKRC, XDG paths, and taskrc settings.
+Set JOT_HOME to override the jot data directory.
 
 Timelog hook:
   --with-timelog-hook  copy the Jot time expenditure hook into Taskwarrior hooks
@@ -188,7 +174,7 @@ cp -R "$STAGE_DIR/." "$LIB_DIR/"
 ln -sfn "$LIB_DIR/jot" "$BIN_DIR/jot"
 
 TIMELOG_HOOK_SRC="$LIB_DIR/hooks/on-modify_jot_timelog.py"
-TIMELOG_HOOK_DIR="$TASKDATA_DIR/hooks"
+TIMELOG_HOOK_DIR="$TASK_HOOKS_DIR"
 TIMELOG_HOOK_DST="$TIMELOG_HOOK_DIR/on-modify_jot_timelog.py"
 if should_install_timelog_hook; then
   mkdir -p "$TIMELOG_HOOK_DIR"
@@ -264,6 +250,12 @@ Installed jot to:
 
 Command link:
   $BIN_DIR/jot
+
+Task data directory:
+  $TASKDATA_DIR
+
+Task hooks directory:
+  $TASK_HOOKS_DIR
 
 $CONFIG_NOTE
 Templates installed: $installed_templates

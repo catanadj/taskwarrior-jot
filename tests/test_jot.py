@@ -56,7 +56,7 @@ from jot_core.progress import (
     set_note_progress,
 )
 from jot_core.services import JotService
-from jot_core.taskwarrior import TaskwarriorClient
+from jot_core.taskwarrior import TaskwarriorClient, TaskwarriorEnvironment
 from jot_core.templates import apply_template
 from jot_tui.app import (
     NEW_PROGRESS_TRACK,
@@ -134,6 +134,38 @@ def _write_fake_task_script(bin_dir: Path, state_path: Path) -> None:
     )
     path = bin_dir / "task"
     path.write_text(script, encoding="utf-8")
+    path.chmod(0o755)
+
+
+def _write_environment_task_script(
+    path: Path,
+    *,
+    data_location: Path,
+    hooks_location: Path,
+    calls_path: Path,
+) -> None:
+    path.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/usr/bin/env python3
+            import json
+            import pathlib
+            import sys
+
+            calls_path = pathlib.Path({str(calls_path)!r})
+            calls = json.loads(calls_path.read_text()) if calls_path.exists() else []
+            calls.append(sys.argv[1:])
+            calls_path.write_text(json.dumps(calls))
+            key = sys.argv[-1]
+            values = {{
+                'rc.data.location': {str(data_location)!r},
+                'rc.hooks.location': {str(hooks_location)!r},
+            }}
+            print(values.get(key, ''))
+            """
+        ),
+        encoding="utf-8",
+    )
     path.chmod(0o755)
 
 
@@ -1410,6 +1442,7 @@ class CliIntegrationTests(JotCliTestCase):
         new = {"uuid": old["uuid"], "description": "Read chapter"}
         env = os.environ.copy()
         env["JOT_BIN"] = str(self.root / "missing-jot")
+        env["NAUTICAL_DIAG"] = "1"
 
         result = subprocess.run(
             [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py")],
@@ -1425,6 +1458,27 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(json.loads(result.stdout), new)
         self.assertIn("could not run jot", result.stderr)
 
+    def test_jot_timelog_hook_suppresses_diagnostics_by_default(self) -> None:
+        old = {"uuid": "2d6d7d7d-1111-2222-3333-444444444444", "start": "20260703T060000Z"}
+        new = {"uuid": old["uuid"], "description": "Read chapter"}
+        env = os.environ.copy()
+        env["JOT_BIN"] = str(self.root / "missing-jot")
+        env.pop("NAUTICAL_DIAG", None)
+
+        result = subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py")],
+            cwd=PROJECT_ROOT,
+            env=env,
+            input=json.dumps(old) + "\n" + json.dumps(new) + "\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), new)
+        self.assertEqual(result.stderr, "")
+
     def test_jot_timelog_hook_fails_open_on_timeout(self) -> None:
         old = {"uuid": "2d6d7d7d-1111-2222-3333-444444444444", "start": "20260703T060000Z"}
         new = {"uuid": old["uuid"], "description": "Read chapter"}
@@ -1437,6 +1491,7 @@ class CliIntegrationTests(JotCliTestCase):
         env = os.environ.copy()
         env["JOT_BIN"] = str(slow_jot)
         env["JOT_TIMELOG_TIMEOUT"] = "0.05"
+        env["NAUTICAL_DIAG"] = "1"
 
         result = subprocess.run(
             [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py")],
@@ -4112,11 +4167,215 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("ambiguous", result.stderr)
 
 
+class TaskwarriorEnvironmentTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.tempdir = tempfile.TemporaryDirectory(prefix="jot-task-environment-test-")
+        self.addCleanup(self.tempdir.cleanup)
+        self.root = Path(self.tempdir.name)
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.task_bin = self.root / "task"
+        self.calls_path = self.root / "calls.json"
+
+    def test_resolver_honors_taskdata_and_taskrc_while_querying_hooks(self) -> None:
+        taskrc = self.root / "custom.taskrc"
+        taskrc.write_text("include other.taskrc\n", encoding="utf-8")
+        taskdata = self.root / "taskdata override"
+        reported_data = self.root / "included-data"
+        reported_hooks = self.root / "included-hooks"
+        _write_environment_task_script(
+            self.task_bin,
+            data_location=reported_data,
+            hooks_location=reported_hooks,
+            calls_path=self.calls_path,
+        )
+
+        resolved = TaskwarriorEnvironment.resolve(
+            argv=[str(self.task_bin)],
+            env={"HOME": str(self.home), "TASKRC": str(taskrc), "TASKDATA": str(taskdata)},
+        )
+
+        self.assertEqual(resolved.executable, str(self.task_bin))
+        self.assertEqual(resolved.rc_path, taskrc.resolve())
+        self.assertEqual(resolved.rc_source, "TASKRC")
+        self.assertEqual(resolved.data_path, taskdata.resolve())
+        self.assertEqual(resolved.hooks_path, reported_hooks.resolve())
+        calls = json.loads(self.calls_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            calls,
+            [
+                [f"rc:{taskrc.resolve()}", "rc.hooks=off", "rc.verbose=nothing", "_get", "rc.data.location"],
+                [f"rc:{taskrc.resolve()}", "rc.hooks=off", "rc.verbose=nothing", "_get", "rc.hooks.location"],
+            ],
+        )
+
+    def test_resolver_uses_rc_reported_data_and_hooks_locations(self) -> None:
+        taskrc = self.root / "custom.taskrc"
+        taskrc.write_text("include nested.taskrc\n", encoding="utf-8")
+        reported_data = self.root / "reported-data"
+        reported_hooks = self.root / "reported-hooks"
+        _write_environment_task_script(
+            self.task_bin,
+            data_location=reported_data,
+            hooks_location=reported_hooks,
+            calls_path=self.calls_path,
+        )
+
+        resolved = TaskwarriorEnvironment.resolve(
+            argv=[str(self.task_bin)],
+            env={"HOME": str(self.home), "TASKRC": str(taskrc)},
+        )
+
+        self.assertEqual(resolved.data_path, reported_data.resolve())
+        self.assertEqual(resolved.hooks_path, reported_hooks.resolve())
+        self.assertEqual(resolved.warnings, ())
+
+    def test_resolver_uses_xdg_defaults_when_legacy_taskrc_is_absent(self) -> None:
+        xdg_config = self.root / "config"
+        xdg_data = self.root / "data"
+        taskrc = xdg_config / "task" / "taskrc"
+        taskrc.parent.mkdir(parents=True)
+        taskrc.write_text("# XDG Taskwarrior config\n", encoding="utf-8")
+
+        resolved = TaskwarriorEnvironment.resolve(
+            argv=[str(self.root / "missing-task")],
+            env={
+                "HOME": str(self.home),
+                "XDG_CONFIG_HOME": str(xdg_config),
+                "XDG_DATA_HOME": str(xdg_data),
+            },
+        )
+
+        self.assertEqual(resolved.rc_path, taskrc.resolve())
+        self.assertEqual(resolved.rc_source, "XDG_CONFIG_HOME")
+        self.assertEqual(resolved.data_path, (xdg_data / "task").resolve())
+        self.assertEqual(resolved.hooks_path, (xdg_config / "task" / "hooks").resolve())
+        self.assertTrue(resolved.warnings)
+
+    def test_resolver_honors_command_line_overrides_without_shell_parsing(self) -> None:
+        taskrc = self.root / "rc with spaces"
+        data = self.root / "data;still-a-path"
+        hooks = self.root / "hooks $(literal)"
+
+        resolved = TaskwarriorEnvironment.resolve(
+            argv=[
+                str(self.task_bin),
+                f"rc:{taskrc}",
+                f"rc.data.location:{data}",
+                f"rc.hooks.location:{hooks}",
+            ],
+            env={"HOME": str(self.home)},
+        )
+
+        self.assertEqual(resolved.rc_path, taskrc.resolve())
+        self.assertEqual(resolved.rc_source, "argv")
+        self.assertEqual(resolved.data_path, data.resolve())
+        self.assertEqual(resolved.hooks_path, hooks.resolve())
+
+    def test_client_environment_drives_explicit_data_command_prefix(self) -> None:
+        taskdata = self.root / "client-taskdata"
+        client = TaskwarriorClient(task_bin=str(self.task_bin), taskdata=str(taskdata))
+
+        with mock.patch.dict(os.environ, {"HOME": str(self.home)}, clear=True):
+            resolved = client.environment()
+            prefix = client._command_prefix()
+
+        self.assertEqual(resolved.executable, str(self.task_bin))
+        self.assertEqual(resolved.data_path, taskdata.resolve())
+        self.assertEqual(prefix, [f"rc.data.location={taskdata.resolve()}"])
+
+    def test_resolver_ignores_empty_overrides_with_warnings(self) -> None:
+        resolved = TaskwarriorEnvironment.resolve(
+            argv=[str(self.root / "missing-task"), "rc:", "rc.data.location:", "data:"],
+            env={"HOME": str(self.home)},
+        )
+
+        self.assertEqual(resolved.data_path, (self.home / ".task").resolve())
+        self.assertEqual(len(resolved.warnings), 3)
+        self.assertTrue(all("ignored empty" in warning for warning in resolved.warnings))
+
+    def test_hook_v2_data_arguments_are_passed_to_jot(self) -> None:
+        jot_bin = self.root / "capture-jot"
+        capture = self.root / "taskdata.txt"
+        jot_bin.write_text(
+            "#!/usr/bin/env python3\n"
+            "import os, pathlib\n"
+            "pathlib.Path(os.environ['CAPTURE']).write_text(os.environ.get('TASKDATA', ''))\n",
+            encoding="utf-8",
+        )
+        jot_bin.chmod(0o755)
+        old = {"uuid": "2d6d7d7d-1111-2222-3333-444444444444", "start": "20260703T060000Z"}
+        new = {"uuid": old["uuid"], "description": "café"}
+
+        for prefix in ("data:", "data.location:"):
+            with self.subTest(prefix=prefix):
+                selected = self.root / prefix.rstrip(":").replace(".", "-")
+                env = os.environ.copy()
+                env.update({"JOT_BIN": str(jot_bin), "CAPTURE": str(capture)})
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py"),
+                        f"{prefix}{selected}",
+                    ],
+                    cwd=PROJECT_ROOT,
+                    env=env,
+                    input=json.dumps(old, ensure_ascii=False) + "\n" + json.dumps(new, ensure_ascii=False) + "\n",
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout), new)
+                self.assertIn("café", result.stdout)
+                self.assertNotIn("\\u00e9", result.stdout)
+                self.assertEqual(capture.read_text(encoding="utf-8"), str(selected))
+
+    def test_hook_ignores_malformed_v2_data_argument(self) -> None:
+        jot_bin = self.root / "capture-jot"
+        capture = self.root / "taskdata.txt"
+        existing = self.root / "existing-taskdata"
+        jot_bin.write_text(
+            "#!/usr/bin/env python3\n"
+            "import os, pathlib\n"
+            "pathlib.Path(os.environ['CAPTURE']).write_text(os.environ.get('TASKDATA', ''))\n",
+            encoding="utf-8",
+        )
+        jot_bin.chmod(0o755)
+        old = {"uuid": "2d6d7d7d-1111-2222-3333-444444444444", "start": "20260703T060000Z"}
+        new = {"uuid": old["uuid"], "description": "Read chapter"}
+        env = os.environ.copy()
+        env.update(
+            {
+                "JOT_BIN": str(jot_bin),
+                "CAPTURE": str(capture),
+                "TASKDATA": str(existing),
+                "NAUTICAL_DIAG": "1",
+            }
+        )
+
+        result = subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py"), "data:"],
+            cwd=PROJECT_ROOT,
+            env=env,
+            input=json.dumps(old) + "\n" + json.dumps(new) + "\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), new)
+        self.assertEqual(capture.read_text(encoding="utf-8"), str(existing))
+        self.assertIn("empty data argument", result.stderr)
+
+
 class InstallLifecycleTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tempdir = tempfile.TemporaryDirectory(prefix="jot-install-test-")
         self.addCleanup(self.tempdir.cleanup)
         root = Path(self.tempdir.name)
+        self.root = root
         self.home = root / "home"
         self.home.mkdir()
         self.taskdata = root / "taskdata"
@@ -4169,6 +4428,30 @@ class InstallLifecycleTests(unittest.TestCase):
         replaced = self.run_script("install.sh", "--with-timelog-hook", "--replace-timelog-hook")
         self.assertEqual(replaced.returncode, 0, replaced.stderr)
         self.assertNotEqual(hook.read_text(encoding="utf-8"), "custom hook\n")
+
+    def test_installer_uses_effective_taskwarrior_hooks_location(self) -> None:
+        taskrc = self.root / "custom.taskrc"
+        taskrc.write_text("include nested.taskrc\n", encoding="utf-8")
+        effective_data = self.root / "effective-data"
+        effective_hooks = self.root / "effective-hooks"
+        calls = self.root / "environment-calls.json"
+        task_bin = self.root / "task"
+        _write_environment_task_script(
+            task_bin,
+            data_location=effective_data,
+            hooks_location=effective_hooks,
+            calls_path=calls,
+        )
+        self.env.pop("TASKDATA", None)
+        self.env["TASKRC"] = str(taskrc)
+        self.env["PATH"] = f"{self.root}:{self.env['PATH']}"
+
+        result = self.run_script("install.sh", "--with-timelog-hook")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((effective_hooks / "on-modify_jot_timelog.py").exists())
+        self.assertIn(f"Task data directory:\n  {effective_data}", result.stdout)
+        self.assertIn(f"Task hooks directory:\n  {effective_hooks}", result.stdout)
 
     def test_uninstall_preserves_data_and_requires_explicit_hook_removal(self) -> None:
         installed = self.run_script("install.sh", "--with-timelog-hook")

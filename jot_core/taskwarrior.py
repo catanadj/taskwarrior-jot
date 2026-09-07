@@ -8,6 +8,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Any
 
+from .config import TaskwarriorEnvironment
 from .models import ResolvedTask, TaskRef
 
 
@@ -41,6 +42,12 @@ class TaskwarriorClient:
         if proc.returncode != 0:
             raise RuntimeError(proc.stderr.strip() or "could not determine Taskwarrior version")
         return proc.stdout.strip()
+
+    def environment(self) -> TaskwarriorEnvironment:
+        argv = [self.task_bin]
+        if self.taskdata:
+            argv.append(f"rc.data.location={self.taskdata}")
+        return TaskwarriorEnvironment.resolve(argv=argv)
 
     def resolve_task(self, raw_ref: str) -> ResolvedTask:
         ref = TaskRef(raw=raw_ref)
@@ -229,7 +236,6 @@ class TaskwarriorClient:
             raise RuntimeError(f"could not run Taskwarrior: {exc}") from exc
 
     def _command_prefix(self) -> list[str]:
-        taskdata = self.taskdata or str(os.environ.get("TASKDATA") or "").strip()
-        if taskdata:
-            return [f"rc.data.location={taskdata}"]
+        if self.taskdata or str(os.environ.get("TASKDATA") or "").strip():
+            return [f"rc.data.location={self.environment().data_path}"]
         return []
