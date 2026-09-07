@@ -71,6 +71,7 @@ from .storage import (
     append_chain_note_storage,
     append_project_note_storage,
     append_task_note_storage,
+    append_task_note_idempotent,
     finalize_chain_note_edit,
     finalize_project_note_edit,
     finalize_task_note_edit,
@@ -442,6 +443,17 @@ def build_parser() -> argparse.ArgumentParser:
             nargs="*",
             help="text to append; if omitted, read stdin",
         )
+
+    agent_append = subparsers.add_parser(
+        "agent-append",
+        help="append a retry-safe agent note entry",
+        description="Append one idempotent task-note entry and return a versioned machine result.",
+    )
+    agent_append.add_argument("task_ref", help="task ID, full UUID, or unique short UUID")
+    agent_append.add_argument("text", nargs="*", help="entry text")
+    agent_append.add_argument("--operation-id", required=True)
+    agent_append.add_argument("--entry-id", required=True)
+    agent_append.add_argument("--request-digest")
 
     project_append = subparsers.add_parser(
         "project-append",
@@ -963,6 +975,19 @@ def main(argv: list[str] | None = None) -> int:
             result = _run_add(ctx, args.task_ref, args.text, args.event_type)
         elif args.command == "note-append":
             result = _run_note_append(ctx, args.task_ref, _text_from_args(args.text))
+        elif args.command == "agent-append":
+            task = ctx.taskwarrior.resolve_task(args.task_ref)
+            data = append_task_note_idempotent(
+                ctx.config,
+                task,
+                _text_from_args(args.text),
+                operation_id=args.operation_id,
+                entry_id=args.entry_id,
+                request_digest=args.request_digest,
+            )
+            from .output import success_envelope
+
+            result = CommandResult(command="agent-append", payload=success_envelope("jot.mutation", data))
         elif args.command == "chain-append":
             result = _run_chain_append(ctx, args.task_ref, _text_from_args(args.text))
         elif args.command == "project-append":

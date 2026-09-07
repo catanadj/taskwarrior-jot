@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from decimal import Decimal
 from pathlib import Path
+
+from .frontmatter import exclusive_file_lock, read_document
 
 from .index import (
     update_chain_note_index,
@@ -34,7 +38,7 @@ from .notes import (
     find_task_note,
     touch_updated,
 )
-from .ops import append_op
+from .ops import append_op, read_ops
 from .progress import (
     ProgressResult,
     adjust_note_progress,
@@ -94,6 +98,78 @@ def append_task_note_storage(config: AppConfig, task: ResolvedTask, text: str) -
         path=str(result.note_path),
     )
     return result
+
+
+def append_task_note_idempotent(
+    config: AppConfig,
+    task: ResolvedTask,
+    text: str,
+    *,
+    operation_id: str,
+    entry_id: str,
+    request_digest: str | None = None,
+) -> dict[str, object]:
+    """Append one agent entry, making retries return the original result."""
+    operation_id = str(operation_id or "").strip()
+    entry_id = str(entry_id or "").strip()
+    if not operation_id or not entry_id:
+        raise RuntimeError("operation_id and entry_id are required")
+    marker = f"<!-- jot-entry:{entry_id} -->"
+    with exclusive_file_lock(config.root_dir / ".jot-mutations.lock"):
+        for item in read_ops(config):
+            if str(item.get("op") or "") != "agent_note_append":
+                continue
+            if str(item.get("operation_id") or "") == operation_id or str(item.get("entry_id") or "") == entry_id:
+                return {
+                    "status": "duplicate",
+                    "operation_id": operation_id,
+                    "entry_id": entry_id,
+                    "revision": int(item.get("revision") or 1),
+                    "digest": str(item.get("digest") or ""),
+                }
+        note = ensure_task_note(config, task)
+        _metadata, body = read_document(note.note_path)
+        if marker in body:
+            digest = _note_digest(note.note_path)
+            revision = body.count("<!-- jot-entry:")
+            update_task_note_index(config, task, note.note_path)
+            append_op(
+                config,
+                "agent_note_append",
+                task_short_uuid=task.task_short_uuid,
+                task_uuid=task.task_uuid,
+                path=str(note.note_path),
+                operation_id=operation_id,
+                entry_id=entry_id,
+                request_digest=request_digest,
+                revision=revision,
+                digest=digest,
+                repaired=True,
+            )
+            return {"status": "duplicate", "operation_id": operation_id, "entry_id": entry_id, "revision": revision, "digest": digest}
+        result = append_to_task_note(config, task, f"{text.rstrip()}\n\n{marker}")
+        update_task_note_index(config, task, result.note_path)
+        digest = _note_digest(result.note_path)
+        revision = body.count("<!-- jot-entry:") + 1
+        append_op(
+            config,
+            "agent_note_append",
+            task_short_uuid=task.task_short_uuid,
+            task_uuid=task.task_uuid,
+            path=str(result.note_path),
+            operation_id=operation_id,
+            entry_id=entry_id,
+            request_digest=request_digest,
+            revision=revision,
+            digest=digest,
+        )
+        return {"status": "applied", "operation_id": operation_id, "entry_id": entry_id, "revision": revision, "digest": digest}
+
+
+def _note_digest(path: Path) -> str:
+    metadata, body = read_document(path)
+    source = json.dumps(metadata, ensure_ascii=False, sort_keys=True) + "\n" + body
+    return "sha256:" + hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
 def append_chain_note_storage(config: AppConfig, task: ResolvedTask, text: str) -> AppendResult:

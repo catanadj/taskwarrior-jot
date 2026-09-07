@@ -3835,6 +3835,28 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(payload["schema"], "jot.context")
         self.assertEqual(payload["error"]["code"], "context_error")
 
+    def test_agent_append_is_idempotent_by_operation_and_entry_id(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Retry-safe task",
+            "project": "testing",
+            "tags": [],
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        first = self.run_jot(
+            "agent-append", "1", "durable entry", "--operation-id", "op-1", "--entry-id", "entry-1", "--json"
+        )
+        second = self.run_jot(
+            "agent-append", "1", "durable entry", "--operation-id", "op-1", "--entry-id", "entry-1", "--json"
+        )
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(json.loads(first.stdout)["data"]["status"], "applied")
+        self.assertEqual(json.loads(second.stdout)["data"]["status"], "duplicate")
+        note = next((self.home / ".task" / "jot" / "tasks").glob("*.md"))
+        self.assertEqual(note.read_text(encoding="utf-8").count("durable entry"), 1)
+
     def test_show_json_contract_is_summary_only(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
