@@ -55,6 +55,7 @@ COMMAND_EXAMPLES = {
     "report recent": "jot report recent --limit 10 --kind event",
     "recent": "jot recent --limit 10 --kind event",
     "search": "jot search vendor --kind task-note",
+    "context": "jot context 42 --json",
     "timelog cancel": "jot timelog cancel 42",
     "timelog add": "jot timelog add 42 --from 2026-07-14T09:00 --to 2026-07-14T10:30",
     "timelog amend": "jot timelog amend a1b2c3d4 --to 2026-07-14T10:45",
@@ -163,7 +164,7 @@ def _clean_usage(value: str) -> str:
 
 def _command_category(path: tuple[str, ...]) -> str:
     name = path[0]
-    if name in {"note", "note-append", "task-cat", "task-delete", "show", "list", "export", "add"}:
+    if name in {"note", "note-append", "task-cat", "task-delete", "show", "list", "export", "add", "context"}:
         return "Tasks"
     if name in {"chain", "chain-append", "chain-cat", "chain-delete"}:
         return "Chains"

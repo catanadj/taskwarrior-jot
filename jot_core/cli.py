@@ -829,6 +829,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="filter by exact Nautical chainID",
     )
 
+    context = subparsers.add_parser(
+        "context",
+        help="export a bounded read-only agent context snapshot",
+        description="Export live Taskwarrior data, project/chain/task context, notes, events, and Nautical fields.",
+    )
+    context.add_argument("task_ref", help="task ID, full UUID, or unique short UUID")
+    context.add_argument("--max-body-bytes", type=int, default=64 * 1024)
+    context.add_argument("--max-events", type=int, default=100)
+
     return parser
 
 
@@ -992,6 +1001,21 @@ def main(argv: list[str] | None = None) -> int:
                 getattr(args, "project", None),
                 getattr(args, "chain_id", None),
             )
+        elif args.command == "context":
+            if args.max_body_bytes < 1 or args.max_events < 0:
+                raise RuntimeError("context limits must be positive (events may be zero)")
+            service = JotService(config=ctx.config, taskwarrior=ctx.taskwarrior)
+            payload = service.agent_context(
+                args.task_ref,
+                max_body_bytes=args.max_body_bytes,
+                max_events=args.max_events,
+            )
+            from .output import success_envelope
+
+            result = CommandResult(
+                command="context",
+                payload=success_envelope("jot.context", payload, payload.pop("warnings", [])),
+            )
         else:  # pragma: no cover
             parser.error(f"unknown command {args.command}")
             return 2
@@ -999,6 +1023,12 @@ def main(argv: list[str] | None = None) -> int:
         _handle_note_identity_conflict(exc, ctx, color_mode=ctx.config.color_mode)
         return 1
     except (RuntimeError, OSError, ValueError, TypeError) as exc:
+        if args.command == "context" and args.json:
+            import json
+            from .output import error_envelope
+
+            sys.stdout.write(json.dumps(error_envelope("jot.context", "context_error", str(exc)), ensure_ascii=False, indent=2) + "\n")
+            return 1
         warn(str(exc))
         return 1
 

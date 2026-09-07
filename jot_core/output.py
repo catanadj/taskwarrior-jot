@@ -165,6 +165,9 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if command == "timew":
         _emit_timewarrior(payload)
         return
+    if command == "context":
+        _emit_context(payload)
+        return
     if command == "headings":
         _emit_headings(payload)
         return
@@ -1377,6 +1380,23 @@ def _field_value_color(label: str, value: str) -> str:
     if normalized_value in {"no", "none", "(none)", "(n/a)", "unknown"}:
         return "muted"
     return ""
+
+
+def _emit_context(payload: dict[str, Any]) -> None:
+    data = payload.get("data") if isinstance(payload, dict) else {}
+    task = data.get("task") if isinstance(data, dict) else {}
+    if not isinstance(task, dict):
+        return
+    sys.stdout.write(f"Task {task.get('uuid') or '(unknown)'}: {task.get('description') or '(no description)'}\n")
+    if task.get("project"):
+        sys.stdout.write(f"Project: {task['project']}\n")
+    notes = data.get("notes") if isinstance(data, dict) else {}
+    if isinstance(notes, dict):
+        task_note = notes.get("task") or {}
+        sys.stdout.write(f"Task note: {'available' if task_note.get('exists') else 'missing'}\n")
+    warnings = payload.get("warnings") if isinstance(payload, dict) else []
+    for warning in warnings or []:
+        sys.stdout.write(f"Warning: {warning}\n")
 
 
 def _recent_identity(item: dict[str, Any]) -> str:

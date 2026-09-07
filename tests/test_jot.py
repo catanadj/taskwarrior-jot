@@ -3798,6 +3798,43 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertTrue(payload["notes"]["project"]["exists"])
         self.assertTrue(payload["notes"]["project"]["path"].endswith("projects/finance/audit/index.md"))
 
+    def test_context_json_is_versioned_and_includes_project_layers(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Fix billing discrepancy",
+            "project": "finance.audit",
+            "tags": ["ann"],
+            "chainID": "a4bf5egh",
+            "anchor": "m:last-fri",
+            "annotations": [{"entry": "20260405T171501Z", "description": "status: waiting"}],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        self.run_jot("project-append", "finance", "broad project context")
+        self.run_jot("project-append", "finance.audit", "specific project context")
+        self.run_jot("note-append", "1", "task context")
+
+        result = self.run_jot("context", "1", "--json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload["schema"], "jot.context")
+        self.assertEqual(payload["schema_version"], 1)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["data"]["task"]["uuid"], task["uuid"])
+        self.assertEqual(payload["data"]["context"]["projects"], ["finance", "finance.audit"])
+        self.assertTrue(payload["data"]["notes"]["task"]["exists"])
+        self.assertTrue(payload["data"]["notes"]["project"][0]["exists"])
+        self.assertIn("digest", payload["data"]["notes"]["task"])
+        self.assertEqual(payload["data"]["nautical"]["delegation"], "nautical-query")
+
+    def test_context_json_errors_use_same_envelope(self) -> None:
+        self.write_state({"version": "2.6.2", "single": [], "1": []})
+        result = self.run_jot("context", "missing", "--json")
+        self.assertNotEqual(result.returncode, 0)
+        payload = json.loads(result.stdout)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["schema"], "jot.context")
+        self.assertEqual(payload["error"]["code"], "context_error")
+
     def test_show_json_contract_is_summary_only(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
