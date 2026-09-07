@@ -6,6 +6,26 @@ import subprocess
 import sys
 
 
+def _diagnostic(message: str) -> None:
+    if os.environ.get("NAUTICAL_DIAG") == "1":
+        sys.stderr.write(message)
+
+
+def _taskdata_from_args(args: list[str]) -> str:
+    selected = ""
+    for arg in args:
+        for prefix in ("data:", "data.location:"):
+            if not arg.startswith(prefix):
+                continue
+            value = arg[len(prefix) :].strip()
+            if value:
+                selected = value
+            else:
+                _diagnostic(f"jot timelog hook warning: ignored empty data argument: {arg}\n")
+            break
+    return selected
+
+
 def main() -> int:
     old_line = sys.stdin.readline()
     new_line = sys.stdin.readline()
@@ -13,6 +33,10 @@ def main() -> int:
         return 0
 
     jot_bin = os.environ.get("JOT_BIN", "jot")
+    child_env = os.environ.copy()
+    taskdata = _taskdata_from_args(sys.argv[1:])
+    if taskdata:
+        child_env["TASKDATA"] = taskdata
     return_code = 0
     try:
         completed = subprocess.run(
@@ -22,17 +46,20 @@ def main() -> int:
             capture_output=True,
             check=False,
             timeout=_timeout_seconds(),
+            env=child_env,
         )
         if completed.stderr:
-            sys.stderr.write(completed.stderr)
+            _diagnostic(completed.stderr)
         if completed.returncode != 0:
-            sys.stderr.write(f"jot timelog hook warning: ingest failed with exit {completed.returncode}\n")
+            _diagnostic(
+                f"jot timelog hook warning: ingest failed with exit {completed.returncode}\n"
+            )
             return_code = completed.returncode
     except subprocess.TimeoutExpired:
-        sys.stderr.write("jot timelog hook warning: ingest timed out\n")
+        _diagnostic("jot timelog hook warning: ingest timed out\n")
         return_code = 1
     except OSError as exc:
-        sys.stderr.write(f"jot timelog hook warning: could not run jot: {exc}\n")
+        _diagnostic(f"jot timelog hook warning: could not run jot: {exc}\n")
         return_code = 1
 
     sys.stdout.write(new_line)

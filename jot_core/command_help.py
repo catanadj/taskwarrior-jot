@@ -55,6 +55,10 @@ COMMAND_EXAMPLES = {
     "report recent": "jot report recent --limit 10 --kind event",
     "recent": "jot recent --limit 10 --kind event",
     "search": "jot search vendor --kind task-note",
+    "context": "jot context 42 --json",
+    "agent-append": "jot agent-append 42 " + '"Durable entry" --operation-id op-1 --entry-id entry-1 --json',
+    "integrity": "jot integrity --json",
+    "reconcile": "jot reconcile --dry-run --json",
     "timelog cancel": "jot timelog cancel 42",
     "timelog add": "jot timelog add 42 --from 2026-07-14T09:00 --to 2026-07-14T10:30",
     "timelog amend": "jot timelog amend a1b2c3d4 --to 2026-07-14T10:45",
@@ -80,6 +84,10 @@ COMMAND_EXAMPLES = {
     "trash-restore": "jot trash-restore 1",
     "cleanup": "jot cleanup --trash-older-than 365 --yes",
 }
+
+JSON_OUTPUT_NOTE = ("Global --json may appear before or after the subcommand. "
+                    "Existing command JSON is a raw payload; new agent surfaces use a versioned "
+                    "envelope with schema, schema_version, ok, data/warnings, or error.")
 
 
 def build_command_catalog(parser: argparse.ArgumentParser) -> list[CommandHelp]:
@@ -107,6 +115,8 @@ def _command_help(parser: argparse.ArgumentParser, path: tuple[str, ...]) -> Com
     name = " ".join(path)
     summary = _command_summary(parser)
     description = str(parser.description or summary).strip()
+    if path and path[0] == "export":
+        description = f"{description} {JSON_OUTPUT_NOTE}"
     return CommandHelp(
         name=name,
         category=_command_category(path),
@@ -157,7 +167,7 @@ def _clean_usage(value: str) -> str:
 
 def _command_category(path: tuple[str, ...]) -> str:
     name = path[0]
-    if name in {"note", "note-append", "task-cat", "task-delete", "show", "list", "export", "add"}:
+    if name in {"note", "note-append", "task-cat", "task-delete", "show", "list", "export", "add", "context"}:
         return "Tasks"
     if name in {"chain", "chain-append", "chain-cat", "chain-delete"}:
         return "Chains"

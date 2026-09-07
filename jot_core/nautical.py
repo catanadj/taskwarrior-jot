@@ -2,13 +2,20 @@ from __future__ import annotations
 
 
 NAUTICAL_FIELDS = (
+    "cp",
+    "anchor",
+    "anchor_file",
+    "anchor_mode",
+    "bc",
+    "omit",
+    "omit_file",
+    "chainMax",
+    "chainUntil",
+    "chain",
     "chainID",
     "prevLink",
     "nextLink",
-    "anchor",
-    "cp",
     "link",
-    "anchor_mode",
 )
 
 
@@ -27,3 +34,12 @@ def nautical_summary(task: dict) -> dict[str, str]:
         if value:
             out[field] = value
     return out
+
+
+def nautical_snapshot(task: dict) -> dict[str, object]:
+    return {
+        "fields": nautical_summary(task),
+        "source": "taskwarrior",
+        "delegation": "nautical-query",
+        "warnings": [],
+    }

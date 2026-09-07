@@ -14,6 +14,39 @@ from .models import CommandResult, DoctorCheck
 _COLOR_MODE = "auto"
 
 
+def success_envelope(
+    schema: str,
+    data: Any,
+    warnings: tuple[str, ...] | list[str] = (),
+) -> dict[str, Any]:
+    """Build the versioned machine-readable success response."""
+    return {
+        "schema": str(schema),
+        "schema_version": 1,
+        "ok": True,
+        "data": data,
+        "warnings": [str(item) for item in warnings],
+    }
+
+
+def error_envelope(
+    schema: str,
+    code: str,
+    message: str,
+    details: Any = None,
+) -> dict[str, Any]:
+    """Build the versioned machine-readable error response."""
+    error: dict[str, Any] = {"code": str(code), "message": str(message)}
+    if details is not None:
+        error["details"] = details
+    return {
+        "schema": str(schema),
+        "schema_version": 1,
+        "ok": False,
+        "error": error,
+    }
+
+
 def configure_output(*, color_mode: str) -> None:
     global _COLOR_MODE
     _COLOR_MODE = str(color_mode or "auto").strip().casefold()
@@ -131,6 +164,9 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
         return
     if command == "timew":
         _emit_timewarrior(payload)
+        return
+    if command == "context":
+        _emit_context(payload)
         return
     if command == "headings":
         _emit_headings(payload)
@@ -1344,6 +1380,23 @@ def _field_value_color(label: str, value: str) -> str:
     if normalized_value in {"no", "none", "(none)", "(n/a)", "unknown"}:
         return "muted"
     return ""
+
+
+def _emit_context(payload: dict[str, Any]) -> None:
+    data = payload.get("data") if isinstance(payload, dict) else {}
+    task = data.get("task") if isinstance(data, dict) else {}
+    if not isinstance(task, dict):
+        return
+    sys.stdout.write(f"Task {task.get('uuid') or '(unknown)'}: {task.get('description') or '(no description)'}\n")
+    if task.get("project"):
+        sys.stdout.write(f"Project: {task['project']}\n")
+    notes = data.get("notes") if isinstance(data, dict) else {}
+    if isinstance(notes, dict):
+        task_note = notes.get("task") or {}
+        sys.stdout.write(f"Task note: {'available' if task_note.get('exists') else 'missing'}\n")
+    warnings = payload.get("warnings") if isinstance(payload, dict) else []
+    for warning in warnings or []:
+        sys.stdout.write(f"Warning: {warning}\n")
 
 
 def _recent_identity(item: dict[str, Any]) -> str:

@@ -13,6 +13,57 @@ from .ops import iso_now, read_ops
 INDEX_VERSION = 1
 
 
+def canonical_task_uuid(task_uuid: str | None, short_uuid: str | None = None) -> str:
+    """Return the stable internal task identity, falling back for legacy data."""
+    full = str(task_uuid or "").strip()
+    if full:
+        return full
+    return str(short_uuid or "").strip()
+
+
+def migrate_index_keys(data: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Return a canonical-key copy and report entries sharing one full UUID."""
+    migrated = dict(data)
+    migrated["tasks"] = {}
+    collisions: list[dict[str, Any]] = []
+    for legacy_key, value in (data.get("tasks") or {}).items():
+        if not isinstance(value, dict):
+            continue
+        short_uuid = str(value.get("task_short_uuid") or legacy_key).strip()
+        key = canonical_task_uuid(value.get("task_uuid"), short_uuid)
+        if key in migrated["tasks"]:
+            collisions.append(
+                {
+                    "canonical_uuid": key,
+                    "keys": [
+                        str(migrated["tasks"][key].get("task_short_uuid") or key),
+                        short_uuid,
+                    ],
+                }
+            )
+        migrated["tasks"][key] = dict(value)
+    return migrated, collisions
+
+
+def _task_entry(data: dict[str, Any], task_uuid: str, short_uuid: str) -> tuple[str, dict[str, Any]]:
+    canonical = canonical_task_uuid(task_uuid, short_uuid)
+    if canonical in data["tasks"]:
+        return canonical, data["tasks"][canonical]
+    if short_uuid in data["tasks"]:
+        return short_uuid, data["tasks"][short_uuid]
+    return canonical, {}
+
+
+def _store_task(data: dict[str, Any], key: str, entry: dict[str, Any]) -> None:
+    """Store canonical identity and a non-colliding legacy lookup alias."""
+    data["tasks"][key] = entry
+    short_uuid = str(entry.get("task_short_uuid") or "").strip()
+    if short_uuid and short_uuid != key:
+        prior = data["tasks"].get(short_uuid)
+        if prior is None or prior.get("task_uuid") == entry.get("task_uuid"):
+            data["tasks"][short_uuid] = entry
+
+
 def index_path(config: AppConfig) -> Path:
     return config.root_dir / "index.json"
 
@@ -109,14 +160,15 @@ def rebuild_index(config: AppConfig) -> dict[str, Any]:
         short_uuid = str(front_matter.get("task_short_uuid") or "").strip()
         if not short_uuid:
             continue
-        data["tasks"][short_uuid] = {
+        key = canonical_task_uuid(front_matter.get("task_uuid"), short_uuid)
+        _store_task(data, key, {
             "task_short_uuid": short_uuid,
             "task_uuid": str(front_matter.get("task_uuid") or "").strip() or None,
             "note_path": _relative_note_path(config, note_path),
             "chain_id": str(front_matter.get("chain_id") or "").strip() or None,
             "last_note_at": str(front_matter.get("updated") or "").strip() or None,
             "last_event_at": None,
-        }
+        })
     for note_path in sorted(config.chains_dir.glob("*.md")):
         front_matter, _body = read_document(note_path)
         chain_id = str(front_matter.get("chain_id") or "").strip()
@@ -145,15 +197,15 @@ def rebuild_index(config: AppConfig) -> dict[str, Any]:
 def update_task_note_index(config: AppConfig, task: ResolvedTask, note_path: Path) -> None:
     with exclusive_file_lock(index_path(config)):
         data, _rebuilt = _load_or_rebuild_index_unlocked(config)
-        existing = data["tasks"].get(task.task_short_uuid, {})
-        data["tasks"][task.task_short_uuid] = {
+        key, existing = _task_entry(data, task.task_uuid, task.task_short_uuid)
+        _store_task(data, key, {
             "task_short_uuid": task.task_short_uuid,
             "task_uuid": task.task_uuid,
             "note_path": _relative_note_path(config, note_path),
             "chain_id": chain_id_for_task(task.task) or None,
             "last_note_at": iso_now(),
             "last_event_at": existing.get("last_event_at"),
-        }
+        })
         _save_index_unlocked(config, data)
 
 
@@ -174,15 +226,15 @@ def update_chain_note_index(config: AppConfig, task: ResolvedTask, note_path: Pa
 def update_task_event_index(config: AppConfig, task: ResolvedTask) -> None:
     with exclusive_file_lock(index_path(config)):
         data, _rebuilt = _load_or_rebuild_index_unlocked(config)
-        existing = data["tasks"].get(task.task_short_uuid, {})
-        data["tasks"][task.task_short_uuid] = {
+        key, existing = _task_entry(data, task.task_uuid, task.task_short_uuid)
+        _store_task(data, key, {
             "task_short_uuid": task.task_short_uuid,
             "task_uuid": task.task_uuid,
             "note_path": existing.get("note_path"),
             "chain_id": chain_id_for_task(task.task) or existing.get("chain_id"),
             "last_note_at": existing.get("last_note_at"),
             "last_event_at": iso_now(),
-        }
+        })
         _save_index_unlocked(config, data)
 
 
@@ -203,7 +255,9 @@ def update_project_note_index(config: AppConfig, project_name: str, note_path: P
 def remove_task_note_index(config: AppConfig, short_uuid: str) -> None:
     with exclusive_file_lock(index_path(config)):
         data, _rebuilt = _load_or_rebuild_index_unlocked(config)
-        data["tasks"].pop(short_uuid, None)
+        for key, value in list(data["tasks"].items()):
+            if key == short_uuid or str(value.get("task_short_uuid") or "") == short_uuid:
+                data["tasks"].pop(key, None)
         _save_index_unlocked(config, data)
 
 
@@ -241,7 +295,9 @@ def _merge_op(data: dict[str, Any], config: AppConfig, item: dict[str, Any]) -> 
     path = str(item.get("path") or "").strip() or None
 
     if op == "task_note_delete" and short_uuid:
-        data["tasks"].pop(short_uuid, None)
+        for key, value in list(data["tasks"].items()):
+            if key == short_uuid or str(value.get("task_short_uuid") or "") == short_uuid:
+                data["tasks"].pop(key, None)
         return
     if op == "chain_note_delete" and chain_id:
         data["chains"].pop(chain_id, None)
@@ -254,7 +310,7 @@ def _merge_op(data: dict[str, Any], config: AppConfig, item: dict[str, Any]) -> 
         return
 
     if short_uuid:
-        existing = data["tasks"].get(short_uuid, {})
+        key, existing = _task_entry(data, task_uuid or "", short_uuid)
         merged = {
             "task_short_uuid": short_uuid,
             "task_uuid": task_uuid or existing.get("task_uuid"),
@@ -269,7 +325,7 @@ def _merge_op(data: dict[str, Any], config: AppConfig, item: dict[str, Any]) -> 
                 merged["note_path"] = _relative_note_path(config, Path(path))
         elif op == "event_add":
             merged["last_event_at"] = ts or merged["last_event_at"]
-        data["tasks"][short_uuid] = merged
+        _store_task(data, key, merged)
 
     if chain_id:
         existing_chain = data["chains"].get(chain_id, {})
@@ -312,15 +368,15 @@ def _merge_restore_op(
     project = str(item.get("project") or "").strip()
     rel_path = _relative_note_path(config, Path(path))
     if kind == "task-note" and short_uuid:
-        existing = data["tasks"].get(short_uuid, {})
-        data["tasks"][short_uuid] = {
+        key, existing = _task_entry(data, task_uuid, short_uuid)
+        _store_task(data, key, {
             "task_short_uuid": short_uuid,
             "task_uuid": task_uuid or existing.get("task_uuid"),
             "note_path": rel_path,
             "chain_id": chain_id or existing.get("chain_id"),
             "last_note_at": ts or existing.get("last_note_at"),
             "last_event_at": existing.get("last_event_at"),
-        }
+        })
     elif kind == "chain-note" and chain_id:
         data["chains"][chain_id] = {
             "chain_id": chain_id,

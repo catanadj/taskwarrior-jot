@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
@@ -309,6 +311,90 @@ class JotService:
                 "project": _note_payload(project_note),
             },
             "events": self.taskwarrior.annotations_for_task(task),
+        }
+
+    def agent_context(
+        self,
+        task_ref: str,
+        *,
+        max_body_bytes: int = 64 * 1024,
+        max_events: int = 100,
+    ) -> dict[str, Any]:
+        """Build a bounded, read-only context snapshot for machine consumers."""
+        task = self.taskwarrior.resolve_task(task_ref)
+        warnings: list[str] = []
+
+        def note_snapshot(path: Path | None) -> dict[str, Any]:
+            resolved = str(path or "")
+            if not path or not path.exists():
+                return {"exists": False, "path": resolved, "body": "", "resources": [], "progress": None, "progress_tracks": []}
+            metadata, body = read_document(path)
+            raw_body = str(body or "").strip()
+            encoded = raw_body.encode("utf-8")
+            truncated = len(encoded) > max_body_bytes
+            if truncated:
+                raw_body = encoded[:max_body_bytes].decode("utf-8", errors="ignore")
+                warnings.append(f"note body truncated: {path}")
+            digest_source = json.dumps(metadata, ensure_ascii=False, sort_keys=True) + "\n" + str(body or "")
+            digest = "sha256:" + hashlib.sha256(digest_source.encode("utf-8")).hexdigest()
+            progress_result = read_note_progress(path)
+            return {
+                "exists": True,
+                "path": resolved,
+                "body": raw_body,
+                "truncated": truncated,
+                "digest": digest,
+                "revision": int(str(metadata.get("revision") or "1")),
+                "resources": list_note_resources(path).resources,
+                "progress": progress_result.progress,
+                "progress_tracks": list(progress_result.tracks),
+            }
+
+        def ancestors(project: str) -> list[str]:
+            parts = [part.strip() for part in str(project or "").split(".") if part.strip()]
+            return [".".join(parts[:index]) for index in range(1, len(parts) + 1)]
+
+        chain_id = str(task.task.get("chainID") or "").strip()
+        project_names = ancestors(task.project)
+        task_note = find_task_note(self.config, task)
+        chain_note = find_chain_note(self.config, task)
+        project_notes = [
+            note_snapshot(find_project_note(self.config, project_name))
+            for project_name in project_names
+        ]
+        events = self.taskwarrior.annotations_for_task(task)
+        event_truncated = len(events) > max_events
+        if event_truncated:
+            warnings.append("task events truncated")
+            events = events[-max_events:]
+        return {
+            "task": {
+                "uuid": task.task_uuid,
+                "id": task.task.get("id"),
+                "description": task.description,
+                "project": task.project or None,
+                "status": task.task.get("status"),
+                "tags": list(task.tags),
+                "taskwarrior": dict(task.task),
+            },
+            "context": {
+                "projects": project_names,
+                "chain": chain_id or None,
+                "task": {"description": task.description, "project": task.project or None},
+            },
+            "notes": {
+                "task": note_snapshot(task_note),
+                "chain": note_snapshot(chain_note),
+                "project": project_notes,
+            },
+            "events": {"items": events, "truncated": event_truncated},
+            "nautical": {
+                "fields": nautical_summary(task.task),
+                "source": "taskwarrior",
+                "delegation": "nautical-query",
+                "warnings": [],
+            },
+            "warnings": warnings,
         }
 
     def project_workspace(self, project_name: str) -> dict[str, Any]:

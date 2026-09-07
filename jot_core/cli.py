@@ -19,6 +19,7 @@ from .editor import colorize_diff, note_diff, open_in_editor
 from .events import collect_event_text, format_event_text, validate_event_type
 from .frontmatter import atomic_write_text, exclusive_file_lock, parse_document, read_document
 from .index import rebuild_index, read_index_status, save_index
+from .integrity import reconcile_integrity, scan_integrity
 from .migrations import migrate_notes
 from .models import CommandResult
 from .nautical import chain_id_for_task, nautical_summary
@@ -71,6 +72,7 @@ from .storage import (
     append_chain_note_storage,
     append_project_note_storage,
     append_task_note_storage,
+    append_task_note_idempotent,
     finalize_chain_note_edit,
     finalize_project_note_edit,
     finalize_task_note_edit,
@@ -102,8 +104,25 @@ from .timewarrior import (
 from .trash import cleanup_trash, list_trash, restore_trash_item
 
 
+def _normalize_json_argv(argv: list[str]) -> list[str]:
+    """Accept the global JSON switch in either position around a command."""
+    args = list(argv)
+    delimiter = args.index("--") if "--" in args else len(args)
+    command_args = args[:delimiter]
+    if "--json" not in command_args:
+        return args
+    return ["--json", *(arg for arg in command_args if arg != "--json"), *args[delimiter:]]
+
+
+class _JotArgumentParser(argparse.ArgumentParser):
+    def parse_args(self, args=None, namespace=None):
+        if args is not None:
+            args = _normalize_json_argv(list(args))
+        return super().parse_args(args, namespace)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _JotArgumentParser(
         prog="jot",
         description=(
             "Note-first companion for Taskwarrior and Taskwarrior-Nautical. "
@@ -118,7 +137,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  jot project Finances.Expense\n"
             "  jot show 42\n"
             "  jot list 42\n"
-            "  jot export 42 --json\n"
+            "  jot --json export 42\n"
             "  jot add --type status 42 waiting on vendor\n"
             "  jot add-to task 42 --heading \"Next steps\" --text \"Call vendor Monday\"\n"
             "  jot attach task 42 ~/invoice.pdf --label invoice\n"
@@ -150,14 +169,15 @@ def build_parser() -> argparse.ArgumentParser:
             "  jot timew show 42\n"
             "  jot tui\n"
             "\n"
-            "Commands accept unique prefixes, for example: jot proj-r Finances.Expense"
+            "Commands accept unique prefixes, for example: jot proj-r Finances.Expense.\n"
+            "The global --json switch may appear before or after a subcommand. Existing command JSON remains raw payloads; new agent surfaces use a versioned envelope (schema, schema_version, ok, data/warnings or error)."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--json",
         action="store_true",
-        help="emit machine-readable JSON instead of text",
+        help="emit machine-readable JSON (place before or after the subcommand; existing commands emit raw payloads)",
     )
     parser.add_argument(
         "--version",
@@ -424,6 +444,17 @@ def build_parser() -> argparse.ArgumentParser:
             nargs="*",
             help="text to append; if omitted, read stdin",
         )
+
+    agent_append = subparsers.add_parser(
+        "agent-append",
+        help="append a retry-safe agent note entry",
+        description="Append one idempotent task-note entry and return a versioned machine result.",
+    )
+    agent_append.add_argument("task_ref", help="task ID, full UUID, or unique short UUID")
+    agent_append.add_argument("text", nargs="*", help="entry text")
+    agent_append.add_argument("--operation-id", required=True)
+    agent_append.add_argument("--entry-id", required=True)
+    agent_append.add_argument("--request-digest")
 
     project_append = subparsers.add_parser(
         "project-append",
@@ -811,12 +842,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="filter by exact Nautical chainID",
     )
 
+    context = subparsers.add_parser(
+        "context",
+        help="export a bounded read-only agent context snapshot",
+        description="Export live Taskwarrior data, project/chain/task context, notes, events, and Nautical fields.",
+    )
+    context.add_argument("task_ref", help="task ID, full UUID, or unique short UUID")
+    context.add_argument("--max-body-bytes", type=int, default=64 * 1024)
+    context.add_argument("--max-events", type=int, default=100)
+
+    integrity = subparsers.add_parser("integrity", help="scan Jot metadata for drift", description="Report Taskwarrior/Jot drift without mutation.")
+    integrity.add_argument("--json", action="store_true", dest="integrity_json", help=argparse.SUPPRESS)
+    reconcile = subparsers.add_parser("reconcile", help="explicitly repair reported drift", description="Preview or apply explicit metadata and index repairs.")
+    reconcile.add_argument("--dry-run", action="store_true", help="report repairs without changing files")
+    reconcile.add_argument("--apply", action="store_true", help="apply repairs and create a backup")
+
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
+    argv = _normalize_json_argv(list(argv))
     if not argv:
         parser = build_parser()
         if sys.stdin.isatty() and sys.stdout.isatty():
@@ -935,6 +982,19 @@ def main(argv: list[str] | None = None) -> int:
             result = _run_add(ctx, args.task_ref, args.text, args.event_type)
         elif args.command == "note-append":
             result = _run_note_append(ctx, args.task_ref, _text_from_args(args.text))
+        elif args.command == "agent-append":
+            task = ctx.taskwarrior.resolve_task(args.task_ref)
+            data = append_task_note_idempotent(
+                ctx.config,
+                task,
+                _text_from_args(args.text),
+                operation_id=args.operation_id,
+                entry_id=args.entry_id,
+                request_digest=args.request_digest,
+            )
+            from .output import success_envelope
+
+            result = CommandResult(command="agent-append", payload=success_envelope("jot.mutation", data))
         elif args.command == "chain-append":
             result = _run_chain_append(ctx, args.task_ref, _text_from_args(args.text))
         elif args.command == "project-append":
@@ -973,6 +1033,31 @@ def main(argv: list[str] | None = None) -> int:
                 getattr(args, "project", None),
                 getattr(args, "chain_id", None),
             )
+        elif args.command == "context":
+            if args.max_body_bytes < 1 or args.max_events < 0:
+                raise RuntimeError("context limits must be positive (events may be zero)")
+            service = JotService(config=ctx.config, taskwarrior=ctx.taskwarrior)
+            payload = service.agent_context(
+                args.task_ref,
+                max_body_bytes=args.max_body_bytes,
+                max_events=args.max_events,
+            )
+            from .output import success_envelope
+
+            result = CommandResult(
+                command="context",
+                payload=success_envelope("jot.context", payload, payload.pop("warnings", [])),
+            )
+        elif args.command == "integrity":
+            from .output import success_envelope
+
+            result = CommandResult(command="integrity", payload=success_envelope("jot.integrity", scan_integrity(ctx.config, ctx.taskwarrior)))
+        elif args.command == "reconcile":
+            if args.dry_run == args.apply:
+                raise RuntimeError("choose exactly one of --dry-run or --apply")
+            from .output import success_envelope
+
+            result = CommandResult(command="reconcile", payload=success_envelope("jot.reconcile", reconcile_integrity(ctx.config, ctx.taskwarrior, apply=args.apply)))
         else:  # pragma: no cover
             parser.error(f"unknown command {args.command}")
             return 2
@@ -980,6 +1065,12 @@ def main(argv: list[str] | None = None) -> int:
         _handle_note_identity_conflict(exc, ctx, color_mode=ctx.config.color_mode)
         return 1
     except (RuntimeError, OSError, ValueError, TypeError) as exc:
+        if args.command == "context" and args.json:
+            import json
+            from .output import error_envelope
+
+            sys.stdout.write(json.dumps(error_envelope("jot.context", "context_error", str(exc)), ensure_ascii=False, indent=2) + "\n")
+            return 1
         warn(str(exc))
         return 1
 
@@ -1506,6 +1597,7 @@ def _run_note(ctx, task_ref: str) -> CommandResult:
 
 def _run_paths(ctx) -> CommandResult:
     config = ctx.config
+    environment = ctx.taskwarrior.environment()
     return CommandResult(
         command="paths",
         payload={
@@ -1518,6 +1610,14 @@ def _run_paths(ctx) -> CommandResult:
             "templates_dir": str(config.templates_dir),
             "index_path": str(config.root_dir / "index.json"),
             "ops_path": str(config.root_dir / "ops.jsonl"),
+            "taskwarrior": {
+                "executable": environment.executable,
+                "rc_path": str(environment.rc_path),
+                "rc_source": environment.rc_source,
+                "data_path": str(environment.data_path),
+                "hooks_path": str(environment.hooks_path),
+                "warnings": list(environment.warnings),
+            },
         },
     )
 
