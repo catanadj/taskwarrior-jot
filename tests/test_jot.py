@@ -2577,6 +2577,13 @@ class CliIntegrationTests(JotCliTestCase):
             "chainID": "a4bf5egh",
             "link": 3,
             "anchor": "m:last-fri",
+            "anchor_file": "/tmp/anchor.rrule",
+            "bc": "2026-12-31",
+            "omit": "2026-10-01",
+            "omit_file": "/tmp/omit.txt",
+            "chainMax": "12",
+            "chainUntil": "2027-01-01",
+            "chain": "work",
             "anchor_mode": "skip",
             "annotations": [],
         }
@@ -3806,6 +3813,7 @@ class CliIntegrationTests(JotCliTestCase):
             "tags": ["ann"],
             "chainID": "a4bf5egh",
             "anchor": "m:last-fri",
+            "omit": "2026-10-01",
             "annotations": [{"entry": "20260405T171501Z", "description": "status: waiting"}],
         }
         self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
@@ -3825,6 +3833,7 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertTrue(payload["data"]["notes"]["project"][0]["exists"])
         self.assertIn("digest", payload["data"]["notes"]["task"])
         self.assertEqual(payload["data"]["nautical"]["delegation"], "nautical-query")
+        self.assertEqual(payload["data"]["nautical"]["fields"]["omit"], "2026-10-01")
 
     def test_context_json_errors_use_same_envelope(self) -> None:
         self.write_state({"version": "2.6.2", "single": [], "1": []})
