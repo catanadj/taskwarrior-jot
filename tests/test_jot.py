@@ -36,6 +36,7 @@ from jot_core.frontmatter import (
     update_metadata,
     write_document,
 )
+from jot_core.index import migrate_index_keys, rebuild_index
 from jot_core.models import AppConfig, CommandResult, ResolvedTask, TaskRef
 from jot_core.notes import NoteIdentityConflictError, append_to_task_note
 from jot_core.output import (
@@ -4179,6 +4180,50 @@ class CliIntegrationTests(JotCliTestCase):
         result = self.run_jot("show", "2d6d7d7d")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ambiguous", result.stderr)
+
+
+class CanonicalIndexTests(unittest.TestCase):
+    def test_migrate_index_keys_uses_full_uuid_and_reports_short_collisions(self) -> None:
+        source = {
+            "version": 1,
+            "updated": "old",
+            "tasks": {
+                "abcdef12": {
+                    "task_short_uuid": "abcdef12",
+                    "task_uuid": "abcdef1234567890",
+                },
+                "12345678": {
+                    "task_short_uuid": "12345678",
+                    "task_uuid": "1234567890abcdef",
+                },
+            },
+            "chains": {},
+            "projects": {},
+        }
+
+        migrated, collisions = migrate_index_keys(source)
+
+        self.assertEqual(set(migrated["tasks"]), {"abcdef1234567890", "1234567890abcdef"})
+        self.assertEqual(collisions, [])
+        self.assertEqual(set(source["tasks"]), {"abcdef12", "12345678"})
+
+    def test_migrate_index_keys_reports_duplicate_canonical_identity(self) -> None:
+        source = {
+            "version": 1,
+            "updated": "old",
+            "tasks": {
+                "abcdef12": {"task_short_uuid": "abcdef12", "task_uuid": "same-full"},
+                "different": {"task_short_uuid": "different", "task_uuid": "same-full"},
+            },
+            "chains": {},
+            "projects": {},
+        }
+
+        migrated, collisions = migrate_index_keys(source)
+
+        self.assertEqual(set(migrated["tasks"]), {"same-full"})
+        self.assertEqual(collisions[0]["canonical_uuid"], "same-full")
+        self.assertEqual(len(collisions[0]["keys"]), 2)
 
 
 class TaskwarriorEnvironmentTests(unittest.TestCase):
