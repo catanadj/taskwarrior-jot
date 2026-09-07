@@ -30,3 +30,17 @@ Implemented a shared effective Taskwarrior environment resolver and routed Jot's
 
 - When Taskwarrior cannot be queried, the resolver deliberately returns usable standard/XDG fallback paths and records warnings instead of making Jot startup fail.
 - `uninstall.sh` still has its pre-existing independent hook-location resolution; changing it was outside Task 2's listed files and remains a later installer-integration concern.
+
+## Review follow-up
+
+Addressed two resolver findings after the initial Task 2 review:
+
+- Fresh XDG environments now select `$XDG_CONFIG_HOME/task/taskrc`, `$XDG_DATA_HOME/task`, and `$XDG_CONFIG_HOME/task/hooks` even before either rc candidate exists. The resolver still attempts both safe `_get` queries and records failures as warnings before falling back.
+- Explicit `data:`, `data.location:`, and `rc.data.location=` values are normalized to a list-form `rc.data.location=<resolved-path>` argument and forwarded to the `_get rc.hooks.location` query, so hooks are resolved in the same effective data environment.
+- The integration fake now implements Taskwarrior `_get`, and legacy-path integration fixtures declare a legacy taskrc explicitly instead of relying on the default that the XDG fix intentionally changed.
+
+Review-fix TDD evidence:
+
+- The absent-rc XDG regression initially resolved `~/.task` instead of `$XDG_DATA_HOME/task`.
+- All three explicit data forms initially selected the fake responder's wrong hooks path because the query lacked the data override.
+- After the two resolver changes, both regression tests passed. The subsequent broad run exposed the test fake's invalid `[]` response for `_get`; after correcting that boundary fixture, the full suite passed with 159 tests (3 skipped).

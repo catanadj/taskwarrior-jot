@@ -62,30 +62,31 @@ class TaskwarriorEnvironment:
 
         rc_path, rc_source = _resolve_taskrc(rc_override, environ)
         query_prefix = [f"rc:{rc_path}"]
+        if data_override:
+            query_prefix.append(f"rc.data.location={_resolved_path(data_override, environ)}")
         taskdata = str(environ.get("TASKDATA") or "").strip()
         queried_data = ""
         queried_hooks = ""
-        if rc_path.exists():
-            if not data_override:
-                queried_data = _query_taskwarrior(
-                    executable,
-                    query_prefix,
-                    "rc.data.location",
-                    environ,
-                    warnings,
-                )
-            if not hooks_override:
-                queried_hooks = _query_taskwarrior(
-                    executable,
-                    query_prefix,
-                    "rc.hooks.location",
-                    environ,
-                    warnings,
-                )
+        if not data_override:
+            queried_data = _query_taskwarrior(
+                executable,
+                query_prefix,
+                "rc.data.location",
+                environ,
+                warnings,
+            )
+        if not hooks_override:
+            queried_hooks = _query_taskwarrior(
+                executable,
+                query_prefix,
+                "rc.hooks.location",
+                environ,
+                warnings,
+            )
 
         rc_data = _read_taskrc_value(rc_path, TASKRC_DATA_RE, environ)
         rc_hooks = _read_taskrc_value(rc_path, TASKRC_HOOKS_RE, environ)
-        xdg_selected = rc_source == "XDG_CONFIG_HOME" and rc_path.exists()
+        xdg_selected = rc_source == "XDG_CONFIG_HOME"
         default_data = (
             _xdg_home(environ, "XDG_DATA_HOME", ".local/share") / "task"
             if xdg_selected

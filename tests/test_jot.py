@@ -81,6 +81,7 @@ def _write_fake_task_script(bin_dir: Path, state_path: Path) -> None:
         f"""\
         #!/usr/bin/env python3
         import json
+        import os
         import pathlib
         import sys
 
@@ -90,6 +91,15 @@ def _write_fake_task_script(bin_dir: Path, state_path: Path) -> None:
 
         if args == ['--version']:
             print(state.get('version', '2.6.2'))
+            raise SystemExit(0)
+
+        if '_get' in args:
+            taskdata = os.environ.get('TASKDATA') or str(pathlib.Path(os.environ['HOME']) / '.task')
+            values = {{
+                'rc.data.location': taskdata,
+                'rc.hooks.location': str(pathlib.Path(taskdata) / 'hooks'),
+            }}
+            print(values.get(args[-1], ''))
             raise SystemExit(0)
 
         if 'annotate' in args:
@@ -208,6 +218,10 @@ class JotCliTestCase(unittest.TestCase):
         self.root = Path(self.tempdir.name)
         self.home = self.root / "home"
         self.home.mkdir()
+        (self.home / ".taskrc").write_text(
+            "data.location = ~/.task\nhooks.location = ~/.task/hooks\n",
+            encoding="utf-8",
+        )
         self.bin_dir = self.root / "bin"
         self.bin_dir.mkdir()
         self.state_path = self.root / "task_state.json"
@@ -4252,6 +4266,61 @@ class TaskwarriorEnvironmentTests(unittest.TestCase):
         self.assertEqual(resolved.hooks_path, (xdg_config / "task" / "hooks").resolve())
         self.assertTrue(resolved.warnings)
 
+    def test_resolver_uses_xdg_defaults_before_taskrc_exists(self) -> None:
+        xdg_config = self.root / "fresh-config"
+        xdg_data = self.root / "fresh-data"
+
+        resolved = TaskwarriorEnvironment.resolve(
+            argv=[str(self.root / "missing-task")],
+            env={
+                "HOME": str(self.home),
+                "XDG_CONFIG_HOME": str(xdg_config),
+                "XDG_DATA_HOME": str(xdg_data),
+            },
+        )
+
+        self.assertEqual(resolved.rc_path, (xdg_config / "task" / "taskrc").resolve())
+        self.assertEqual(resolved.rc_source, "XDG_CONFIG_HOME")
+        self.assertEqual(resolved.data_path, (xdg_data / "task").resolve())
+        self.assertEqual(resolved.hooks_path, (xdg_config / "task" / "hooks").resolve())
+        self.assertEqual(len(resolved.warnings), 2)
+
+    def test_data_overrides_are_forwarded_when_querying_hooks_location(self) -> None:
+        taskrc = self.root / "custom.taskrc"
+        taskrc.write_text("# Taskwarrior config\n", encoding="utf-8")
+        data = self.root / "selected data"
+        expected_hooks = self.root / "matching-hooks"
+        wrong_hooks = self.root / "wrong-hooks"
+        self.task_bin.write_text(
+            textwrap.dedent(
+                f"""\
+                #!/usr/bin/env python3
+                import sys
+
+                expected = {'rc.data.location=' + str(data)!r}
+                key = sys.argv[-1]
+                if key == 'rc.hooks.location':
+                    print({str(expected_hooks)!r} if expected in sys.argv[1:] else {str(wrong_hooks)!r})
+                """
+            ),
+            encoding="utf-8",
+        )
+        self.task_bin.chmod(0o755)
+
+        for override in (
+            f"data:{data}",
+            f"data.location:{data}",
+            f"rc.data.location={data}",
+        ):
+            with self.subTest(override=override):
+                resolved = TaskwarriorEnvironment.resolve(
+                    argv=[str(self.task_bin), override],
+                    env={"HOME": str(self.home), "TASKRC": str(taskrc)},
+                )
+
+                self.assertEqual(resolved.data_path, data.resolve())
+                self.assertEqual(resolved.hooks_path, expected_hooks.resolve())
+
     def test_resolver_honors_command_line_overrides_without_shell_parsing(self) -> None:
         taskrc = self.root / "rc with spaces"
         data = self.root / "data;still-a-path"
@@ -4290,9 +4359,15 @@ class TaskwarriorEnvironmentTests(unittest.TestCase):
             env={"HOME": str(self.home)},
         )
 
-        self.assertEqual(resolved.data_path, (self.home / ".task").resolve())
-        self.assertEqual(len(resolved.warnings), 3)
-        self.assertTrue(all("ignored empty" in warning for warning in resolved.warnings))
+        self.assertEqual(resolved.data_path, (self.home / ".local" / "share" / "task").resolve())
+        self.assertEqual(
+            sum("ignored empty" in warning for warning in resolved.warnings),
+            3,
+        )
+        self.assertEqual(
+            sum("could not query Taskwarrior" in warning for warning in resolved.warnings),
+            2,
+        )
 
     def test_hook_v2_data_arguments_are_passed_to_jot(self) -> None:
         jot_bin = self.root / "capture-jot"
@@ -4380,11 +4455,17 @@ class InstallLifecycleTests(unittest.TestCase):
         self.home.mkdir()
         self.taskdata = root / "taskdata"
         self.prefix = root / "prefix"
+        self.taskrc = root / "taskrc"
+        self.taskrc.write_text(
+            f"data.location = {self.taskdata}\nhooks.location = {self.taskdata / 'hooks'}\n",
+            encoding="utf-8",
+        )
         self.env = os.environ.copy()
         self.env.update(
             {
                 "HOME": str(self.home),
                 "TASKDATA": str(self.taskdata),
+                "TASKRC": str(self.taskrc),
                 "PREFIX": str(self.prefix),
             }
         )
