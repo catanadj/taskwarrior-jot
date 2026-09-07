@@ -213,7 +213,7 @@ def _read_taskrc_value(path: Path, pattern: re.Pattern[str], env: Mapping[str, s
     return selected
 
 
-def _expand_path(raw: str | None, fallback: Path) -> Path:
+def _expand_path(raw: object | None, fallback: Path) -> Path:
     text = str(raw or "").strip()
     if not text:
         return fallback
@@ -265,18 +265,23 @@ def _taskdata_root() -> Path:
     return TaskwarriorEnvironment.resolve().data_path
 
 
+def _config_section(data: dict[str, object], key: str) -> dict[str, object]:
+    value = data.get(key)
+    return value if isinstance(value, dict) else {}
+
+
 def load_config() -> AppConfig:
     default_root = _expand_path(os.environ.get("JOT_HOME"), _taskdata_root() / "jot")
     config_path = _expand_path(os.environ.get("JOT_CONFIG"), default_root / DEFAULT_CONFIG_NAME)
     data = _read_config_file(config_path)
     _validate_config_shape(data)
 
-    paths_cfg = data.get("paths") if isinstance(data.get("paths"), dict) else {}
-    editor_cfg = data.get("editor") if isinstance(data.get("editor"), dict) else {}
-    display_cfg = data.get("display") if isinstance(data.get("display"), dict) else {}
-    nautical_cfg = data.get("nautical") if isinstance(data.get("nautical"), dict) else {}
-    timewarrior_cfg = data.get("timewarrior") if isinstance(data.get("timewarrior"), dict) else {}
-    ops_cfg = data.get("ops") if isinstance(data.get("ops"), dict) else {}
+    paths_cfg = _config_section(data, "paths")
+    editor_cfg = _config_section(data, "editor")
+    display_cfg = _config_section(data, "display")
+    nautical_cfg = _config_section(data, "nautical")
+    timewarrior_cfg = _config_section(data, "timewarrior")
+    ops_cfg = _config_section(data, "ops")
 
     root_dir = _expand_path(paths_cfg.get("root"), default_root)
     trash_dir = root_dir / ".jot_trash"

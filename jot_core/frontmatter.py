@@ -121,7 +121,7 @@ def repair_stale_lock_dirs(root: Path) -> list[Path]:
     return repaired
 
 
-def _acquire_flock(lock_handle, lock_path: Path) -> bool:
+def _acquire_flock(lock_handle: Any, lock_path: Path) -> bool:
     timeout = _lock_duration("JOT_LOCK_TIMEOUT", DEFAULT_LOCK_TIMEOUT_SECONDS)
     deadline = time.monotonic() + timeout
     while True:
