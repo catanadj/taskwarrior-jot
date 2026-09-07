@@ -68,7 +68,7 @@ def run_doctor(config: AppConfig, client: TaskwarriorClient, *, repair: bool = F
         )
         if environment.warnings:
             detail += "; warnings=" + " | ".join(environment.warnings)
-        checks.append(DoctorCheck(name="taskwarrior_environment", ok=True, detail=detail, severity="warning" if environment.warnings else "error"))
+        checks.append(DoctorCheck(name="taskwarrior_environment", ok=True, detail=detail, severity="warning"))
     except Exception as exc:
         checks.append(DoctorCheck(name="taskwarrior_environment", ok=False, detail=str(exc)))
 
