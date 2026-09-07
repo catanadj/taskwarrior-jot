@@ -3857,6 +3857,33 @@ class CliIntegrationTests(JotCliTestCase):
         note = next((self.home / ".task" / "jot" / "tasks").glob("*.md"))
         self.assertEqual(note.read_text(encoding="utf-8").count("durable entry"), 1)
 
+    def test_integrity_dry_run_reports_stale_metadata_and_apply_repairs(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Live description",
+            "project": "live.project",
+            "tags": ["live"],
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        root = self.home / ".task" / "jot"
+        (root / "tasks").mkdir(parents=True, exist_ok=True)
+        (root / "tasks" / "2d6d7d7d--stale.md").write_text(
+            "---\nkind: task-note\ntask_uuid: 2d6d7d7d-1111-2222-3333-444444444444\ntask_short_uuid: 2d6d7d7d\ndescription: Old description\nproject: old.project\ntags:\n  - old\n---\n\n# Note\n",
+            encoding="utf-8",
+        )
+        dry = self.run_jot("integrity", "--json")
+        self.assertEqual(dry.returncode, 0, dry.stderr)
+        self.assertEqual(json.loads(dry.stdout)["data"]["counts"]["total"], 1)
+        preview = self.run_jot("reconcile", "--dry-run", "--json")
+        self.assertEqual(preview.returncode, 0, preview.stderr)
+        self.assertTrue(json.loads(preview.stdout)["data"]["dry_run"])
+        applied = self.run_jot("reconcile", "--apply", "--json")
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        metadata, _body = read_document(root / "tasks" / "2d6d7d7d--stale.md")
+        self.assertEqual(metadata["description"], "Live description")
+        self.assertTrue(json.loads(applied.stdout)["data"]["backup_path"])
+
     def test_show_json_contract_is_summary_only(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",

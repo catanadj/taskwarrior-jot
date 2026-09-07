@@ -19,6 +19,7 @@ from .editor import colorize_diff, note_diff, open_in_editor
 from .events import collect_event_text, format_event_text, validate_event_type
 from .frontmatter import atomic_write_text, exclusive_file_lock, parse_document, read_document
 from .index import rebuild_index, read_index_status, save_index
+from .integrity import reconcile_integrity, scan_integrity
 from .migrations import migrate_notes
 from .models import CommandResult
 from .nautical import chain_id_for_task, nautical_summary
@@ -850,6 +851,12 @@ def build_parser() -> argparse.ArgumentParser:
     context.add_argument("--max-body-bytes", type=int, default=64 * 1024)
     context.add_argument("--max-events", type=int, default=100)
 
+    integrity = subparsers.add_parser("integrity", help="scan Jot metadata for drift", description="Report Taskwarrior/Jot drift without mutation.")
+    integrity.add_argument("--json", action="store_true", dest="integrity_json", help=argparse.SUPPRESS)
+    reconcile = subparsers.add_parser("reconcile", help="explicitly repair reported drift", description="Preview or apply explicit metadata and index repairs.")
+    reconcile.add_argument("--dry-run", action="store_true", help="report repairs without changing files")
+    reconcile.add_argument("--apply", action="store_true", help="apply repairs and create a backup")
+
     return parser
 
 
@@ -1041,6 +1048,16 @@ def main(argv: list[str] | None = None) -> int:
                 command="context",
                 payload=success_envelope("jot.context", payload, payload.pop("warnings", [])),
             )
+        elif args.command == "integrity":
+            from .output import success_envelope
+
+            result = CommandResult(command="integrity", payload=success_envelope("jot.integrity", scan_integrity(ctx.config, ctx.taskwarrior)))
+        elif args.command == "reconcile":
+            if args.dry_run == args.apply:
+                raise RuntimeError("choose exactly one of --dry-run or --apply")
+            from .output import success_envelope
+
+            result = CommandResult(command="reconcile", payload=success_envelope("jot.reconcile", reconcile_integrity(ctx.config, ctx.taskwarrior, apply=args.apply)))
         else:  # pragma: no cover
             parser.error(f"unknown command {args.command}")
             return 2

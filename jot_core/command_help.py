@@ -57,6 +57,8 @@ COMMAND_EXAMPLES = {
     "search": "jot search vendor --kind task-note",
     "context": "jot context 42 --json",
     "agent-append": "jot agent-append 42 " + '"Durable entry" --operation-id op-1 --entry-id entry-1 --json',
+    "integrity": "jot integrity --json",
+    "reconcile": "jot reconcile --dry-run --json",
     "timelog cancel": "jot timelog cancel 42",
     "timelog add": "jot timelog add 42 --from 2026-07-14T09:00 --to 2026-07-14T10:30",
     "timelog amend": "jot timelog amend a1b2c3d4 --to 2026-07-14T10:45",
