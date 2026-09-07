@@ -20,3 +20,11 @@ Implemented versioned JSON envelope helpers and normalized `--json` argument han
 ## Concerns
 
 Existing JSON command payloads remain unchanged; envelope helpers are provided for new machine-facing consumers. The global flag is normalized when present as an exact `--json` argument.
+
+## Review fixes
+
+- Normalization now stops at `--`, preserving `--json` supplied as literal command text.
+- Help text now distinguishes legacy raw JSON command payloads from the versioned envelope used by new agent surfaces and names the envelope fields.
+- Added a regression test for the argument delimiter behavior.
+
+Review verification: focused suite — 13 tests, OK; full suite — 147 tests, 3 skipped, OK.

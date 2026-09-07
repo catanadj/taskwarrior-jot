@@ -81,7 +81,9 @@ COMMAND_EXAMPLES = {
     "cleanup": "jot cleanup --trash-older-than 365 --yes",
 }
 
-JSON_OUTPUT_NOTE = "Global --json may appear before or after the subcommand; JSON uses a versioned envelope."
+JSON_OUTPUT_NOTE = ("Global --json may appear before or after the subcommand. "
+                    "Existing command JSON is a raw payload; new agent surfaces use a versioned "
+                    "envelope with schema, schema_version, ok, data/warnings, or error.")
 
 
 def build_command_catalog(parser: argparse.ArgumentParser) -> list[CommandHelp]:

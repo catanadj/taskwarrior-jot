@@ -105,9 +105,11 @@ from .trash import cleanup_trash, list_trash, restore_trash_item
 def _normalize_json_argv(argv: list[str]) -> list[str]:
     """Accept the global JSON switch in either position around a command."""
     args = list(argv)
-    if "--json" not in args:
+    delimiter = args.index("--") if "--" in args else len(args)
+    command_args = args[:delimiter]
+    if "--json" not in command_args:
         return args
-    return ["--json", *(arg for arg in args if arg != "--json")]
+    return ["--json", *(arg for arg in command_args if arg != "--json"), *args[delimiter:]]
 
 
 class _JotArgumentParser(argparse.ArgumentParser):
@@ -166,14 +168,14 @@ def build_parser() -> argparse.ArgumentParser:
             "  jot tui\n"
             "\n"
             "Commands accept unique prefixes, for example: jot proj-r Finances.Expense.\n"
-            "The global --json switch may appear before or after a subcommand; JSON responses use a versioned envelope."
+            "The global --json switch may appear before or after a subcommand. Existing command JSON remains raw payloads; new agent surfaces use a versioned envelope (schema, schema_version, ok, data/warnings or error)."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
         "--json",
         action="store_true",
-        help="emit versioned machine-readable JSON (place before or after the subcommand)",
+        help="emit machine-readable JSON (place before or after the subcommand; existing commands emit raw payloads)",
     )
     parser.add_argument(
         "--version",

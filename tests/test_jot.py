@@ -19,7 +19,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from jot_core.cli import _handle_note_identity_conflict, _offer_post_save_task_action, build_parser
+from jot_core.cli import (
+    _handle_note_identity_conflict,
+    _offer_post_save_task_action,
+    _normalize_json_argv,
+    build_parser,
+)
 from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from jot_core.editor import colorize_diff, note_diff, open_in_editor
@@ -912,6 +917,10 @@ class JsonEnvelopeTests(unittest.TestCase):
         self.assertTrue(args.json)
         self.assertEqual(args.command, "export")
         self.assertEqual(args.task_ref, "42")
+
+    def test_json_after_argument_delimiter_remains_literal(self) -> None:
+        argv = ["note-append", "42", "--", "--json"]
+        self.assertEqual(_normalize_json_argv(argv), argv)
 
 
 class ServiceProgressRowTests(unittest.TestCase):
