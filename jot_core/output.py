@@ -5,13 +5,35 @@ import json
 import os
 import shutil
 import sys
+from dataclasses import fields, is_dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Any
+from pathlib import Path
+from typing import Any, Mapping
 
 from .models import CommandResult, DoctorCheck
 
 
 _COLOR_MODE = "auto"
+
+
+def serialize_payload(value: Any) -> Any:
+    """Convert typed results and Python containers into JSON-compatible data."""
+    if hasattr(value, "to_payload") and callable(value.to_payload):
+        return serialize_payload(value.to_payload())
+    if is_dataclass(value):
+        return {
+            item.name: serialize_payload(getattr(value, item.name))
+            for item in fields(value)
+        }
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, Mapping):
+        return {str(key): serialize_payload(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [serialize_payload(item) for item in value]
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    raise TypeError(f"cannot serialize result value of type {type(value).__name__}")
 
 
 def success_envelope(
@@ -64,7 +86,7 @@ def style_text(
 
 def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
     if json_mode:
-        sys.stdout.write(json.dumps(result.payload, ensure_ascii=False, indent=2) + "\n")
+        sys.stdout.write(json.dumps(serialize_payload(result.data), ensure_ascii=False, indent=2) + "\n")
         return
 
     command = result.command

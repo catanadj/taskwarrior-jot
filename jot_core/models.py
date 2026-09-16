@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator, Mapping, TypeAlias, TypedDict
+from typing import Any, Generic, Iterator, Mapping, TypeAlias, TypedDict, TypeVar
 
 
 JsonScalar: TypeAlias = None | bool | int | float | str
 JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
+ResultT = TypeVar("ResultT")
 
 
 class RawTask(TypedDict, total=False):
@@ -266,7 +267,28 @@ class DoctorCheck:
     severity: str = "error"
 
 
-@dataclass(slots=True)
-class CommandResult:
+_MISSING = object()
+
+
+@dataclass(slots=True, init=False)
+class CommandResult(Generic[ResultT]):
     command: str
-    payload: dict[str, Any]
+    data: ResultT
+
+    def __init__(
+        self,
+        command: str,
+        data: ResultT | object = _MISSING,
+        *,
+        payload: ResultT | object = _MISSING,
+    ) -> None:
+        if data is not _MISSING and payload is not _MISSING:
+            raise TypeError("CommandResult accepts data or payload, not both")
+        value = data if data is not _MISSING else payload
+        self.command = command
+        self.data = value  # type: ignore[assignment]
+
+    @property
+    def payload(self) -> ResultT:
+        """Compatibility alias while command handlers migrate to ``data``."""
+        return self.data

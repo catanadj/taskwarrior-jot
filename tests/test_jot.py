@@ -55,6 +55,7 @@ from jot_core.output import (
     configure_output,
     error_envelope,
     emit_result,
+    serialize_payload,
     success_envelope,
 )
 from jot_core.progress import (
@@ -118,6 +119,23 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(task.project, "")
         self.assertEqual(task.chain_id, "")
         self.assertEqual(task.tags, ())
+
+    def test_command_result_uses_typed_data_and_serializes_compatibly(self) -> None:
+        summary = TaskSummary(
+            uuid="12345678-aaaa-bbbb-cccc-123456789abc",
+            short_uuid="12345678",
+            description="Read",
+            project="study.books",
+            tags=("book",),
+            chain_id="",
+            status="pending",
+            due=None,
+        )
+        result = CommandResult(command="show", data=summary)
+
+        self.assertIs(result.data, summary)
+        self.assertIs(result.payload, summary)
+        self.assertEqual(serialize_payload(result.data)["short_uuid"], "12345678")
 
 
 def _write_fake_task_script(bin_dir: Path, state_path: Path) -> None:
