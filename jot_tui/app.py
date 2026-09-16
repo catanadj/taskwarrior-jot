@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import asdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from jot_core.services import JotService
 from jot_core.notes import preview_trash_path
@@ -12,6 +12,15 @@ from jot_tui.palette import PaletteEntry, filter_palette_entries
 
 
 NEW_PROGRESS_TRACK = "__new_progress_track__"
+
+
+def _read_row_field(item: object, name: str, default: Any = None) -> Any:
+    """Read typed browse rows while accepting mapping-based integrations."""
+    if hasattr(item, name):
+        return getattr(item, name)
+    if isinstance(item, Mapping):
+        return item.get(name, default)
+    return default
 
 
 def tui_time_input_value(value: str) -> str:
@@ -1242,17 +1251,17 @@ def build_tui(
             if table_id == "tasks-table":
                 if row_index >= len(self.task_rows):
                     return
-                short_uuid = str(self.task_rows[row_index].get("short_uuid") or "").strip()
+                short_uuid = str(_read_row_field(self.task_rows[row_index], "short_uuid") or "").strip()
                 if short_uuid:
                     self._open_task_workspace(short_uuid)
                 return
             if table_id == "projects-table":
                 if row_index >= len(self.project_rows):
                     return
-                project_name = str(self.project_rows[row_index].get("project") or "").strip()
+                project_name = str(_read_row_field(self.project_rows[row_index], "project") or "").strip()
                 if project_name:
                     self.current_project_name = project_name
-                if project_name and bool(self.project_rows[row_index].get("selectable")):
+                if project_name and bool(_read_row_field(self.project_rows[row_index], "selectable")):
                     self._open_project_workspace(project_name)
                 return
             if table_id == "notes-table":
@@ -1745,7 +1754,7 @@ def build_tui(
                 row_index = event.cursor_row
                 if row_index < 0 or row_index >= len(self.task_rows):
                     return
-                short_uuid = str(self.task_rows[row_index].get("short_uuid") or "").strip()
+                short_uuid = str(_read_row_field(self.task_rows[row_index], "short_uuid") or "").strip()
                 if not short_uuid:
                     return
                 self._open_task_workspace(short_uuid)
@@ -1754,11 +1763,11 @@ def build_tui(
                 row_index = event.cursor_row
                 if row_index < 0 or row_index >= len(self.project_rows):
                     return
-                project_name = str(self.project_rows[row_index].get("project") or "").strip()
+                project_name = str(_read_row_field(self.project_rows[row_index], "project") or "").strip()
                 if not project_name:
                     return
                 self.current_project_name = project_name or None
-                if self.current_project_name and bool(self.project_rows[row_index].get("selectable")):
+                if self.current_project_name and bool(_read_row_field(self.project_rows[row_index], "selectable")):
                     self._open_project_workspace(self.current_project_name)
             if event.data_table.id == "notes-table":
                 row_index = event.cursor_row
@@ -1803,13 +1812,13 @@ def build_tui(
                 return
             for item in self.note_rows:
                 table.add_row(
-                    str(item.get("kind") or ""),
-                    str(item.get("id") or ""),
-                    str(item.get("title") or ""),
-                    str(item.get("project") or ""),
-                    str(item.get("progress") or "-") or "-",
-                    str(item.get("resources") or "0"),
-                    str(item.get("updated") or ""),
+                    str(_read_row_field(item, "kind") or ""),
+                    str(_read_row_field(item, "identifier", _read_row_field(item, "id")) or ""),
+                    str(_read_row_field(item, "title") or ""),
+                    str(_read_row_field(item, "project") or ""),
+                    str(_read_row_field(item, "progress") or "-") or "-",
+                    str(_read_row_field(item, "resources") or "0"),
+                    str(_read_row_field(item, "updated") or ""),
                 )
 
         async def _refresh_tasks_async(self) -> None:
@@ -1822,11 +1831,11 @@ def build_tui(
             self.project_rows = await asyncio.to_thread(self.svc.project_tree_rows)
             for item in self.project_rows:
                 table.add_row(
-                    str(item.get("label") or item.get("project") or ""),
-                    str(item.get("count") or ""),
-                    str(item.get("progress") or "-"),
-                    str(item.get("note") or ""),
-                    str(item.get("updated") or ""),
+                    str(_read_row_field(item, "label") or _read_row_field(item, "project") or ""),
+                    str(_read_row_field(item, "count") or ""),
+                    str(_read_row_field(item, "progress") or "-"),
+                    str(_read_row_field(item, "note") or ""),
+                    str(_read_row_field(item, "updated") or ""),
                 )
 
         def _selected_time_row(self) -> dict[str, Any] | None:
@@ -2098,33 +2107,33 @@ def build_tui(
             ]
             for item in self.task_rows:
                 notes = []
-                if item.get("has_task_note"):
+                if _read_row_field(item, "has_task_note"):
                     notes.append("task")
-                if item.get("has_chain_note"):
+                if _read_row_field(item, "has_chain_note"):
                     notes.append("chain")
-                if item.get("has_project_note"):
+                if _read_row_field(item, "has_project_note"):
                     notes.append("project")
                 table.add_row(
-                    str(item.get("short_uuid") or ""),
-                    str(item.get("description") or ""),
-                    str(item.get("project") or ""),
-                    str(item.get("progress") or "-"),
-                    ",".join(str(tag) for tag in item.get("tags") or []),
+                    str(_read_row_field(item, "short_uuid") or ""),
+                    str(_read_row_field(item, "description") or ""),
+                    str(_read_row_field(item, "project") or ""),
+                    str(_read_row_field(item, "progress") or "-"),
+                    ",".join(str(tag) for tag in _read_row_field(item, "tags") or []),
                     ",".join(notes) or "-",
                 )
 
         def _task_matches_filters(self, item: dict[str, Any]) -> bool:
             project_filter = self.task_filter_project.strip().lower()
             if project_filter:
-                project = str(item.get("project") or "").strip().lower()
+                project = str(_read_row_field(item, "project") or "").strip().lower()
                 if project_filter not in project:
                     return False
             tag_filter = self.task_filter_tag.strip().lower()
             if tag_filter:
-                tags = [str(tag).strip().lower() for tag in item.get("tags") or []]
+                tags = [str(tag).strip().lower() for tag in _read_row_field(item, "tags") or []]
                 if not any(tag_filter in tag for tag in tags):
                     return False
-            if self.task_filter_notes_only and not bool(item.get("has_notes")):
+            if self.task_filter_notes_only and not bool(_read_row_field(item, "has_notes")):
                 return False
             return True
 
