@@ -37,7 +37,16 @@ from jot_core.frontmatter import (
     write_document,
 )
 from jot_core.index import migrate_index_keys, rebuild_index
-from jot_core.models import AppConfig, CommandResult, ResolvedTask, TaskRef, normalize_task
+from jot_core.models import (
+    AppConfig,
+    CommandResult,
+    NoteSummary,
+    ProjectTreeRow,
+    ResolvedTask,
+    TaskRef,
+    TaskSummary,
+    normalize_task,
+)
 from jot_core.notes import NoteIdentityConflictError, append_to_task_note
 from jot_core.output import (
     _progress_bar,
@@ -1100,12 +1109,18 @@ class ServiceProgressRowTests(unittest.TestCase):
 
         service = JotService(config=self.config, taskwarrior=FakeTaskwarrior())  # type: ignore[arg-type]
         task_rows = service.tasks()
+        self.assertIsInstance(task_rows[0], TaskSummary)
         self.assertEqual(
             task_rows[0]["progress"],
             "T 120/350 pages (34.29%) | C 3/12 sessions (25%)",
         )
         project_rows = service.project_tree_rows()
+        self.assertIsInstance(project_rows[0], ProjectTreeRow)
         self.assertEqual(project_rows[0]["progress"], "2/10 books (20%)")
+
+        note_rows = service.notes(kind="project")
+        self.assertIsInstance(note_rows[0], NoteSummary)
+        self.assertEqual(note_rows[0].project, "reading")
 
     def test_timelog_report_service_returns_detailed_tui_data(self) -> None:
         record = {

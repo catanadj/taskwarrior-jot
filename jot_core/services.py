@@ -8,7 +8,7 @@ from typing import Any
 
 from .editor import open_in_editor
 from .frontmatter import read_document
-from .models import AppConfig
+from .models import AppConfig, NoteSummary, ProjectTreeRow, TaskSummary
 from .nautical import nautical_summary
 from .notes import (
     ensure_chain_note,
@@ -74,14 +74,17 @@ class JotService:
     def recent(self, limit: int = 50) -> list[dict[str, Any]]:
         return recent_activity(self.config, limit=limit)
 
-    def projects(self) -> list[dict[str, Any]]:
-        return list_project_notes(self.config)
+    def projects(self) -> list[NoteSummary]:
+        return [NoteSummary.from_mapping(item) for item in list_project_notes(self.config)]
 
-    def notes(self, *, kind: str = "", project: str = "") -> list[dict[str, Any]]:
+    def notes(self, *, kind: str = "", project: str = "") -> list[NoteSummary]:
         kinds = normalize_note_kinds([kind]) if str(kind or "").strip() else None
-        return list_notes(self.config, kinds=kinds, project=project or None)
+        return [
+            NoteSummary.from_mapping(item)
+            for item in list_notes(self.config, kinds=kinds, project=project or None)
+        ]
 
-    def project_tree_rows(self, limit: int = 1000) -> list[dict[str, Any]]:
+    def project_tree_rows(self, limit: int = 1000) -> list[ProjectTreeRow]:
         items = self.taskwarrior.list_tasks(limit=limit, status="pending")
         counts: dict[str, int] = {}
         for item in items:
@@ -132,7 +135,7 @@ class JotService:
             item["note"] = "yes" if item.get("has_note") else "-"
             item["progress"] = str(item.get("progress") or "").strip() or "-"
             item["updated"] = str(item.get("updated") or "").strip()
-        return rows
+        return [ProjectTreeRow.from_mapping(item) for item in rows]
 
     def project_note_path_for_name(self, project_name: str) -> str:
         note = find_project_note(self.config, project_name)
@@ -149,7 +152,7 @@ class JotService:
         chain_path = chain_note_path(self.config, task.task.get("chainID") or "", task.description or "")
         return str(note or chain_path)
 
-    def tasks(self, limit: int = 200) -> list[dict[str, Any]]:
+    def tasks(self, limit: int = 200) -> list[TaskSummary]:
         items = self.taskwarrior.list_tasks(limit=limit, status="pending")
         for item in items:
             short_uuid = str(item.get("short_uuid") or "").strip()
@@ -174,7 +177,7 @@ class JotService:
                 if summary:
                     summaries.append(summary)
             item["progress"] = " | ".join(summaries) or "-"
-        return items
+        return [TaskSummary.from_mapping(item) for item in items]
 
     def search(self, query: str) -> dict[str, list[dict[str, Any]]]:
         return search_all(self.config, query)

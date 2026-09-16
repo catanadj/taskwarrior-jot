@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, TypeAlias, TypedDict
+from typing import Any, Iterator, Mapping, TypeAlias, TypedDict
 
 
 JsonScalar: TypeAlias = None | bool | int | float | str
@@ -44,6 +44,161 @@ def normalize_task(raw: Mapping[str, JsonValue]) -> Task:
         tags=tag_values,
         raw=dict(raw),
     )
+
+
+class PayloadModel(Mapping[str, Any]):
+    """Read-only mapping compatibility for models during the migration."""
+
+    def to_payload(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def __getitem__(self, key: str) -> Any:
+        return self.to_payload()[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self.to_payload())
+
+    def __len__(self) -> int:
+        return len(self.to_payload())
+
+
+@dataclass(frozen=True, slots=True)
+class TaskSummary(PayloadModel):
+    uuid: str
+    short_uuid: str
+    description: str
+    project: str
+    tags: tuple[str, ...]
+    chain_id: str
+    status: str
+    due: str | None
+    progress: str = "-"
+    has_task_note: bool = False
+    has_chain_note: bool = False
+    has_project_note: bool = False
+    has_notes: bool = False
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "TaskSummary":
+        tags = item.get("tags")
+        return cls(
+            uuid=str(item.get("uuid") or "").strip(),
+            short_uuid=str(item.get("short_uuid") or "").strip(),
+            description=str(item.get("description") or "").strip(),
+            project=str(item.get("project") or "").strip(),
+            tags=tuple(str(tag) for tag in tags) if isinstance(tags, (list, tuple)) else (),
+            chain_id=str(item.get("chain_id") or "").strip(),
+            status=str(item.get("status") or "").strip(),
+            due=str(item.get("due") or "").strip() or None,
+            progress=str(item.get("progress") or "-") or "-",
+            has_task_note=bool(item.get("has_task_note")),
+            has_chain_note=bool(item.get("has_chain_note")),
+            has_project_note=bool(item.get("has_project_note")),
+            has_notes=bool(item.get("has_notes")),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "uuid": self.uuid,
+            "short_uuid": self.short_uuid,
+            "description": self.description,
+            "project": self.project,
+            "tags": list(self.tags),
+            "chain_id": self.chain_id,
+            "status": self.status,
+            "due": self.due,
+            "progress": self.progress,
+            "has_task_note": self.has_task_note,
+            "has_chain_note": self.has_chain_note,
+            "has_project_note": self.has_project_note,
+            "has_notes": self.has_notes,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class NoteSummary(PayloadModel):
+    kind: str
+    identifier: str
+    title: str
+    description: str
+    project: str
+    updated: str | None
+    path: str
+    preview: str = ""
+    resources: int = 0
+    progress: str = ""
+    task_short_uuid: str = ""
+    chain_id: str = ""
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "NoteSummary":
+        return cls(
+            kind=str(item.get("kind") or "").strip(),
+            identifier=str(item.get("id") or "").strip(),
+            title=str(item.get("title") or "").strip(),
+            description=str(item.get("description") or "").strip(),
+            project=str(item.get("project") or "").strip(),
+            updated=str(item.get("updated") or "").strip() or None,
+            path=str(item.get("path") or "").strip(),
+            preview=str(item.get("preview") or ""),
+            resources=int(item.get("resources") or 0),
+            progress=str(item.get("progress") or ""),
+            task_short_uuid=str(item.get("task_short_uuid") or "").strip(),
+            chain_id=str(item.get("chain_id") or "").strip(),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "id": self.identifier,
+            "title": self.title,
+            "description": self.description,
+            "project": self.project,
+            "updated": self.updated,
+            "path": self.path,
+            "preview": self.preview,
+            "resources": self.resources,
+            "progress": self.progress,
+            "task_short_uuid": self.task_short_uuid,
+            "chain_id": self.chain_id,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectTreeRow(PayloadModel):
+    project: str
+    label: str
+    depth: int
+    count: int
+    note: str
+    progress: str
+    updated: str
+    selectable: bool
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "ProjectTreeRow":
+        return cls(
+            project=str(item.get("project") or "").strip(),
+            label=str(item.get("label") or "").strip(),
+            depth=int(item.get("depth") or 0),
+            count=int(item.get("count") or 0),
+            note=str(item.get("note") or ""),
+            progress=str(item.get("progress") or "-"),
+            updated=str(item.get("updated") or "").strip(),
+            selectable=bool(item.get("selectable")),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "project": self.project,
+            "label": self.label,
+            "depth": self.depth,
+            "count": self.count,
+            "note": self.note,
+            "progress": self.progress,
+            "updated": self.updated,
+            "selectable": self.selectable,
+        }
 
 
 @dataclass(slots=True)
