@@ -866,13 +866,6 @@ def main(argv: list[str] | None = None) -> int:
     argv = _normalize_json_argv(list(argv))
     if not argv:
         parser = build_parser()
-        if sys.stdin.isatty() and sys.stdout.isatty():
-            try:
-                from jot_tui.command_browser import run_command_browser
-
-                return run_command_browser(build_command_catalog(parser))
-            except RuntimeError:
-                pass
         parser.print_help()
         return 0
     shorthand_ref, shorthand_json = _parse_task_shorthand(argv)
@@ -930,7 +923,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "stats":
             result = _run_stats(ctx)
         elif args.command == "tui":
-            return _run_tui(ctx)
+            raise RuntimeError("the tui command must be launched through the jot entrypoint")
         elif args.command == "project-list":
             result = _run_project_list(ctx)
         elif args.command == "notes":
@@ -1100,15 +1093,6 @@ def _parse_task_shorthand(argv: list[str]) -> tuple[str | None, bool]:
     if INTEGER_RE.fullmatch(ref) or SHORT_UUID_RE.fullmatch(ref) or UUID_RE.fullmatch(ref):
         return ref, json_mode
     return None, json_mode
-
-
-def _run_tui(ctx) -> int:
-    try:
-        from jot_tui.app import run_tui
-    except Exception as exc:
-        raise RuntimeError(f"failed to load TUI: {exc}") from exc
-    service = JotService(config=ctx.config, taskwarrior=ctx.taskwarrior)
-    return run_tui(service)
 
 
 def _open_note_in_editor(ctx, path) -> None:

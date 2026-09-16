@@ -20,7 +20,7 @@ test = ["textual>=0.47"]
 dev = ["textual>=0.47", "mypy>=1.11", "build>=1.2"]
 
 [project.scripts]
-jot = "jot_core.cli:main"
+jot = "jot_tui.launcher:main"
 
 [tool.setuptools]
 packages = ["jot_core", "jot_tui"]
