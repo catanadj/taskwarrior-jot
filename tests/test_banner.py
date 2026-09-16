@@ -19,3 +19,14 @@ class BannerAssetTests(unittest.TestCase):
         self.assertIn("Notebook", svg_text)
         self.assertIn("Quill", svg_text)
         self.assertIsNotNone(root.find("{http://www.w3.org/2000/svg}rect"))
+
+    def test_banner_has_layered_faithful_vector_composition(self) -> None:
+        root = ET.parse(BANNER).getroot()
+        namespace = {"svg": "http://www.w3.org/2000/svg"}
+        ids = {element.get("id") for element in root.iter() if element.get("id")}
+
+        self.assertTrue(
+            {"atmosphere", "titleBlock", "compassRose", "notebook", "quill"}.issubset(ids)
+        )
+        self.assertGreaterEqual(len(root.findall(".//svg:radialGradient", namespace)), 2)
+        self.assertGreaterEqual(len(root.findall(".//*[@data-page-layer='true']")), 3)
