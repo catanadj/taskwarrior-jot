@@ -30,3 +30,11 @@ class BannerAssetTests(unittest.TestCase):
         )
         self.assertGreaterEqual(len(root.findall(".//svg:radialGradient", namespace)), 2)
         self.assertGreaterEqual(len(root.findall(".//*[@data-page-layer='true']")), 3)
+
+    def test_banner_uses_the_hybrid_notebook_asset(self) -> None:
+        root = ET.parse(BANNER).getroot()
+        image = root.find(".//{http://www.w3.org/2000/svg}image")
+
+        self.assertIsNotNone(image)
+        self.assertEqual(image.get("{http://www.w3.org/1999/xlink}href"), "jot-notebook-cover.png")
+        self.assertTrue((BANNER.parent / "jot-notebook-cover.png").is_file())

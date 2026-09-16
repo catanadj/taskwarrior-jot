@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="500" viewBox="0 0 1400 500" role="img" aria-labelledby="title desc" shape-rendering="geometricPrecision">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1400" height="500" viewBox="0 0 1400 500" role="img" aria-labelledby="title desc" shape-rendering="geometricPrecision">
   <title id="title">Taskwarrior Jot banner</title>
   <desc id="desc">Taskwarrior Jot, the notebook beside your tasks, with an open notebook, compass rose, and quill on a deep nautical background.</desc>
   <defs>
@@ -56,7 +56,7 @@
       <g fill="none" stroke-linecap="round"><path d="M1110 292a20 20 0 1 1-.1 0" stroke="#7bb3c2" stroke-width="7.5" opacity=".62"/><path d="M1110 292a20 20 0 0 1 18-18" stroke="#185c7a" stroke-width="7.5"/><path d="M1091 328L1145 333M1089 340L1134 345" stroke="#62a0b6" stroke-width="1.65"/><path d="M1083 374C1103 365 1115 385 1137 371C1161 355 1179 390 1204 373C1220 362 1233 381 1250 378" stroke="#0f5272" stroke-width="2.25"/></g>
     </g>
     <!-- Closed spiral notebook inspired by the supplied captain's log cover. -->
-    <g id="closedNotebook" transform="rotate(-3 1080 292)" filter="url(#softShadow)">
+    <g id="closedNotebook" transform="rotate(-3 1080 292)" filter="url(#softShadow)" display="none">
       <ellipse cx="1090" cy="444" rx="137" ry="19" fill="#000a12" opacity=".5"/>
       <path d="M974 116Q978 104 991 103L1200 111Q1214 112 1217 126L1235 416Q1236 430 1222 434L1000 425Q986 425 984 411Z" fill="#03111f" stroke="#1c526c" stroke-width="3"/>
       <path d="M986 116Q990 105 1002 105L1194 113Q1207 114 1209 127L1227 408Q1228 420 1215 423L1007 415Q995 414 994 402Z" fill="url(#leather)" stroke="#356780" stroke-width="1.4"/>
@@ -67,6 +67,11 @@
       <path d="M1018 244H1184V294H1020Z" fill="#0a2e47" stroke="#d7a34d" stroke-width="1.5"/><path d="M1021 218H1183M1020 319H1184" stroke="#0c3550" stroke-width="4" opacity=".9"/><text x="1102" y="270" text-anchor="middle" dominant-baseline="middle" font-family="Georgia, 'Times New Roman', serif" font-size="19" font-weight="600" letter-spacing="1.1" fill="#fff9eb">Taskwarrior Jot</text><path d="M1020 372Q1102 365 1188 374" fill="none" stroke="#7898a5" stroke-width="1" opacity=".55"/>
       <g fill="none" stroke="#c7d3d5" stroke-width="3"><ellipse cx="984" cy="139" rx="13" ry="8"/><ellipse cx="986" cy="171" rx="13" ry="8"/><ellipse cx="988" cy="203" rx="13" ry="8"/><ellipse cx="990" cy="235" rx="13" ry="8"/><ellipse cx="992" cy="267" rx="13" ry="8"/><ellipse cx="994" cy="299" rx="13" ry="8"/><ellipse cx="996" cy="331" rx="13" ry="8"/><ellipse cx="998" cy="363" rx="13" ry="8"/><ellipse cx="1000" cy="395" rx="13" ry="8"/></g>
       <path d="M978 132Q968 139 978 146M980 164Q970 171 980 178M982 196Q972 203 982 210M984 228Q974 235 984 242M986 260Q976 267 986 274M988 292Q978 299 988 306M990 324Q980 331 990 338M992 356Q982 363 992 370M994 388Q984 395 994 402" fill="none" stroke="#6d8b9e" stroke-width="2" opacity=".8"/>
+    </g>
+    <!-- Raster cover supplied by the user, with the title kept as crisp SVG text. -->
+    <g id="notebookImage" transform="rotate(-3 1100 285)" filter="url(#softShadow)">
+      <image xlink:href="jot-notebook-cover.png" href="jot-notebook-cover.png" x="950" y="68" width="300" height="420" preserveAspectRatio="none"/>
+      <text x="1100" y="222" text-anchor="middle" dominant-baseline="middle" font-family="Georgia, 'Times New Roman', serif" font-size="19" font-weight="600" letter-spacing="1" fill="#fff9eb" stroke="#061827" stroke-width="1.2" paint-order="stroke">Taskwarrior Jot</text>
     </g>
     <!-- Quill -->
     <g id="quill" filter="url(#smallShadow)">
