@@ -969,11 +969,11 @@ def _emit_progress(payload: dict[str, Any]) -> None:
             return
         sys.stdout.write("\n")
         for item in tracks:
-            if isinstance(item, dict):
+            if isinstance(item, Mapping):
                 _emit_progress_track(item, visual=True)
         _emit_progress_analysis(payload)
         return
-    if not isinstance(progress, dict):
+    if not isinstance(progress, Mapping):
         sys.stdout.write("\n(not set)\n")
         return
     _emit_progress_track(progress, visual=operation == "show")
@@ -989,7 +989,7 @@ def _emit_progress_items(payload: dict[str, Any], items: list[object]) -> None:
     selected_track = str(payload.get("track") or "").strip()
     _write_title(f"Progress for {len(items)} {kind} notes")
     for item in items:
-        if not isinstance(item, dict):
+        if not isinstance(item, Mapping):
             continue
         reference = str(item.get("reference") or "")
         identity = (
@@ -1005,7 +1005,7 @@ def _emit_progress_items(payload: dict[str, Any], items: list[object]) -> None:
         tracks = item.get("tracks") or []
         if selected_track:
             progress = item.get("progress")
-            if isinstance(progress, dict):
+            if isinstance(progress, Mapping):
                 _emit_progress_track(progress, visual=True)
                 _emit_progress_analysis(item, track=selected_track)
             else:
@@ -1015,7 +1015,7 @@ def _emit_progress_items(payload: dict[str, Any], items: list[object]) -> None:
             sys.stdout.write("  (not set)\n")
             continue
         for progress in tracks:
-            if isinstance(progress, dict):
+            if isinstance(progress, Mapping):
                 _emit_progress_track(progress, visual=True)
         _emit_progress_analysis(item)
 

@@ -5,9 +5,10 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .frontmatter import locked_document, read_document, write_document
+from .models import ProgressTrack
 from .ops import iso_now
 
 
@@ -27,10 +28,10 @@ ACTION_RE = re.compile(r"^(?P<action>[a-zA-Z_-]+): (?P<details>.+)$")
 @dataclass(slots=True)
 class ProgressResult:
     note_path: Path
-    progress: dict[str, object] | None
+    progress: ProgressTrack | None
     entry: str | None = None
     track: str = DEFAULT_TRACK
-    tracks: tuple[dict[str, object], ...] = ()
+    tracks: tuple[ProgressTrack, ...] = ()
 
 
 def parse_progress_value(value: str) -> Decimal:
@@ -66,7 +67,7 @@ def read_note_progress(note_path: Path, track: str = DEFAULT_TRACK) -> ProgressR
     )
 
 
-def read_note_progress_tracks(note_path: Path) -> tuple[dict[str, object], ...]:
+def read_note_progress_tracks(note_path: Path) -> tuple[ProgressTrack, ...]:
     metadata, _body = read_document(note_path)
     return _progress_tracks_from_metadata(metadata)
 
@@ -106,7 +107,7 @@ def read_note_progress_history(note_path: Path, *, track: str | None = None) -> 
 def build_progress_trends(
     history: list[dict[str, object]],
     *,
-    tracks: tuple[dict[str, object], ...] | list[dict[str, object]] = (),
+    tracks: tuple[ProgressTrack, ...] | list[ProgressTrack] = (),
     track: str | None = None,
 ) -> list[dict[str, object]]:
     selected_track = normalize_progress_track(track) if track else None
@@ -149,8 +150,8 @@ def normalize_progress_track(track: str | None) -> str:
     return normalized
 
 
-def format_progress_summary(progress: dict[str, object] | None, *, prefix: str = "") -> str:
-    if not isinstance(progress, dict):
+def format_progress_summary(progress: Mapping[str, object] | None, *, prefix: str = "") -> str:
+    if not isinstance(progress, Mapping):
         return ""
     current = str(progress.get("current") or "").strip()
     target = str(progress.get("target") or "").strip()
@@ -168,7 +169,7 @@ def format_progress_summary(progress: dict[str, object] | None, *, prefix: str =
 
 
 def format_progress_tracks_summary(
-    tracks: tuple[dict[str, object], ...] | list[dict[str, object]],
+    tracks: tuple[Mapping[str, object], ...] | list[Mapping[str, object]],
     *,
     prefix: str = "",
     limit: int = 2,
@@ -322,7 +323,7 @@ def clear_note_progress(note_path: Path, *, track: str | None = None) -> Progres
     return ProgressResult(note_path, None, entry, normalized_track, tracks)
 
 
-def _progress_from_metadata(metadata: dict[str, Any]) -> dict[str, object] | None:
+def _progress_from_metadata(metadata: dict[str, Any]) -> ProgressTrack | None:
     current_raw = metadata.get("progress_current")
     target_raw = metadata.get("progress_target")
     if current_raw in (None, "") or target_raw in (None, ""):
@@ -332,15 +333,15 @@ def _progress_from_metadata(metadata: dict[str, Any]) -> dict[str, object] | Non
     percentage = None
     if target != 0:
         percentage = _percentage_text((current / target) * Decimal("100"))
-    return {
-        "track": DEFAULT_TRACK,
-        "current": _decimal_text(current),
-        "target": _decimal_text(target),
-        "unit": str(metadata.get("progress_unit") or "").strip(),
-        "status": str(metadata.get("progress_status") or "").strip(),
-        "updated": str(metadata.get("progress_updated") or "").strip() or None,
-        "percentage": percentage,
-    }
+    return ProgressTrack(
+        track=DEFAULT_TRACK,
+        current=_decimal_text(current),
+        target=_decimal_text(target),
+        unit=str(metadata.get("progress_unit") or "").strip(),
+        status=str(metadata.get("progress_status") or "").strip(),
+        updated=str(metadata.get("progress_updated") or "").strip() or None,
+        percentage=percentage,
+    )
 
 
 def _build_progress(
@@ -351,17 +352,17 @@ def _build_progress(
     status: str,
     updated: str,
     track: str,
-) -> dict[str, object]:
+) -> ProgressTrack:
     percentage = None if target == 0 else _percentage_text((current / target) * Decimal("100"))
-    return {
-        "track": track,
-        "current": _decimal_text(current),
-        "target": _decimal_text(target),
-        "unit": unit,
-        "status": status,
-        "updated": updated,
-        "percentage": percentage,
-    }
+    return ProgressTrack(
+        track=track,
+        current=_decimal_text(current),
+        target=_decimal_text(target),
+        unit=unit,
+        status=status,
+        updated=updated,
+        percentage=percentage,
+    )
 
 
 def _write_progress(metadata: dict[str, Any], progress: dict[str, object]) -> None:
@@ -386,8 +387,8 @@ def _write_optional(metadata: dict[str, Any], key: str, value: object) -> None:
         metadata.pop(key, None)
 
 
-def _progress_tracks_from_metadata(metadata: dict[str, Any]) -> tuple[dict[str, object], ...]:
-    tracks: list[dict[str, object]] = []
+def _progress_tracks_from_metadata(metadata: dict[str, Any]) -> tuple[ProgressTrack, ...]:
+    tracks: list[ProgressTrack] = []
     default = _progress_from_metadata(metadata)
     if default is not None:
         tracks.append(default)
@@ -395,7 +396,7 @@ def _progress_tracks_from_metadata(metadata: dict[str, Any]) -> tuple[dict[str, 
     return tuple(tracks)
 
 
-def _named_tracks_from_metadata(metadata: dict[str, Any]) -> list[dict[str, object]]:
+def _named_tracks_from_metadata(metadata: dict[str, Any]) -> list[ProgressTrack]:
     raw = metadata.get(PROGRESS_TRACKS_KEY)
     if raw in (None, ""):
         return []
@@ -405,7 +406,7 @@ def _named_tracks_from_metadata(metadata: dict[str, Any]) -> list[dict[str, obje
         raise RuntimeError("invalid progress_tracks metadata") from exc
     if not isinstance(decoded, list):
         raise RuntimeError("progress_tracks metadata must be a list")
-    tracks: list[dict[str, object]] = []
+    tracks: list[ProgressTrack] = []
     for item in decoded:
         if not isinstance(item, dict):
             raise RuntimeError("progress_tracks entries must be objects")
@@ -427,7 +428,7 @@ def _named_tracks_from_metadata(metadata: dict[str, Any]) -> list[dict[str, obje
     return tracks
 
 
-def _write_named_tracks(metadata: dict[str, Any], tracks: list[dict[str, object]]) -> None:
+def _write_named_tracks(metadata: dict[str, Any], tracks: list[Mapping[str, object]]) -> None:
     if not tracks:
         metadata.pop(PROGRESS_TRACKS_KEY, None)
         return
@@ -443,9 +444,9 @@ def _same_track(progress: dict[str, object], track: str) -> bool:
 
 
 def _find_track(
-    tracks: tuple[dict[str, object], ...],
+    tracks: tuple[ProgressTrack, ...],
     track: str,
-) -> dict[str, object] | None:
+) -> ProgressTrack | None:
     return next((item for item in tracks if _same_track(item, track)), None)
 
 

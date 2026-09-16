@@ -558,7 +558,7 @@ def mutate_task_progress_storage(
         task_short_uuid=task.task_short_uuid,
         task_uuid=task.task_uuid,
         chain_id=chain_id or None,
-        progress=result.progress,
+        progress=result.progress.to_payload() if result.progress is not None else None,
         progress_track=result.track,
         entry=result.entry,
         path=str(result.note_path),
@@ -568,7 +568,7 @@ def mutate_task_progress_storage(
         "opened": note.existed,
         "progress": result.progress,
         "track": result.track,
-        "tracks": list(result.tracks),
+        "tracks": [item.to_payload() for item in result.tracks],
         "entry": result.entry,
     }
 
@@ -607,7 +607,7 @@ def mutate_project_progress_storage(
         config,
         f"project_progress_{operation}",
         project=project_name,
-        progress=result.progress,
+        progress=result.progress.to_payload() if result.progress is not None else None,
         progress_track=result.track,
         entry=result.entry,
         path=str(result.note_path),
@@ -617,7 +617,7 @@ def mutate_project_progress_storage(
         "opened": note.existed,
         "progress": result.progress,
         "track": result.track,
-        "tracks": list(result.tracks),
+        "tracks": [item.to_payload() for item in result.tracks],
         "entry": result.entry,
     }
 

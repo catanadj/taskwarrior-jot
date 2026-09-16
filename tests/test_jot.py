@@ -41,6 +41,7 @@ from jot_core.models import (
     AppConfig,
     CommandResult,
     NoteSummary,
+    ProgressTrack,
     ProjectTreeRow,
     ResolvedTask,
     TaskRef,
@@ -138,6 +139,25 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertIs(result.data, summary)
         self.assertIs(result.payload, summary)
         self.assertEqual(serialize_payload(result.data)["short_uuid"], "12345678")
+
+    def test_progress_track_exposes_named_fields_and_preserves_payload_shape(self) -> None:
+        track = ProgressTrack.from_mapping(
+            {
+                "track": "pages",
+                "current": "20",
+                "target": "100",
+                "unit": "pages",
+                "status": "active",
+                "updated": "2026-09-16T12:00:00Z",
+                "percentage": "20",
+            }
+        )
+
+        self.assertEqual(track.track, "pages")
+        self.assertEqual(track.current, "20")
+        self.assertEqual(track.target, "100")
+        self.assertEqual(track.percentage, "20")
+        self.assertEqual(track["unit"], "pages")
 
 
 def _write_fake_task_script(bin_dir: Path, state_path: Path) -> None:

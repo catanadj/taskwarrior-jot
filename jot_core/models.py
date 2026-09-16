@@ -177,6 +177,40 @@ class TimelogWriteResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class ProgressTrack(PayloadModel):
+    track: str
+    current: str
+    target: str
+    unit: str
+    status: str
+    updated: str | None
+    percentage: str | None
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "ProgressTrack":
+        return cls(
+            track=str(item.get("track") or "default").strip() or "default",
+            current=str(item.get("current") or "").strip(),
+            target=str(item.get("target") or "").strip(),
+            unit=str(item.get("unit") or "").strip(),
+            status=str(item.get("status") or "").strip(),
+            updated=str(item.get("updated") or "").strip() or None,
+            percentage=str(item.get("percentage") or "").strip() or None,
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "track": self.track,
+            "current": self.current,
+            "target": self.target,
+            "unit": self.unit,
+            "status": self.status,
+            "updated": self.updated,
+            "percentage": self.percentage,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class TaskSummary(PayloadModel):
     uuid: str
     short_uuid: str
