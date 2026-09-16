@@ -112,6 +112,71 @@ class TimelogSession(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class TimelogWriteResult(PayloadModel):
+    written: bool
+    note_kind: str
+    path: str
+    task_short_uuid: str
+    task_uuid: str
+    chain_id: str | None
+    started: str
+    stopped: str
+    duration_minutes: float
+    timelog_key: str
+    raw: Mapping[str, Any] = field(repr=False)
+    reason: str = ""
+    duplicate: bool = False
+    heading: str = ""
+    entry: str = ""
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "TimelogWriteResult":
+        try:
+            duration = float(item.get("duration_minutes") or 0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        return cls(
+            written=bool(item.get("written")),
+            note_kind=str(item.get("note_kind") or "").strip(),
+            path=str(item.get("path") or "").strip(),
+            task_short_uuid=str(item.get("task_short_uuid") or "").strip(),
+            task_uuid=str(item.get("task_uuid") or "").strip(),
+            chain_id=str(item.get("chain_id") or "").strip() or None,
+            started=str(item.get("started") or "").strip(),
+            stopped=str(item.get("stopped") or "").strip(),
+            duration_minutes=duration,
+            timelog_key=str(item.get("timelog_key") or "").strip(),
+            reason=str(item.get("reason") or "").strip(),
+            duplicate=bool(item.get("duplicate")),
+            heading=str(item.get("heading") or "").strip(),
+            entry=str(item.get("entry") or ""),
+            raw=dict(item),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = dict(self.raw)
+        payload.update(
+            {
+                "written": self.written,
+                "note_kind": self.note_kind,
+                "path": self.path,
+                "task_short_uuid": self.task_short_uuid,
+                "task_uuid": self.task_uuid,
+                "chain_id": self.chain_id,
+                "started": self.started,
+                "stopped": self.stopped,
+                "duration_minutes": self.duration_minutes,
+                "timelog_key": self.timelog_key,
+                "reason": self.reason,
+                "duplicate": self.duplicate,
+                "heading": self.heading,
+                "entry": self.entry,
+            }
+        )
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
 class TaskSummary(PayloadModel):
     uuid: str
     short_uuid: str

@@ -9,7 +9,7 @@ from typing import Any
 
 from .frontmatter import atomic_write_text, exclusive_file_lock, read_document, write_document
 from .index import update_chain_note_index, update_task_note_index
-from .models import ResolvedTask, TaskRef, TimelogSession
+from .models import ResolvedTask, TaskRef, TimelogSession, TimelogWriteResult
 from .nautical import chain_id_for_task
 from .notes import append_under_heading_once, ensure_chain_note, ensure_task_note
 from .ops import append_op, iso_now, read_ops
@@ -329,7 +329,7 @@ def write_time_log(
             )
 
     if result is None:
-        return {
+        return TimelogWriteResult.from_mapping({
             "written": False,
             "reason": "duplicate time log",
             "duplicate": True,
@@ -342,9 +342,9 @@ def write_time_log(
             "stopped": _iso_z(stopped),
             "duration_minutes": round((stopped - started).total_seconds() / 60, 2),
             "timelog_key": guard_key,
-        }
+        })
 
-    return {
+    return TimelogWriteResult.from_mapping({
         "written": True,
         "note_kind": note_kind,
         "path": str(note.note_path),
@@ -357,7 +357,7 @@ def write_time_log(
         "duration_minutes": round((stopped - started).total_seconds() / 60, 2),
         "timelog_key": guard_key,
         "entry": result["entry"],
-    }
+    })
 
 
 def add_time_log(

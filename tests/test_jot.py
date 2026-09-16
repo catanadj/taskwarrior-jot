@@ -46,6 +46,7 @@ from jot_core.models import (
     TaskRef,
     TaskSummary,
     TimelogSession,
+    TimelogWriteResult,
     normalize_task,
 )
 from jot_core.notes import NoteIdentityConflictError, append_to_task_note
@@ -1199,6 +1200,8 @@ class ServiceProgressRowTests(unittest.TestCase):
             started_at="2026-07-14T09:00:00Z",
             stopped_at="2026-07-14T10:00:00Z",
         )
+        self.assertIsInstance(added, TimelogWriteResult)
+        self.assertTrue(added.written)
         amended = service.timelog_amend(
             str(added["timelog_key"]),
             started_at="2026-07-14T09:00:00Z",
