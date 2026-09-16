@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import subprocess
 import sys
 
@@ -25,10 +26,25 @@ def _taskdata_from_args(args: list[str]) -> str:
     return selected
 
 
+def _is_task_json(line: str, label: str) -> bool:
+    try:
+        payload = json.loads(line)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        _diagnostic(f"jot timelog hook warning: invalid Taskwarrior JSON in {label}\n")
+        return False
+    if not isinstance(payload, dict):
+        _diagnostic(f"jot timelog hook warning: invalid Taskwarrior JSON in {label}\n")
+        return False
+    return True
+
+
 def main() -> int:
     old_line = sys.stdin.readline()
     new_line = sys.stdin.readline()
     if not old_line or not new_line:
+        return 0
+    if not _is_task_json(old_line, "old task") or not _is_task_json(new_line, "new task"):
+        _write_new_task(new_line)
         return 0
 
     jot_bin = os.environ.get("JOT_BIN", "jot")
@@ -57,14 +73,27 @@ def main() -> int:
     except subprocess.TimeoutExpired:
         _diagnostic("jot timelog hook warning: ingest timed out\n")
         return_code = 1
+    except subprocess.SubprocessError as exc:
+        _diagnostic(f"jot timelog hook warning: subprocess failed: {exc}\n")
+        return_code = 1
+    except (UnicodeError, ValueError):
+        _diagnostic("jot timelog hook warning: could not process jot output\n")
+        return_code = 1
     except OSError as exc:
         _diagnostic(f"jot timelog hook warning: could not run jot: {exc}\n")
         return_code = 1
 
-    sys.stdout.write(new_line)
+    _write_new_task(new_line)
     if return_code and os.environ.get("JOT_TIMELOG_STRICT") == "1":
         return return_code
     return 0
+
+
+def _write_new_task(new_line: str) -> None:
+    try:
+        sys.stdout.write(new_line)
+    except BrokenPipeError:
+        return
 
 
 def _timeout_seconds() -> float:

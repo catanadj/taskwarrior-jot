@@ -1522,6 +1522,63 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(json.loads(result.stdout), new)
         self.assertIn("ingest timed out", result.stderr)
 
+    def test_jot_timelog_hook_rejects_malformed_input_before_running_jot(self) -> None:
+        marker = self.root / "jot-ran"
+        jot_bin = self.root / "capture-jot"
+        jot_bin.write_text(
+            "#!/usr/bin/env python3\n"
+            "import pathlib\n"
+            f"pathlib.Path({str(marker)!r}).write_text('ran')\n",
+            encoding="utf-8",
+        )
+        jot_bin.chmod(0o755)
+        new = {"uuid": "2d6d7d7d-1111-2222-3333-444444444444", "description": "Read chapter"}
+        env = os.environ.copy()
+        env.update({"JOT_BIN": str(jot_bin), "NAUTICAL_DIAG": "1"})
+
+        result = subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py")],
+            cwd=PROJECT_ROOT,
+            env=env,
+            input="not json\n" + json.dumps(new) + "\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), new)
+        self.assertFalse(marker.exists())
+        self.assertIn("invalid Taskwarrior JSON", result.stderr)
+
+    def test_jot_timelog_hook_fails_open_on_invalid_subprocess_output(self) -> None:
+        jot_bin = self.root / "invalid-output-jot"
+        jot_bin.write_text(
+            "#!/usr/bin/env python3\n"
+            "import sys\n"
+            "sys.stdout.buffer.write(b'\\xff')\n",
+            encoding="utf-8",
+        )
+        jot_bin.chmod(0o755)
+        old = {"uuid": "2d6d7d7d-1111-2222-3333-444444444444", "start": "20260703T060000Z"}
+        new = {"uuid": old["uuid"], "description": "Read chapter"}
+        env = os.environ.copy()
+        env.update({"JOT_BIN": str(jot_bin), "NAUTICAL_DIAG": "1"})
+
+        result = subprocess.run(
+            [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py")],
+            cwd=PROJECT_ROOT,
+            env=env,
+            input=json.dumps(old) + "\n" + json.dumps(new) + "\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), new)
+        self.assertIn("could not process jot output", result.stderr)
+
     def test_timewarrior_metadata_resolves_task_chain_and_project_precedence(self) -> None:
         task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
         task = {
@@ -4676,6 +4733,39 @@ class InstallLifecycleTests(unittest.TestCase):
         self.assertTrue((effective_hooks / "on-modify_jot_timelog.py").exists())
         self.assertIn(f"Task data directory:\n  {effective_data}", result.stdout)
         self.assertIn(f"Task hooks directory:\n  {effective_hooks}", result.stdout)
+
+    def test_installed_timelog_hook_is_executable_and_imports_canonical_hook(self) -> None:
+        installed = self.run_script("install.sh", "--no-timelog-hook")
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        hook = self.prefix / "lib" / "jot" / "hooks" / "on-modify_jot_timelog.py"
+        self.assertTrue(hook.stat().st_mode & 0o111)
+
+        marker = self.root / "installed-hook-ran"
+        fake_jot = self.root / "fake-jot"
+        fake_jot.write_text(
+            "#!/usr/bin/env python3\n"
+            "import pathlib\n"
+            f"pathlib.Path({str(marker)!r}).write_text('ran')\n",
+            encoding="utf-8",
+        )
+        fake_jot.chmod(0o755)
+        old = {"uuid": "2d6d7d7d-1111-2222-3333-444444444444", "start": "20260703T060000Z"}
+        new = {"uuid": old["uuid"], "description": "Read chapter"}
+        env = {**self.env, "JOT_BIN": str(fake_jot)}
+
+        result = subprocess.run(
+            [str(hook)],
+            cwd=PROJECT_ROOT,
+            env=env,
+            input=json.dumps(old) + "\n" + json.dumps(new) + "\n",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), new)
+        self.assertTrue(marker.exists())
 
     def test_uninstall_preserves_data_and_requires_explicit_hook_removal(self) -> None:
         installed = self.run_script("install.sh", "--with-timelog-hook")
