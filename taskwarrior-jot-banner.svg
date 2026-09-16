@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="500" viewBox="0 0 1400 500" role="img" aria-labelledby="title desc" shape-rendering="geometricPrecision">
+  <title id="title">Taskwarrior Jot banner</title>
+  <desc id="desc">Taskwarrior Jot — The notebook beside your tasks. A nautical notebook and quill illustration on a deep navy background.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071b2b"/>
+      <stop offset="0.58" stop-color="#0b2a42"/>
+      <stop offset="1" stop-color="#0a2237"/>
+    </linearGradient>
+    <linearGradient id="jot" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#84b6c7"/>
+      <stop offset="1" stop-color="#bddbe4"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fffaf0"/>
+      <stop offset="1" stop-color="#f3eadb"/>
+    </linearGradient>
+    <linearGradient id="feather" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f6b8a"/>
+      <stop offset="1" stop-color="#123d5a"/>
+    </linearGradient>
+    <!-- Standard primitives keep shadows working in browsers and Inkscape. -->
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="180%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="10" result="blur"/>
+      <feOffset in="blur" dy="10" result="offsetBlur"/>
+      <feFlood flood-color="#00111d" flood-opacity="0.45" result="shadowColor"/>
+      <feComposite in="shadowColor" in2="offsetBlur" operator="in" result="shadow"/>
+      <feMerge>
+        <feMergeNode in="shadow"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1400" height="500" rx="18" fill="url(#bg)"/>
+
+  <!-- Subtle wave lines -->
+  <g fill="none" stroke="#4d8cab" stroke-opacity="0.55" stroke-width="2">
+    <path d="M0 312 C210 350 385 365 555 337 C715 311 836 280 987 302 C1118 321 1262 350 1400 332"/>
+    <path d="M0 416 C190 360 357 370 545 405 C737 441 904 458 1094 440 C1205 429 1308 397 1400 383"/>
+  </g>
+
+  <!-- Left title block -->
+  <g>
+    <text x="95" y="192" font-family="Georgia, 'Times New Roman', serif" font-size="86" font-weight="600" fill="#f5ecd9" letter-spacing="-1.5">
+      Taskwarrior <tspan fill="url(#jot)">Jot</tspan>
+    </text>
+
+    <line x1="150" y1="236" x2="383" y2="236" stroke="#e7b75b" stroke-width="2"/>
+    <line x1="457" y1="236" x2="690" y2="236" stroke="#e7b75b" stroke-width="2"/>
+
+    <!-- Compass star -->
+    <g transform="translate(420 236)">
+      <path d="M0 -24 L6 -7 L24 0 L6 7 L0 24 L-6 7 L-24 0 L-6 -7 Z" fill="#f3cc77"/>
+      <path d="M0 -17 L3.8 -4.8 L17 0 L3.8 4.8 L0 17 L-3.8 4.8 L-17 0 L-3.8 -4.8 Z" fill="#c9963f" opacity="0.9"/>
+      <circle r="3" fill="#fff2bf"/>
+    </g>
+
+    <text x="150" y="288" font-family="Georgia, 'Times New Roman', serif" font-size="27" fill="#d7e1e5" letter-spacing="2.1">
+      The notebook beside your tasks.
+    </text>
+  </g>
+
+  <!-- Faint compass rose behind book -->
+  <g transform="translate(1092 165)" opacity="0.32" stroke="#6ea6c1" fill="none" aria-label="Compass">
+    <circle r="114" stroke-width="2"/>
+    <circle r="82" stroke-width="1.3" stroke-dasharray="5 8"/>
+    <path d="M0 -104 L13 -20 L0 0 L-13 -20 Z" fill="#6ea6c1" stroke="none"/>
+    <path d="M104 0 L20 13 L0 0 L20 -13 Z" fill="#6ea6c1" stroke="none"/>
+    <path d="M0 104 L-13 20 L0 0 L13 20 Z" fill="#6ea6c1" stroke="none" opacity="0.65"/>
+    <path d="M-104 0 L-20 -13 L0 0 L-20 13 Z" fill="#6ea6c1" stroke="none" opacity="0.65"/>
+    <path d="M0 -58 L8 -8 L58 0 L8 8 L0 58 L-8 8 L-58 0 L-8 -8 Z" fill="#6ea6c1" stroke="none" opacity="0.55"/>
+    <text x="-8" y="-126" fill="#80abc0" stroke="none" font-family="Georgia, serif" font-size="20">N</text>
+    <text x="119" y="7" fill="#80abc0" stroke="none" font-family="Georgia, serif" font-size="20">E</text>
+    <text x="-135" y="7" fill="#80abc0" stroke="none" font-family="Georgia, serif" font-size="20">W</text>
+  </g>
+
+  <!-- Notebook shadow -->
+  <ellipse cx="1100" cy="399" rx="265" ry="38" fill="#00111c" opacity="0.38"/>
+
+  <!-- Notebook -->
+  <g filter="url(#softShadow)">
+    <!-- Cover -->
+    <path d="M807 198 Q847 185 925 200 L1050 224 Q1082 231 1110 216 Q1150 198 1226 206 L1291 216 Q1309 220 1306 240 L1280 399 Q1277 417 1257 414 L1117 400 Q1089 398 1065 411 Q1041 421 1010 414 L813 390 Q794 388 798 368 L823 217 Q826 203 807 198 Z" fill="#071a2b" stroke="#dca64c" stroke-width="3"/>
+
+    <!-- Left page -->
+    <path d="M823 205 Q864 192 925 203 L1038 225 Q1060 229 1071 242 L1057 391 Q1037 407 1008 401 L817 379 Q804 377 807 365 L828 220 Q831 210 823 205 Z" fill="url(#paper)" stroke="#ded6c7" stroke-width="2"/>
+
+    <!-- Right page -->
+    <path d="M1071 242 Q1092 222 1126 214 Q1164 205 1228 213 L1283 221 Q1298 224 1294 239 L1268 394 Q1266 407 1250 406 L1112 394 Q1085 392 1057 391 Z" fill="url(#paper)" stroke="#ded6c7" stroke-width="2"/>
+
+    <!-- Center crease -->
+    <path d="M1071 242 C1072 294 1064 344 1057 391" fill="none" stroke="#c9c1b6" stroke-width="3" opacity="0.8"/>
+
+    <!-- Bookmark -->
+    <path d="M1058 392 C1071 405 1076 423 1060 451 L1041 438 C1053 421 1048 405 1040 395 Z" fill="#1f5e7d"/>
+
+    <!-- Checklist -->
+    <g stroke="#4f86a0" fill="none" stroke-width="2.5">
+      <rect x="860" y="245" width="18" height="18" rx="2"/>
+      <path d="M864 253 L870 259 L881 244"/>
+      <line x1="894" y1="254" x2="1007" y2="270" stroke="#95b7c6"/>
+
+      <rect x="853" y="282" width="18" height="18" rx="2"/>
+      <path d="M857 290 L863 296 L874 281"/>
+      <line x1="887" y1="291" x2="995" y2="307" stroke="#95b7c6"/>
+
+      <rect x="846" y="319" width="18" height="18" rx="2" opacity="0.75"/>
+      <line x1="880" y1="328" x2="982" y2="343" stroke="#95b7c6" opacity="0.8"/>
+
+      <rect x="840" y="352" width="18" height="18" rx="2" opacity="0.65"/>
+      <line x1="874" y1="361" x2="968" y2="374" stroke="#95b7c6" opacity="0.75"/>
+    </g>
+
+    <!-- Right page notes/progress -->
+    <g fill="none" stroke="#5f94ad">
+      <circle cx="1135" cy="275" r="20" stroke="#a9c8d3" stroke-width="8"/>
+      <path d="M1135 255 A20 20 0 0 1 1153 266" stroke="#3f7895" stroke-width="8" stroke-linecap="round"/>
+      <line x1="1106" y1="313" x2="1162" y2="313" stroke-width="2"/>
+      <line x1="1106" y1="325" x2="1148" y2="325" stroke-width="2" opacity="0.75"/>
+      <path d="M1097 361 C1112 357 1120 366 1135 361 C1151 355 1162 350 1178 358 C1195 367 1207 356 1220 363" stroke="#194e6b" stroke-width="3"/>
+      <line x1="1094" y1="374" x2="1222" y2="385" stroke="#9fbfca" stroke-width="2" opacity="0.8"/>
+    </g>
+  </g>
+
+  <!-- Quill -->
+  <g transform="translate(1180 155) rotate(17) scale(1.05)" filter="url(#softShadow)">
+    <!-- Feather body -->
+    <path d="M0 0 C44 -61 85 -90 135 -96 C121 -54 98 -18 50 22 C31 38 17 52 8 70 C5 46 0 20 0 0 Z" fill="url(#feather)"/>
+    <!-- Feather cut lines -->
+    <g stroke="#9bc0d0" stroke-width="2" stroke-linecap="round" opacity="0.75">
+      <path d="M14 8 C39 -12 61 -33 82 -58"/>
+      <path d="M18 21 C47 7 70 -11 96 -39"/>
+      <path d="M25 34 C53 24 77 10 106 -11"/>
+      <path d="M34 47 C62 41 83 32 114 15"/>
+      <path d="M9 -3 C27 -24 42 -48 55 -72"/>
+    </g>
+    <!-- Gold shaft -->
+    <path d="M7 70 C28 35 53 7 82 -21 C101 -40 118 -60 135 -96" fill="none" stroke="#d7a85a" stroke-width="4" stroke-linecap="round"/>
+    <!-- Nib -->
+    <path d="M2 70 L13 81 L6 106 L-6 88 Z" fill="#d6a24d" stroke="#8b5f20" stroke-width="1.5"/>
+    <path d="M5 78 L4 99" stroke="#473018" stroke-width="1.5"/>
+  </g>
+</svg>
