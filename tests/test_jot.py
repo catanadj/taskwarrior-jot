@@ -37,7 +37,7 @@ from jot_core.frontmatter import (
     write_document,
 )
 from jot_core.index import migrate_index_keys, rebuild_index
-from jot_core.models import AppConfig, CommandResult, ResolvedTask, TaskRef
+from jot_core.models import AppConfig, CommandResult, ResolvedTask, TaskRef, normalize_task
 from jot_core.notes import NoteIdentityConflictError, append_to_task_note
 from jot_core.output import (
     _progress_bar,
@@ -75,6 +75,40 @@ from jot_tui.palette import PaletteEntry, filter_palette_entries
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 JOT_SCRIPT = PROJECT_ROOT / "jot"
+
+
+class TypedTaskModelTests(unittest.TestCase):
+    def test_task_normalization_preserves_stable_fields_and_udas(self) -> None:
+        task = normalize_task(
+            {
+                "uuid": "12345678-aaaa-bbbb-cccc-123456789abc",
+                "description": "Read",
+                "status": "pending",
+                "project": "study.books",
+                "chainID": "chain-id",
+                "tags": ["book"],
+                "timew_tag": "reading",
+            }
+        )
+
+        self.assertEqual(task.uuid, "12345678-aaaa-bbbb-cccc-123456789abc")
+        self.assertEqual(task.short_uuid, "12345678")
+        self.assertEqual(task.description, "Read")
+        self.assertEqual(task.status, "pending")
+        self.assertEqual(task.project, "study.books")
+        self.assertEqual(task.chain_id, "chain-id")
+        self.assertEqual(task.tags, ("book",))
+        self.assertEqual(task.raw["timew_tag"], "reading")
+
+    def test_task_normalization_uses_safe_defaults_for_missing_fields(self) -> None:
+        task = normalize_task({"uuid": "12345678-aaaa-bbbb-cccc-123456789abc"})
+
+        self.assertEqual(task.short_uuid, "12345678")
+        self.assertEqual(task.description, "")
+        self.assertEqual(task.status, "")
+        self.assertEqual(task.project, "")
+        self.assertEqual(task.chain_id, "")
+        self.assertEqual(task.tags, ())
 
 
 def _write_fake_task_script(bin_dir: Path, state_path: Path) -> None:

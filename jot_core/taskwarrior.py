@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .config import TaskwarriorEnvironment
-from .models import ResolvedTask, TaskRef
+from .models import ResolvedTask, TaskRef, normalize_task
 
 
 UUID_RE = re.compile(
@@ -66,21 +66,18 @@ class TaskwarriorClient:
             raise RuntimeError(detail)
         task = tasks[0]
 
-        uuid = str(task.get("uuid") or "").strip()
+        normalized = normalize_task(task)
+        uuid = normalized.uuid
         if not uuid:
             raise RuntimeError(f"task '{raw_ref}' did not include a uuid")
-        short_uuid = uuid.split("-")[0]
-
-        tags = task.get("tags")
-        tag_list = [str(tag) for tag in tags] if isinstance(tags, list) else []
 
         return ResolvedTask(
             ref=ref,
             task_uuid=uuid,
-            task_short_uuid=short_uuid,
-            description=str(task.get("description") or ""),
-            project=str(task.get("project") or ""),
-            tags=tag_list,
+            task_short_uuid=normalized.short_uuid,
+            description=normalized.description,
+            project=normalized.project,
+            tags=list(normalized.tags),
             task=task,
         )
 
@@ -160,18 +157,17 @@ class TaskwarriorClient:
         if not tasks:
             raise RuntimeError(f"no task found for '{token}'")
         task = tasks[0]
-        uuid = str(task.get("uuid") or "").strip()
+        normalized = normalize_task(task)
+        uuid = normalized.uuid
         if not uuid:
             raise RuntimeError(f"task for '{token}' did not include a uuid")
-        tags = task.get("tags")
-        tag_list = [str(tag) for tag in tags] if isinstance(tags, list) else []
         return ResolvedTask(
             ref=TaskRef(raw=token),
             task_uuid=uuid,
-            task_short_uuid=uuid.split("-")[0],
-            description=str(task.get("description") or ""),
-            project=str(task.get("project") or ""),
-            tags=tag_list,
+            task_short_uuid=normalized.short_uuid,
+            description=normalized.description,
+            project=normalized.project,
+            tags=list(normalized.tags),
             task=task,
         )
 

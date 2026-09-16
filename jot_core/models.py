@@ -2,7 +2,48 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, TypeAlias, TypedDict
+
+
+JsonScalar: TypeAlias = None | bool | int | float | str
+JsonValue: TypeAlias = JsonScalar | list["JsonValue"] | dict[str, "JsonValue"]
+
+
+class RawTask(TypedDict, total=False):
+    uuid: str
+    description: str
+    status: str
+    project: str
+    chainID: str
+    tags: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class Task:
+    uuid: str
+    short_uuid: str
+    description: str
+    status: str
+    project: str
+    chain_id: str
+    tags: tuple[str, ...]
+    raw: Mapping[str, JsonValue] = field(repr=False)
+
+
+def normalize_task(raw: Mapping[str, JsonValue]) -> Task:
+    uuid = str(raw.get("uuid") or "").strip()
+    tags = raw.get("tags")
+    tag_values = tuple(str(tag).strip() for tag in tags) if isinstance(tags, list) else ()
+    return Task(
+        uuid=uuid,
+        short_uuid=uuid.split("-", 1)[0],
+        description=str(raw.get("description") or "").strip(),
+        status=str(raw.get("status") or "").strip(),
+        project=str(raw.get("project") or "").strip(),
+        chain_id=str(raw.get("chainID") or "").strip(),
+        tags=tag_values,
+        raw=dict(raw),
+    )
 
 
 @dataclass(slots=True)
