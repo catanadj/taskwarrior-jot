@@ -64,6 +64,54 @@ class PayloadModel(Mapping[str, Any]):
 
 
 @dataclass(frozen=True, slots=True)
+class TimelogSession(PayloadModel):
+    task_uuid: str
+    task_short_uuid: str
+    description: str
+    project: str
+    chain_id: str | None
+    started: str
+    elapsed_minutes: float | None
+    elapsed: str
+    raw: Mapping[str, Any] = field(repr=False)
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "TimelogSession":
+        elapsed_minutes = item.get("elapsed_minutes")
+        try:
+            parsed_elapsed = float(elapsed_minutes) if elapsed_minutes is not None else None
+        except (TypeError, ValueError):
+            parsed_elapsed = None
+        return cls(
+            task_uuid=str(item.get("task_uuid") or "").strip(),
+            task_short_uuid=str(item.get("task_short_uuid") or "").strip(),
+            description=str(item.get("description") or "").strip(),
+            project=str(item.get("project") or "").strip(),
+            chain_id=str(item.get("chain_id") or "").strip() or None,
+            started=str(item.get("started") or "").strip(),
+            elapsed_minutes=parsed_elapsed,
+            elapsed=str(item.get("elapsed") or "").strip(),
+            raw=dict(item),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = dict(self.raw)
+        payload.update(
+            {
+                "task_uuid": self.task_uuid,
+                "task_short_uuid": self.task_short_uuid,
+                "description": self.description,
+                "project": self.project,
+                "chain_id": self.chain_id,
+                "started": self.started,
+                "elapsed_minutes": self.elapsed_minutes,
+                "elapsed": self.elapsed,
+            }
+        )
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
 class TaskSummary(PayloadModel):
     uuid: str
     short_uuid: str

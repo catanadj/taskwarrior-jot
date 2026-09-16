@@ -9,7 +9,7 @@ from typing import Any
 
 from .frontmatter import atomic_write_text, exclusive_file_lock, read_document, write_document
 from .index import update_chain_note_index, update_task_note_index
-from .models import ResolvedTask, TaskRef
+from .models import ResolvedTask, TaskRef, TimelogSession
 from .nautical import chain_id_for_task
 from .notes import append_under_heading_once, ensure_chain_note, ensure_task_note
 from .ops import append_op, iso_now, read_ops
@@ -225,7 +225,7 @@ def stop_all_time_sessions(config, taskwarrior, *, stopped_at: str = "", scope: 
     }
 
 
-def list_time_sessions(config, *, now: datetime | None = None) -> list[dict[str, Any]]:
+def list_time_sessions(config, *, now: datetime | None = None) -> list[TimelogSession]:
     current = now or datetime.now(timezone.utc)
     path = _session_store_path(config)
     with exclusive_file_lock(path):
@@ -235,10 +235,11 @@ def list_time_sessions(config, *, now: datetime | None = None) -> list[dict[str,
         if not isinstance(item, dict):
             continue
         enriched.append(_session_with_elapsed(item, current))
-    return sorted(
+    sorted_items = sorted(
         enriched,
         key=lambda item: str(item.get("started") or ""),
     )
+    return [TimelogSession.from_mapping(item) for item in sorted_items]
 
 
 def cancel_time_session(config, task: ResolvedTask) -> dict[str, Any]:

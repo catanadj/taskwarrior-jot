@@ -8,7 +8,7 @@ from typing import Any
 
 from .editor import open_in_editor
 from .frontmatter import read_document
-from .models import AppConfig, NoteSummary, ProjectTreeRow, TaskSummary
+from .models import AppConfig, NoteSummary, ProjectTreeRow, TaskSummary, TimelogSession
 from .nautical import nautical_summary
 from .notes import (
     ensure_chain_note,
@@ -189,7 +189,7 @@ class JotService:
         task = self.taskwarrior.resolve_task(task_ref)
         return start_time_session(self.config, task, started_at=started_at)
 
-    def timelog_pending(self) -> list[dict[str, Any]]:
+    def timelog_pending(self) -> list[TimelogSession]:
         return list_time_sessions(self.config)
 
     def timelog_stop(

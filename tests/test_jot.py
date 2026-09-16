@@ -45,6 +45,7 @@ from jot_core.models import (
     ResolvedTask,
     TaskRef,
     TaskSummary,
+    TimelogSession,
     normalize_task,
 )
 from jot_core.notes import NoteIdentityConflictError, append_to_task_note
@@ -1235,7 +1236,10 @@ class ServiceProgressRowTests(unittest.TestCase):
         service = JotService(config=self.config, taskwarrior=FakeTaskwarrior())  # type: ignore[arg-type]
         started = service.timelog_start("2d6d7d7d", started_at="2026-07-14T09:00:00Z")
         self.assertNotIn("already_started", started)
-        self.assertEqual(service.timelog_pending()[0]["task_short_uuid"], "2d6d7d7d")
+        pending = service.timelog_pending()
+        self.assertIsInstance(pending[0], TimelogSession)
+        self.assertEqual(pending[0].task_short_uuid, "2d6d7d7d")
+        self.assertEqual(pending[0]["task_short_uuid"], "2d6d7d7d")
         duplicate = service.timelog_start("2d6d7d7d", started_at="2026-07-14T09:15:00Z")
         self.assertTrue(duplicate["already_started"])
 
