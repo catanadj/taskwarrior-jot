@@ -844,6 +844,36 @@ class CleanupResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class ResourceOperationResult(PayloadModel):
+    note_path: Path
+    resource: Mapping[str, Any]
+    resources: tuple[Mapping[str, Any], ...]
+    opened: bool | None = None
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "ResourceOperationResult":
+        raw_resource = item.get("resource")
+        raw_resources = item.get("resources")
+        return cls(
+            note_path=Path(str(item.get("note_path") or "")),
+            resource=dict(raw_resource) if isinstance(raw_resource, Mapping) else {},
+            resources=tuple(dict(row) for row in raw_resources if isinstance(row, Mapping))
+            if isinstance(raw_resources, list) else (),
+            opened=bool(item["opened"]) if "opened" in item else None,
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = {
+            "note_path": str(self.note_path),
+            "resource": dict(self.resource),
+            "resources": [dict(item) for item in self.resources],
+        }
+        if self.opened is not None:
+            payload["opened"] = self.opened
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
 class TaskWorkspace(PayloadModel):
     task: Mapping[str, Any]
     nautical: Mapping[str, Any]

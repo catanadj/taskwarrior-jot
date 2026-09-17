@@ -16,6 +16,7 @@ from .models import (
     ProjectTreeRow,
     ProgressMutationResult,
     ProjectWorkspace,
+    ResourceOperationResult,
     SearchResults,
     TaskSummary,
     TimelogEntryMutation,
@@ -569,7 +570,7 @@ class JotService:
         project_name: str = "",
         target: str,
         label: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> ResourceOperationResult:
         if kind == "task":
             task = self.taskwarrior.resolve_task(task_ref)
             return attach_task_resource_storage(self.config, task, target=target, label=label)
@@ -588,7 +589,7 @@ class JotService:
         project_name: str = "",
         note_path: str,
         resource_id: int,
-    ) -> dict[str, Any]:
+    ) -> ResourceOperationResult:
         path = Path(note_path)
         if kind == "task":
             task = self.taskwarrior.resolve_task(task_ref)

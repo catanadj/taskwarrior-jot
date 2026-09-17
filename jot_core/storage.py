@@ -16,7 +16,7 @@ from .index import (
     remove_project_note_index,
     remove_task_note_index,
 )
-from .models import AppConfig, AppendResult, NotePaths, ProgressMutationResult, ResolvedTask
+from .models import AppConfig, AppendResult, NotePaths, ProgressMutationResult, ResolvedTask, ResourceOperationResult
 from .nautical import chain_id_for_task
 from .notes import (
     attach_note_resource,
@@ -375,7 +375,7 @@ def attach_task_resource_storage(
     *,
     target: str,
     label: str | None,
-) -> dict[str, object]:
+) -> ResourceOperationResult:
     note = ensure_task_note(config, task)
     result = attach_note_resource(note.note_path, target, label)
     update_task_note_index(config, task, result.note_path)
@@ -388,12 +388,12 @@ def attach_task_resource_storage(
         label=result.resource.get("label"),
         path=str(result.note_path),
     )
-    return {
-        "note_path": result.note_path,
-        "opened": note.existed,
-        "resource": result.resource,
-        "resources": result.resources,
-    }
+    return ResourceOperationResult(
+        note_path=result.note_path,
+        opened=note.existed,
+        resource=result.resource,
+        resources=tuple(result.resources),
+    )
 
 
 def attach_chain_resource_storage(
@@ -402,7 +402,7 @@ def attach_chain_resource_storage(
     *,
     target: str,
     label: str | None,
-) -> dict[str, object]:
+) -> ResourceOperationResult:
     note = ensure_chain_note(config, task)
     result = attach_note_resource(note.note_path, target, label)
     update_chain_note_index(config, task, result.note_path)
@@ -416,12 +416,12 @@ def attach_chain_resource_storage(
         label=result.resource.get("label"),
         path=str(result.note_path),
     )
-    return {
-        "note_path": result.note_path,
-        "opened": note.existed,
-        "resource": result.resource,
-        "resources": result.resources,
-    }
+    return ResourceOperationResult(
+        note_path=result.note_path,
+        opened=note.existed,
+        resource=result.resource,
+        resources=tuple(result.resources),
+    )
 
 
 def attach_project_resource_storage(
@@ -430,7 +430,7 @@ def attach_project_resource_storage(
     *,
     target: str,
     label: str | None,
-) -> dict[str, object]:
+) -> ResourceOperationResult:
     note = ensure_project_note(config, project_name)
     result = attach_note_resource(note.note_path, target, label)
     update_project_note_index(config, project_name, result.note_path)
@@ -442,12 +442,12 @@ def attach_project_resource_storage(
         label=result.resource.get("label"),
         path=str(result.note_path),
     )
-    return {
-        "note_path": result.note_path,
-        "opened": note.existed,
-        "resource": result.resource,
-        "resources": result.resources,
-    }
+    return ResourceOperationResult(
+        note_path=result.note_path,
+        opened=note.existed,
+        resource=result.resource,
+        resources=tuple(result.resources),
+    )
 
 
 def detach_task_resource_storage(
@@ -456,7 +456,7 @@ def detach_task_resource_storage(
     *,
     note_path: Path,
     resource_id: int,
-) -> dict[str, object]:
+) -> ResourceOperationResult:
     result = detach_note_resource(note_path, resource_id)
     update_task_note_index(config, task, result.note_path)
     append_op(
@@ -469,7 +469,11 @@ def detach_task_resource_storage(
         label=result.resource.get("label"),
         path=str(result.note_path),
     )
-    return {"note_path": result.note_path, "resource": result.resource, "resources": result.resources}
+    return ResourceOperationResult(
+        note_path=result.note_path,
+        resource=result.resource,
+        resources=tuple(result.resources),
+    )
 
 
 def detach_chain_resource_storage(
@@ -478,7 +482,7 @@ def detach_chain_resource_storage(
     *,
     note_path: Path,
     resource_id: int,
-) -> dict[str, object]:
+) -> ResourceOperationResult:
     result = detach_note_resource(note_path, resource_id)
     update_chain_note_index(config, task, result.note_path)
     append_op(
@@ -492,7 +496,11 @@ def detach_chain_resource_storage(
         label=result.resource.get("label"),
         path=str(result.note_path),
     )
-    return {"note_path": result.note_path, "resource": result.resource, "resources": result.resources}
+    return ResourceOperationResult(
+        note_path=result.note_path,
+        resource=result.resource,
+        resources=tuple(result.resources),
+    )
 
 
 def detach_project_resource_storage(
@@ -501,7 +509,7 @@ def detach_project_resource_storage(
     *,
     note_path: Path,
     resource_id: int,
-) -> dict[str, object]:
+) -> ResourceOperationResult:
     result = detach_note_resource(note_path, resource_id)
     update_project_note_index(config, project_name, result.note_path)
     append_op(
@@ -513,7 +521,11 @@ def detach_project_resource_storage(
         label=result.resource.get("label"),
         path=str(result.note_path),
     )
-    return {"note_path": result.note_path, "resource": result.resource, "resources": result.resources}
+    return ResourceOperationResult(
+        note_path=result.note_path,
+        resource=result.resource,
+        resources=tuple(result.resources),
+    )
 
 
 def mutate_task_progress_storage(

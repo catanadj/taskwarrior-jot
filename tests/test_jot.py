@@ -51,6 +51,7 @@ from jot_core.models import (
     ProgressMutationResult,
     ProgressTrend,
     ProjectTreeRow,
+    ResourceOperationResult,
     SearchResults,
     SearchHit,
     AgentContext,
@@ -297,6 +298,21 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(report.checks[0]["name"], "storage")
         self.assertEqual(report.repairs[0]["action"], "index")
         self.assertTrue(report["checks"][0]["ok"])
+
+    def test_resource_operation_exposes_typed_paths_and_rows(self) -> None:
+        result = ResourceOperationResult.from_mapping(
+            {
+                "note_path": "/notes/book.md",
+                "opened": True,
+                "resource": {"id": 1, "target": "https://example.test"},
+                "resources": [{"id": 1, "target": "https://example.test"}],
+            }
+        )
+
+        self.assertEqual(result.note_path, Path("/notes/book.md"))
+        self.assertTrue(result.opened)
+        self.assertEqual(result.resource["id"], 1)
+        self.assertEqual(result["resources"][0]["target"], "https://example.test")
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(
