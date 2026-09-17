@@ -8,7 +8,7 @@ from typing import Any
 
 from .frontmatter import exclusive_file_lock, read_document
 from .index import rebuild_index, save_index
-from .models import AppConfig, TrashItem
+from .models import AppConfig, CleanupResult, TrashItem
 from .notes import trash_manifest_path
 from .ops import append_op, read_ops
 
@@ -119,7 +119,7 @@ def repair_trash(config: AppConfig) -> list[TrashItem]:
     return repaired
 
 
-def cleanup_trash(config: AppConfig, *, older_than_days: int, apply: bool = False) -> dict[str, Any]:
+def cleanup_trash(config: AppConfig, *, older_than_days: int, apply: bool = False) -> CleanupResult:
     if older_than_days < 1:
         raise RuntimeError("cleanup age must be at least 1 day")
     cutoff = datetime.now(timezone.utc) - timedelta(days=older_than_days)
@@ -141,13 +141,13 @@ def cleanup_trash(config: AppConfig, *, older_than_days: int, apply: bool = Fals
                 manifest.unlink(missing_ok=True)
             removed.append(item)
         _remove_empty_trash_dirs(config.trash_dir)
-    return {
+    return CleanupResult.from_mapping({
         "older_than_days": older_than_days,
         "cutoff": cutoff.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "applied": apply,
         "count": len(removed) if apply else len(candidates),
         "items": removed if apply else candidates,
-    }
+    })
 
 
 def _old_trash_items(config: AppConfig, cutoff: datetime) -> list[dict[str, Any]]:

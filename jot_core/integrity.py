@@ -7,11 +7,11 @@ from typing import Any
 
 from .frontmatter import exclusive_file_lock, read_document, write_document
 from .index import index_path, migrate_index_keys, rebuild_index, save_index
-from .models import AppConfig
+from .models import AppConfig, IntegrityReconcileResult, IntegrityReport
 from .taskwarrior import TaskwarriorClient
 
 
-def scan_integrity(config: AppConfig, taskwarrior: TaskwarriorClient) -> dict[str, Any]:
+def scan_integrity(config: AppConfig, taskwarrior: TaskwarriorClient) -> IntegrityReport:
     findings: list[dict[str, Any]] = []
     for path in sorted(config.tasks_dir.glob("*.md")):
         metadata, _body = read_document(path)
@@ -45,12 +45,12 @@ def scan_integrity(config: AppConfig, taskwarrior: TaskwarriorClient) -> dict[st
         _migrated, collisions = migrate_index_keys(index)
         for collision in collisions:
             findings.append({"kind": "index-collision", **collision})
-    return {
+    return IntegrityReport.from_mapping({
         "schema": "jot.integrity",
         "schema_version": 1,
         "findings": findings,
         "counts": {"total": len(findings), "by_kind": _counts(findings)},
-    }
+    })
 
 
 def reconcile_integrity(
@@ -58,24 +58,24 @@ def reconcile_integrity(
     taskwarrior: TaskwarriorClient,
     *,
     apply: bool,
-) -> dict[str, Any]:
+) -> IntegrityReconcileResult:
     report = scan_integrity(config, taskwarrior)
     result: dict[str, Any] = {"dry_run": not apply, "report": report, "backup_path": None, "repaired": 0}
     if not apply:
-        return result
+        return IntegrityReconcileResult.from_mapping(result)
     backup_path = _backup_path(config)
     backup_path.mkdir(parents=True, exist_ok=True)
     index = index_path(config)
     if index.exists():
         shutil.copy2(index, backup_path / index.name)
-    for finding in report["findings"]:
-        if finding.get("kind") != "stale-metadata":
+    for finding in report.findings:
+        if finding.kind != "stale-metadata":
             continue
-        path = Path(str(finding["path"]))
+        path = Path(finding.path)
         if not path.exists():
             continue
         metadata, body = read_document(path)
-        metadata.update(finding["expected"])
+        metadata.update(finding.expected or {})
         backup_note = backup_path / "notes" / path.name
         backup_note.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, backup_note)
@@ -84,7 +84,7 @@ def reconcile_integrity(
         result["repaired"] += 1
     save_index(config, rebuild_index(config))
     result["backup_path"] = str(backup_path) if backup_path.exists() else None
-    return result
+    return IntegrityReconcileResult.from_mapping(result)
 
 
 def _counts(findings: list[dict[str, Any]]) -> dict[str, int]:

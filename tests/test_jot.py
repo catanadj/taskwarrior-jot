@@ -41,6 +41,10 @@ from jot_core.models import (
     AppConfig,
     ActivityItem,
     CommandResult,
+    CleanupResult,
+    DoctorReport,
+    IntegrityReport,
+    MigrationResult,
     NoteSummary,
     ProgressTrack,
     ProgressHistoryEntry,
@@ -264,6 +268,35 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(results["events"][0]["annotation"], "read")
         self.assertEqual(activity.title, "Read book")
         self.assertEqual(activity["kind"], "task-note")
+
+    def test_maintenance_models_expose_stable_counters(self) -> None:
+        integrity = IntegrityReport.from_mapping(
+            {
+                "schema": "jot.integrity",
+                "schema_version": 1,
+                "findings": [{"kind": "invalid-index", "path": "/tmp/index.json"}],
+                "counts": {"total": 1, "by_kind": {"invalid-index": 1}},
+            }
+        )
+        migration = MigrationResult.from_mapping(
+            {"schema_version": 3, "dry_run": True, "total": 2, "planned": 1, "migrated": 0, "blocked": 1, "items": []}
+        )
+        cleanup = CleanupResult.from_mapping(
+            {"older_than_days": 30, "cutoff": "2026-09-01T00:00:00Z", "applied": False, "count": 2, "items": []}
+        )
+
+        self.assertEqual(integrity.findings[0].kind, "invalid-index")
+        self.assertEqual(migration.schema_version, 3)
+        self.assertEqual(cleanup["count"], 2)
+
+    def test_doctor_report_preserves_checks_and_repairs(self) -> None:
+        report = DoctorReport.from_mapping(
+            {"checks": [{"name": "storage", "ok": True}], "repairs": [{"action": "index", "count": 1}]}
+        )
+
+        self.assertEqual(report.checks[0]["name"], "storage")
+        self.assertEqual(report.repairs[0]["action"], "index")
+        self.assertTrue(report["checks"][0]["ok"])
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(

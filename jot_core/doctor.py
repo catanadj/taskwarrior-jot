@@ -11,14 +11,14 @@ from .config import ensure_app_dirs
 from .frontmatter import find_stale_lock_dirs, repair_stale_lock_dirs
 from .index import read_index_status, rebuild_index, save_index
 from .migrations import migrate_notes
-from .models import AppConfig, CommandResult, DoctorCheck
+from .models import AppConfig, CommandResult, DoctorCheck, DoctorReport
 from .ops import ops_log_path, read_ops
 from .schema import inspect_note_schemas
 from .taskwarrior import TaskwarriorClient
 from .trash import list_trash, repair_trash
 
 
-def run_doctor(config: AppConfig, client: TaskwarriorClient, *, repair: bool = False) -> CommandResult:
+def run_doctor(config: AppConfig, client: TaskwarriorClient, *, repair: bool = False) -> CommandResult[DoctorReport]:
     checks: list[DoctorCheck] = []
     repairs: list[dict[str, object]] = []
     checks.append(_config_check(config))
@@ -88,11 +88,11 @@ def run_doctor(config: AppConfig, client: TaskwarriorClient, *, repair: bool = F
 
     return CommandResult(
         command="doctor",
-        payload={"checks": [asdict(check) for check in checks], "repairs": repairs},
+        data=DoctorReport.from_mapping({"checks": [asdict(check) for check in checks], "repairs": repairs}),
     )
 
 
-def run_doctor_config_error(message: str, client: TaskwarriorClient | None = None) -> CommandResult:
+def run_doctor_config_error(message: str, client: TaskwarriorClient | None = None) -> CommandResult[DoctorReport]:
     task_client = client or TaskwarriorClient()
     checks = [
         DoctorCheck(name="config", ok=False, detail=message),
@@ -114,7 +114,7 @@ def run_doctor_config_error(message: str, client: TaskwarriorClient | None = Non
 
     return CommandResult(
         command="doctor",
-        payload={"checks": [asdict(check) for check in checks]},
+        data=DoctorReport.from_mapping({"checks": [asdict(check) for check in checks]}),
     )
 
 

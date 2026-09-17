@@ -677,6 +677,173 @@ class ActivityItem(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class IntegrityFinding(PayloadModel):
+    kind: str
+    path: str = ""
+    task_uuid: str | None = None
+    detail: str | None = None
+    expected: Mapping[str, Any] | None = None
+    actual: Mapping[str, Any] | None = None
+    raw: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "IntegrityFinding":
+        return cls(
+            kind=str(item.get("kind") or "unknown").strip(),
+            path=str(item.get("path") or "").strip(),
+            task_uuid=str(item.get("task_uuid") or "").strip() or None,
+            detail=str(item.get("detail") or "").strip() or None,
+            expected=dict(item["expected"]) if isinstance(item.get("expected"), Mapping) else None,
+            actual=dict(item["actual"]) if isinstance(item.get("actual"), Mapping) else None,
+            raw=dict(item),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return dict(self.raw)
+
+
+@dataclass(frozen=True, slots=True)
+class IntegrityReport(PayloadModel):
+    schema: str
+    schema_version: int
+    findings: tuple[IntegrityFinding, ...]
+    counts: Mapping[str, Any]
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "IntegrityReport":
+        raw_findings = item.get("findings")
+        return cls(
+            schema=str(item.get("schema") or "jot.integrity"),
+            schema_version=int(item.get("schema_version") or 1),
+            findings=tuple(IntegrityFinding.from_mapping(row) for row in raw_findings if isinstance(row, Mapping))
+            if isinstance(raw_findings, list) else (),
+            counts=dict(item.get("counts")) if isinstance(item.get("counts"), Mapping) else {},
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "schema": self.schema,
+            "schema_version": self.schema_version,
+            "findings": [item.to_payload() for item in self.findings],
+            "counts": dict(self.counts),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class IntegrityReconcileResult(PayloadModel):
+    dry_run: bool
+    report: IntegrityReport
+    backup_path: str | None
+    repaired: int
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "IntegrityReconcileResult":
+        report = item.get("report")
+        return cls(
+            dry_run=bool(item.get("dry_run")),
+            report=IntegrityReport.from_mapping(report) if isinstance(report, Mapping)
+            else IntegrityReport("jot.integrity", 1, (), {}),
+            backup_path=str(item.get("backup_path") or "").strip() or None,
+            repaired=int(item.get("repaired") or 0),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "dry_run": self.dry_run,
+            "report": self.report.to_payload(),
+            "backup_path": self.backup_path,
+            "repaired": self.repaired,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MigrationResult(PayloadModel):
+    schema_version: int
+    dry_run: bool
+    total: int
+    planned: int
+    migrated: int
+    blocked: int
+    backup_path: str | None
+    items: tuple[Mapping[str, Any], ...]
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "MigrationResult":
+        raw_items = item.get("items")
+        return cls(
+            schema_version=int(item.get("schema_version") or 1),
+            dry_run=bool(item.get("dry_run")),
+            total=int(item.get("total") or 0),
+            planned=int(item.get("planned") or 0),
+            migrated=int(item.get("migrated") or 0),
+            blocked=int(item.get("blocked") or 0),
+            backup_path=str(item.get("backup_path") or "").strip() or None,
+            items=tuple(dict(row) for row in raw_items if isinstance(row, Mapping))
+            if isinstance(raw_items, list) else (),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "dry_run": self.dry_run,
+            "total": self.total,
+            "planned": self.planned,
+            "migrated": self.migrated,
+            "blocked": self.blocked,
+            "backup_path": self.backup_path,
+            "items": [dict(item) for item in self.items],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CleanupItem(PayloadModel):
+    kind: str
+    path: str
+    deleted_at: str
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "CleanupItem":
+        return cls(
+            kind=str(item.get("kind") or "").strip(),
+            path=str(item.get("path") or "").strip(),
+            deleted_at=str(item.get("deleted_at") or "").strip(),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {"kind": self.kind, "path": self.path, "deleted_at": self.deleted_at}
+
+
+@dataclass(frozen=True, slots=True)
+class CleanupResult(PayloadModel):
+    older_than_days: int
+    cutoff: str
+    applied: bool
+    count: int
+    items: tuple[CleanupItem, ...]
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "CleanupResult":
+        raw_items = item.get("items")
+        return cls(
+            older_than_days=int(item.get("older_than_days") or 0),
+            cutoff=str(item.get("cutoff") or "").strip(),
+            applied=bool(item.get("applied")),
+            count=int(item.get("count") or 0),
+            items=tuple(CleanupItem.from_mapping(row) for row in raw_items if isinstance(row, Mapping))
+            if isinstance(raw_items, list) else (),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "older_than_days": self.older_than_days,
+            "cutoff": self.cutoff,
+            "applied": self.applied,
+            "count": self.count,
+            "items": [item.to_payload() for item in self.items],
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class TaskWorkspace(PayloadModel):
     task: Mapping[str, Any]
     nautical: Mapping[str, Any]
@@ -1069,6 +1236,29 @@ class DoctorCheck:
     ok: bool
     detail: str
     severity: str = "error"
+
+
+@dataclass(frozen=True, slots=True)
+class DoctorReport(PayloadModel):
+    checks: tuple[Mapping[str, Any], ...]
+    repairs: tuple[Mapping[str, Any], ...] = ()
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "DoctorReport":
+        raw_checks = item.get("checks")
+        raw_repairs = item.get("repairs")
+        return cls(
+            checks=tuple(dict(row) for row in raw_checks if isinstance(row, Mapping))
+            if isinstance(raw_checks, list) else (),
+            repairs=tuple(dict(row) for row in raw_repairs if isinstance(row, Mapping))
+            if isinstance(raw_repairs, list) else (),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "checks": [dict(item) for item in self.checks],
+            "repairs": [dict(item) for item in self.repairs],
+        }
 
 
 _MISSING = object()

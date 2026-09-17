@@ -8,12 +8,12 @@ from typing import Any
 
 from .frontmatter import exclusive_file_lock, read_document, write_document
 from .index import rebuild_index, save_index
-from .models import AppConfig
+from .models import AppConfig, MigrationResult
 from .ops import append_op
 from .schema import NOTE_SCHEMA_VERSION, inspect_note_schema, inspect_note_schemas
 
 
-def migrate_notes(config: AppConfig, *, dry_run: bool = False) -> dict[str, Any]:
+def migrate_notes(config: AppConfig, *, dry_run: bool = False) -> MigrationResult:
     inspection = inspect_note_schemas(config)
     blocked = [
         item
@@ -32,7 +32,7 @@ def migrate_notes(config: AppConfig, *, dry_run: bool = False) -> dict[str, Any]
         "items": planned + blocked,
     }
     if dry_run or blocked or not planned:
-        return result
+        return MigrationResult.from_mapping(result)
 
     backup_root = _migration_backup_root(config)
     for item in planned:
@@ -61,7 +61,7 @@ def migrate_notes(config: AppConfig, *, dry_run: bool = False) -> dict[str, Any]
         backup_path=str(backup_root),
     )
     save_index(config, rebuild_index(config))
-    return result
+    return MigrationResult.from_mapping(result)
 
 
 def _migration_backup_root(config: AppConfig) -> Path:
