@@ -57,6 +57,9 @@ from jot_core.models import (
     ProjectTreeRow,
     ProjectRollup,
     ProjectListResult,
+    PathsResult,
+    RebuildIndexResult,
+    StatsResult,
     ResourceOperationResult,
     SearchResults,
     SearchHit,
@@ -459,6 +462,26 @@ class TypedTaskModelTests(unittest.TestCase):
 
         self.assertEqual(projects["projects"], [])
         self.assertEqual(trash["items"], [])
+
+    def test_operational_cli_models_preserve_paths_counts_and_stats(self) -> None:
+        paths = PathsResult(
+            config_path="/config",
+            root_dir="/root",
+            trash_dir="/trash",
+            tasks_dir="/tasks",
+            chains_dir="/chains",
+            projects_dir="/projects",
+            templates_dir="/templates",
+            index_path="/root/index.json",
+            ops_path="/root/ops.jsonl",
+            taskwarrior={"data_path": "/taskdata"},
+        )
+        index = RebuildIndexResult(index_path="/root/index.json", updated=None, counts={"tasks": 1})
+        stats = StatsResult(notes={"tasks": 1}, ops={"entries": 2}, index={"stale": False})
+
+        self.assertEqual(paths["taskwarrior"]["data_path"], "/taskdata")
+        self.assertEqual(index["counts"]["tasks"], 1)
+        self.assertFalse(stats["index"]["stale"])
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(

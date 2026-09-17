@@ -1128,6 +1128,54 @@ class TrashListResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class PathsResult(PayloadModel):
+    config_path: str
+    root_dir: str
+    trash_dir: str
+    tasks_dir: str
+    chains_dir: str
+    projects_dir: str
+    templates_dir: str
+    index_path: str
+    ops_path: str
+    taskwarrior: Mapping[str, Any]
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "config_path": self.config_path,
+            "root_dir": self.root_dir,
+            "trash_dir": self.trash_dir,
+            "tasks_dir": self.tasks_dir,
+            "chains_dir": self.chains_dir,
+            "projects_dir": self.projects_dir,
+            "templates_dir": self.templates_dir,
+            "index_path": self.index_path,
+            "ops_path": self.ops_path,
+            "taskwarrior": dict(self.taskwarrior),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RebuildIndexResult(PayloadModel):
+    index_path: str
+    updated: str | None
+    counts: Mapping[str, int]
+
+    def to_payload(self) -> dict[str, Any]:
+        return {"index_path": self.index_path, "updated": self.updated, "counts": dict(self.counts)}
+
+
+@dataclass(frozen=True, slots=True)
+class StatsResult(PayloadModel):
+    notes: Mapping[str, int]
+    ops: Mapping[str, Any]
+    index: Mapping[str, Any]
+
+    def to_payload(self) -> dict[str, Any]:
+        return {"notes": dict(self.notes), "ops": dict(self.ops), "index": dict(self.index)}
+
+
+@dataclass(frozen=True, slots=True)
 class ResourceListResult(PayloadModel):
     note_kind: str
     path: Path

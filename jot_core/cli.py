@@ -30,9 +30,12 @@ from .models import (
     ProgressShowResult,
     ProjectListItem,
     ProjectListResult,
+    PathsResult,
+    RebuildIndexResult,
     RecentReport,
     ResourceListResult,
     SearchCommandResult,
+    StatsResult,
     TrashListResult,
     TimelogPendingResult,
     TimelogTrashResult,
@@ -1603,17 +1606,17 @@ def _run_paths(ctx) -> CommandResult:
     environment = ctx.taskwarrior.environment()
     return CommandResult(
         command="paths",
-        payload={
-            "config_path": str(config.config_path),
-            "root_dir": str(config.root_dir),
-            "trash_dir": str(config.trash_dir),
-            "tasks_dir": str(config.tasks_dir),
-            "chains_dir": str(config.chains_dir),
-            "projects_dir": str(config.projects_dir),
-            "templates_dir": str(config.templates_dir),
-            "index_path": str(config.root_dir / "index.json"),
-            "ops_path": str(config.root_dir / "ops.jsonl"),
-            "taskwarrior": {
+        data=PathsResult(
+            config_path=str(config.config_path),
+            root_dir=str(config.root_dir),
+            trash_dir=str(config.trash_dir),
+            tasks_dir=str(config.tasks_dir),
+            chains_dir=str(config.chains_dir),
+            projects_dir=str(config.projects_dir),
+            templates_dir=str(config.templates_dir),
+            index_path=str(config.root_dir / "index.json"),
+            ops_path=str(config.root_dir / "ops.jsonl"),
+            taskwarrior={
                 "executable": environment.executable,
                 "rc_path": str(environment.rc_path),
                 "rc_source": environment.rc_source,
@@ -1621,7 +1624,7 @@ def _run_paths(ctx) -> CommandResult:
                 "hooks_path": str(environment.hooks_path),
                 "warnings": list(environment.warnings),
             },
-        },
+        ),
     )
 
 
@@ -1630,15 +1633,15 @@ def _run_rebuild_index(ctx) -> CommandResult:
     save_index(ctx.config, data)
     return CommandResult(
         command="rebuild-index",
-        payload={
-            "index_path": str(ctx.config.root_dir / "index.json"),
-            "updated": data.get("updated"),
-            "counts": {
+        data=RebuildIndexResult(
+            index_path=str(ctx.config.root_dir / "index.json"),
+            updated=data.get("updated"),
+            counts={
                 "tasks": len(data.get("tasks", {})),
                 "chains": len(data.get("chains", {})),
                 "projects": len(data.get("projects", {})),
             },
-        },
+        ),
     )
 
 
@@ -1657,20 +1660,20 @@ def _run_stats(ctx) -> CommandResult:
     stale = _index_is_stale(index_status, note_counts, latest_op_ts)
     return CommandResult(
         command="stats",
-        payload={
-            "notes": note_counts,
-            "ops": {
+        data=StatsResult(
+            notes=note_counts,
+            ops={
                 "path": str(ctx.config.root_dir / "ops.jsonl"),
                 "entries": len(ops_items),
                 "event_add": sum(1 for item in ops_items if item.get("op") == "event_add"),
                 "latest": latest_op_ts,
             },
-            "index": {
+            index={
                 "path": str(ctx.config.root_dir / "index.json"),
                 **index_status,
                 "stale": stale,
             },
-        },
+        ),
     )
 
 
