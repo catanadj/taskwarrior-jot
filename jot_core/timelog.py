@@ -24,6 +24,7 @@ from .nautical import chain_id_for_task
 from .notes import append_under_heading_once, ensure_chain_note, ensure_task_note
 from .ops import append_op, iso_now, read_ops
 from .timewarrior import start_timewarrior_for_task
+from .timelog_report import build_time_log_report
 
 
 TIME_LOG_HEADING = "Time log"
@@ -600,55 +601,21 @@ def report_time_logs(
     until: str = "",
     now: datetime | None = None,
 ) -> TimelogReport:
-    window_start, window_end = _report_window(period, since=since, until=until, now=now)
-    records = _read_time_log_records(config)
-    if project:
-        normalized_project = project.strip().casefold()
-        records = [item for item in records if str(item.get("project") or "").casefold() == normalized_project]
-    if task_ref:
-        normalized_task = task_ref.strip()
-        records = [
-            item
-            for item in records
-            if str(item.get("task_short_uuid") or "") == normalized_task or str(item.get("task_uuid") or "") == normalized_task
-        ]
-    if chain_id:
-        normalized_chain = chain_id.strip()
-        records = [item for item in records if str(item.get("chain_id") or "") == normalized_chain]
-    prepared = [
-        _time_log_report_record(item, window_start=window_start, window_end=window_end)
-        for item in records
-    ]
-    records = [item for item in prepared if item is not None]
-    day_segments = [
-        segment
-        for item in records
-        for segment in item.pop("day_segments", [])
-    ]
-
-    total_minutes = round(sum(float(item.get("minutes") or 0) for item in records), 2)
-    report_period = "custom" if since or until else period
-    return TimelogReport.from_mapping({
-        "period": report_period,
-        "details": bool(details),
-        "window_start": _iso_z(window_start) if window_start else None,
-        "window_end": _iso_z(window_end) if window_end else None,
-        "filters": {
-            "project": project or None,
-            "task": task_ref or None,
-            "chain": chain_id or None,
-            "since": since or None,
-            "until": until or None,
-        },
-        "total_minutes": total_minutes,
-        "total": _duration_text(total_minutes),
-        "entry_count": len(records),
-        "by_project": _time_log_groups(records, "project", fallback="(no project)"),
-        "by_chain": _time_log_groups(records, "chain_id", fallback="(no chain)"),
-        "by_task": _time_log_groups(records, "task_short_uuid", fallback="(no task)"),
-        "by_day": _time_log_day_groups(day_segments),
-        "entries": records if details else [],
-    })
+    return build_time_log_report(
+        _read_time_log_records(config),
+        period=period,
+        project=project,
+        task_ref=task_ref,
+        chain_id=chain_id,
+        details=details,
+        since=since,
+        until=until,
+        now=now,
+        parse_datetime=_parse_datetime,
+        iso_z=_iso_z,
+        duration_text=_duration_text,
+        time_range=_time_range,
+    )
 
 
 def _resolved_task_from_json(task_json: dict[str, Any]) -> ResolvedTask:
