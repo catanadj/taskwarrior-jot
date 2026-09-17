@@ -31,6 +31,9 @@ from .models import (
     RecentReport,
     ResourceListResult,
     SearchCommandResult,
+    TimelogPendingResult,
+    TimelogTrashResult,
+    DeletedTimelogItem,
 )
 from .nautical import chain_id_for_task, nautical_summary
 from .notes import (
@@ -2355,7 +2358,9 @@ def _run_timelog(ctx, args) -> CommandResult:
     if args.timelog_command == "pending":
         return CommandResult(
             command="timelog-pending",
-            payload={"sessions": list_time_sessions(ctx.config)},
+            data=TimelogPendingResult(
+                sessions=tuple(list_time_sessions(ctx.config)),
+            ),
         )
     if args.timelog_command == "cancel":
         task = ctx.taskwarrior.resolve_task(args.task_ref)
@@ -2395,7 +2400,9 @@ def _run_timelog(ctx, args) -> CommandResult:
     if args.timelog_command == "trash":
         return CommandResult(
             command="timelog-trash",
-            payload={"items": list_deleted_time_logs(ctx.config)},
+            data=TimelogTrashResult(
+                items=tuple(DeletedTimelogItem.from_mapping(item) for item in list_deleted_time_logs(ctx.config)),
+            ),
         )
     if args.timelog_command == "restore":
         return CommandResult(

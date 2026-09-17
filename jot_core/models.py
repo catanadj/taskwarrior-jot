@@ -792,6 +792,83 @@ class ProjectRollup(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class TimelogPendingResult(PayloadModel):
+    sessions: tuple[TimelogSession, ...]
+
+    def to_payload(self) -> dict[str, Any]:
+        return {"sessions": [item.to_payload() for item in self.sessions]}
+
+
+@dataclass(frozen=True, slots=True)
+class DeletedTimelogItem(PayloadModel):
+    key: str
+    task_short_uuid: str
+    chain_id: str
+    project: str
+    started: str
+    stopped: str
+    minutes: float
+    duration: str
+    archived_at: str
+    path: str
+    archive_path: str
+    identifier: int | None = None
+    raw: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "DeletedTimelogItem":
+        try:
+            minutes = float(item.get("minutes") or 0)
+        except (TypeError, ValueError):
+            minutes = 0.0
+        identifier = item.get("id")
+        return cls(
+            key=str(item.get("key") or "").strip(),
+            task_short_uuid=str(item.get("task_short_uuid") or "").strip(),
+            chain_id=str(item.get("chain_id") or "").strip(),
+            project=str(item.get("project") or "").strip(),
+            started=str(item.get("started") or "").strip(),
+            stopped=str(item.get("stopped") or "").strip(),
+            minutes=minutes,
+            duration=str(item.get("duration") or "").strip(),
+            archived_at=str(item.get("archived_at") or "").strip(),
+            path=str(item.get("path") or "").strip(),
+            archive_path=str(item.get("archive_path") or "").strip(),
+            identifier=int(identifier) if identifier is not None else None,
+            raw=dict(item),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = dict(self.raw)
+        payload.update(
+            {
+                "key": self.key,
+                "task_short_uuid": self.task_short_uuid,
+                "chain_id": self.chain_id,
+                "project": self.project,
+                "started": self.started,
+                "stopped": self.stopped,
+                "minutes": self.minutes,
+                "duration": self.duration,
+                "archived_at": self.archived_at,
+                "path": self.path,
+                "archive_path": self.archive_path,
+            }
+        )
+        if self.identifier is not None:
+            payload["id"] = self.identifier
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class TimelogTrashResult(PayloadModel):
+    items: tuple[DeletedTimelogItem, ...]
+
+    def to_payload(self) -> dict[str, Any]:
+        return {"items": [item.to_payload() for item in self.items]}
+
+
+@dataclass(frozen=True, slots=True)
 class ActivityItem(PayloadModel):
     kind: str
     timestamp: str

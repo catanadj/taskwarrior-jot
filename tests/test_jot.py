@@ -72,6 +72,9 @@ from jot_core.models import (
     TaskCompletionResult,
     TimelogSession,
     TimelogReport,
+    TimelogPendingResult,
+    TimelogTrashResult,
+    DeletedTimelogItem,
     TimelogEntryMutation,
     TimelogSessionResult,
     TimelogStopAllResult,
@@ -428,6 +431,25 @@ class TypedTaskModelTests(unittest.TestCase):
 
         self.assertEqual(rollup.project, "reading")
         self.assertEqual(rollup["timelog"]["total_minutes"], 0)
+
+    def test_timelog_list_envelopes_preserve_sessions_and_archives(self) -> None:
+        pending = TimelogPendingResult(sessions=())
+        trash = TimelogTrashResult(
+            items=(
+                DeletedTimelogItem.from_mapping(
+                    {
+                        "id": 1,
+                        "key": "abc",
+                        "task_short_uuid": "12345678",
+                        "minutes": 30,
+                        "duration": "30m",
+                    }
+                ),
+            )
+        )
+
+        self.assertEqual(pending["sessions"], [])
+        self.assertEqual(trash["items"][0]["task_short_uuid"], "12345678")
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(
