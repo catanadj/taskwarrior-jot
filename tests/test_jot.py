@@ -45,6 +45,7 @@ from jot_core.models import (
     CommandResult,
     CleanupResult,
     DoctorReport,
+    EventAddResult,
     IntegrityReport,
     MigrationResult,
     NoteSummary,
@@ -69,6 +70,9 @@ from jot_core.models import (
     AgentContext,
     NoteWorkspace,
     NoteDeleteResult,
+    NoteAppendCommandResult,
+    NoteDeleteCommandResult,
+    NoteOpenResult,
     NotesCommandResult,
     ResourceListResult,
     ResolvedTask,
@@ -497,6 +501,27 @@ class TypedTaskModelTests(unittest.TestCase):
         exported = replace(summary, events=({"entry": "1"},), exported_at="now")
         self.assertEqual(exported["events"][0]["entry"], "1")
         self.assertEqual(exported["exported_at"], "now")
+
+    def test_note_and_event_command_results_preserve_cli_shapes(self) -> None:
+        opened = NoteOpenResult(
+            path=Path("task.md"),
+            opened=True,
+            identity={"task_short_uuid": "12345678"},
+            post_save_action="complete",
+        )
+        appended = NoteAppendCommandResult(
+            path=Path("task.md"), opened=False, identity={"project": "work"}
+        )
+        deleted = NoteDeleteCommandResult(
+            path=Path("task.md"),
+            trash_path=Path(".jot_trash/task.md"),
+            identity={"task_short_uuid": "12345678"},
+        )
+        event = EventAddResult(task_short_uuid="12345678", annotation="[note] x", event_type="note")
+        self.assertEqual(opened["post_save_action"], "complete")
+        self.assertFalse(appended["opened"])
+        self.assertEqual(deleted["trash_path"], ".jot_trash/task.md")
+        self.assertEqual(event["event_type"], "note")
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(

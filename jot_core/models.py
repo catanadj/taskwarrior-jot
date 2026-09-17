@@ -1229,6 +1229,54 @@ class NotesCommandResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class NoteOpenResult(PayloadModel):
+    path: Path
+    opened: bool
+    identity: Mapping[str, Any]
+    post_save_action: str | None = None
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = {"path": str(self.path), "opened": self.opened, **dict(self.identity)}
+        if self.post_save_action is not None:
+            payload["post_save_action"] = self.post_save_action
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class NoteAppendCommandResult(PayloadModel):
+    path: Path
+    opened: bool
+    identity: Mapping[str, Any]
+
+    def to_payload(self) -> dict[str, Any]:
+        return {"path": str(self.path), "opened": self.opened, **dict(self.identity)}
+
+
+@dataclass(frozen=True, slots=True)
+class NoteDeleteCommandResult(PayloadModel):
+    path: Path
+    trash_path: Path
+    identity: Mapping[str, Any]
+
+    def to_payload(self) -> dict[str, Any]:
+        return {"path": str(self.path), "trash_path": str(self.trash_path), **dict(self.identity)}
+
+
+@dataclass(frozen=True, slots=True)
+class EventAddResult(PayloadModel):
+    task_short_uuid: str
+    annotation: str
+    event_type: str
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "task_short_uuid": self.task_short_uuid,
+            "annotation": self.annotation,
+            "event_type": self.event_type,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class NoteDeleteResult(PayloadModel):
     note_path: Path
     trash_path: Path

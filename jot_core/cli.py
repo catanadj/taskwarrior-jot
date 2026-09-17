@@ -24,6 +24,10 @@ from .integrity import reconcile_integrity, scan_integrity
 from .migrations import migrate_notes
 from .models import (
     CommandResult,
+    EventAddResult,
+    NoteAppendCommandResult,
+    NoteDeleteCommandResult,
+    NoteOpenResult,
     NoteSummary,
     NotesCommandResult,
     ProgressMutationCommandResult,
@@ -1564,12 +1568,12 @@ def _run_auto_note(ctx, task_ref: str) -> CommandResult:
         post_save_action = _offer_post_save_task_action(ctx, task)
         return CommandResult(
             command="chain",
-            payload={
-                "path": str(note.note_path),
-                "opened": note.existed,
-                "task_short_uuid": task.task_short_uuid,
-                "post_save_action": post_save_action,
-            },
+            data=NoteOpenResult(
+                path=note.note_path,
+                opened=note.existed,
+                identity={"task_short_uuid": task.task_short_uuid},
+                post_save_action=post_save_action,
+            ),
         )
     note = ensure_task_note(ctx.config, task)
     _open_note_in_editor(ctx, note.note_path)
@@ -1577,12 +1581,12 @@ def _run_auto_note(ctx, task_ref: str) -> CommandResult:
     post_save_action = _offer_post_save_task_action(ctx, task)
     return CommandResult(
         command="note",
-        payload={
-            "path": str(note.note_path),
-            "opened": note.existed,
-            "task_short_uuid": task.task_short_uuid,
-            "post_save_action": post_save_action,
-        },
+        data=NoteOpenResult(
+            path=note.note_path,
+            opened=note.existed,
+            identity={"task_short_uuid": task.task_short_uuid},
+            post_save_action=post_save_action,
+        ),
     )
 
 
@@ -1594,12 +1598,12 @@ def _run_note(ctx, task_ref: str) -> CommandResult:
     post_save_action = _offer_post_save_task_action(ctx, task)
     return CommandResult(
         command="note",
-        payload={
-            "path": str(note.note_path),
-            "opened": note.existed,
-            "task_short_uuid": task.task_short_uuid,
-            "post_save_action": post_save_action,
-        },
+        data=NoteOpenResult(
+            path=note.note_path,
+            opened=note.existed,
+            identity={"task_short_uuid": task.task_short_uuid},
+            post_save_action=post_save_action,
+        ),
     )
 
 
@@ -1789,11 +1793,11 @@ def _run_project(ctx, project_name: str) -> CommandResult:
     finalize_project_note_edit(ctx.config, project_name, note)
     return CommandResult(
         command="project",
-        payload={
-            "path": str(note.note_path),
-            "opened": note.existed,
-            "project": project_name,
-        },
+        data=NoteOpenResult(
+            path=note.note_path,
+            opened=note.existed,
+            identity={"project": project_name},
+        ),
     )
 
 
@@ -2134,11 +2138,11 @@ def _run_task_delete(ctx, task_ref: str) -> CommandResult:
     result = delete_task_note_storage(ctx.config, task)
     return CommandResult(
         command="task-delete",
-        payload={
-            "task_short_uuid": task.task_short_uuid,
-            "path": str(result["note_path"]),
-            "trash_path": str(result["trash_path"]),
-        },
+        data=NoteDeleteCommandResult(
+            path=result.note_path,
+            trash_path=result.trash_path,
+            identity={"task_short_uuid": task.task_short_uuid},
+        ),
     )
 
 
@@ -2147,12 +2151,14 @@ def _run_chain_delete(ctx, task_ref: str) -> CommandResult:
     result = delete_chain_note_storage(ctx.config, task)
     return CommandResult(
         command="chain-delete",
-        payload={
-            "task_short_uuid": task.task_short_uuid,
-            "chain_id": result.get("chain_id"),
-            "path": str(result["note_path"]),
-            "trash_path": str(result["trash_path"]),
-        },
+        data=NoteDeleteCommandResult(
+            path=result.note_path,
+            trash_path=result.trash_path,
+            identity={
+                "task_short_uuid": task.task_short_uuid,
+                "chain_id": result.identity.get("chain_id"),
+            },
+        ),
     )
 
 
@@ -2207,11 +2213,11 @@ def _run_add(ctx, task_ref: str, text_parts: list[str], event_type: str) -> Comm
     record_event_add(ctx.config, task, event_type=normalized_type, annotation=annotation)
     return CommandResult(
         command="add",
-        payload={
-            "task_short_uuid": task.task_short_uuid,
-            "annotation": annotation,
-            "event_type": normalized_type,
-        },
+        data=EventAddResult(
+            task_short_uuid=task.task_short_uuid,
+            annotation=annotation,
+            event_type=normalized_type,
+        ),
     )
 
 
@@ -2229,11 +2235,11 @@ def _run_note_append(ctx, task_ref: str, text: str) -> CommandResult:
     result = append_task_note_storage(ctx.config, task, text)
     return CommandResult(
         command="note-append",
-        payload={
-            "path": str(result.note_path),
-            "opened": result.existed,
-            "task_short_uuid": task.task_short_uuid,
-        },
+        data=NoteAppendCommandResult(
+            path=result.note_path,
+            opened=result.existed,
+            identity={"task_short_uuid": task.task_short_uuid},
+        ),
     )
 
 
@@ -2242,11 +2248,11 @@ def _run_chain_append(ctx, task_ref: str, text: str) -> CommandResult:
     result = append_chain_note_storage(ctx.config, task, text)
     return CommandResult(
         command="chain-append",
-        payload={
-            "path": str(result.note_path),
-            "opened": result.existed,
-            "task_short_uuid": task.task_short_uuid,
-        },
+        data=NoteAppendCommandResult(
+            path=result.note_path,
+            opened=result.existed,
+            identity={"task_short_uuid": task.task_short_uuid},
+        ),
     )
 
 
@@ -2254,11 +2260,11 @@ def _run_project_append(ctx, project_name: str, text: str) -> CommandResult:
     result = append_project_note_storage(ctx.config, project_name, text)
     return CommandResult(
         command="project-append",
-        payload={
-            "path": str(result.note_path),
-            "opened": result.existed,
-            "project": project_name,
-        },
+        data=NoteAppendCommandResult(
+            path=result.note_path,
+            opened=result.existed,
+            identity={"project": project_name},
+        ),
     )
 
 
@@ -2266,11 +2272,11 @@ def _run_project_delete(ctx, project_name: str) -> CommandResult:
     result = delete_project_note_storage(ctx.config, project_name)
     return CommandResult(
         command="project-delete",
-        payload={
-            "project": project_name,
-            "path": str(result["note_path"]),
-            "trash_path": str(result["trash_path"]),
-        },
+        data=NoteDeleteCommandResult(
+            path=result.note_path,
+            trash_path=result.trash_path,
+            identity={"project": project_name},
+        ),
     )
 
 
