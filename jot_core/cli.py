@@ -1566,7 +1566,7 @@ def _run_trash_list(ctx) -> CommandResult:
 
 
 def _run_trash_restore(ctx, trash_id: int) -> CommandResult:
-    return CommandResult(command="trash-restore", payload=restore_trash_item(ctx.config, trash_id))
+    return CommandResult(command="trash-restore", data=restore_trash_item(ctx.config, trash_id))
 
 
 def _run_auto_note(ctx, task_ref: str) -> CommandResult:
