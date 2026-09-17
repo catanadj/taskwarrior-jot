@@ -63,6 +63,7 @@ from jot_core.models import (
     PathsResult,
     RebuildIndexResult,
     StatsResult,
+    TimelogGroup,
     ResourceOperationResult,
     ResourceCommandResult,
     ResourceOpenResult,
@@ -483,6 +484,15 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(notes["kinds"], ["task-note"])
         self.assertEqual(resources["task_short_uuid"], "12345678")
         self.assertEqual(resources["path"], "/notes/book.md")
+
+    def test_timelog_groups_are_structural_models_with_mapping_compatibility(self) -> None:
+        group = TimelogGroup.from_mapping(
+            {"name": "reading", "minutes": "45", "entry_count": "2", "duration": "45m"}
+        )
+
+        self.assertEqual(group.name, "reading")
+        self.assertEqual(group["minutes"], 45.0)
+        self.assertEqual(group.to_payload()["entry_count"], 2)
 
     def test_progress_command_models_preserve_single_and_multi_shapes(self) -> None:
         mutation = ProgressMutationCommandResult(

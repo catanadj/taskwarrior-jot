@@ -446,6 +446,35 @@ class TimelogStopAllResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class TimelogGroup(PayloadModel):
+    name: str
+    minutes: float
+    entry_count: int
+    duration: str
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "TimelogGroup":
+        try:
+            minutes = float(item.get("minutes") or 0)
+        except (TypeError, ValueError):
+            minutes = 0.0
+        return cls(
+            name=str(item.get("name") or ""),
+            minutes=minutes,
+            entry_count=int(item.get("entry_count") or 0),
+            duration=str(item.get("duration") or "0m"),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "minutes": self.minutes,
+            "entry_count": self.entry_count,
+            "duration": self.duration,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class TimelogReport(PayloadModel):
     period: str
     details: bool
@@ -455,16 +484,20 @@ class TimelogReport(PayloadModel):
     total_minutes: float
     total: str
     entry_count: int
-    by_project: tuple[Mapping[str, Any], ...]
-    by_chain: tuple[Mapping[str, Any], ...]
-    by_task: tuple[Mapping[str, Any], ...]
-    by_day: tuple[Mapping[str, Any], ...]
+    by_project: tuple[TimelogGroup, ...]
+    by_chain: tuple[TimelogGroup, ...]
+    by_task: tuple[TimelogGroup, ...]
+    by_day: tuple[TimelogGroup, ...]
     entries: tuple[Mapping[str, Any], ...]
 
     @classmethod
     def from_mapping(cls, item: Mapping[str, Any]) -> "TimelogReport":
-        def rows(name: str) -> tuple[Mapping[str, Any], ...]:
+        def groups(name: str) -> tuple[TimelogGroup, ...]:
             value = item.get(name)
+            return tuple(TimelogGroup.from_mapping(row) for row in value if isinstance(row, Mapping)) if isinstance(value, list) else ()
+
+        def entries() -> tuple[Mapping[str, Any], ...]:
+            value = item.get("entries")
             return tuple(row for row in value if isinstance(row, Mapping)) if isinstance(value, list) else ()
 
         try:
@@ -480,11 +513,11 @@ class TimelogReport(PayloadModel):
             total_minutes=total_minutes,
             total=str(item.get("total") or "0m"),
             entry_count=int(item.get("entry_count") or 0),
-            by_project=rows("by_project"),
-            by_chain=rows("by_chain"),
-            by_task=rows("by_task"),
-            by_day=rows("by_day"),
-            entries=rows("entries"),
+            by_project=groups("by_project"),
+            by_chain=groups("by_chain"),
+            by_task=groups("by_task"),
+            by_day=groups("by_day"),
+            entries=entries(),
         )
 
     def to_payload(self) -> dict[str, Any]:
@@ -497,10 +530,10 @@ class TimelogReport(PayloadModel):
             "total_minutes": self.total_minutes,
             "total": self.total,
             "entry_count": self.entry_count,
-            "by_project": [dict(item) for item in self.by_project],
-            "by_chain": [dict(item) for item in self.by_chain],
-            "by_task": [dict(item) for item in self.by_task],
-            "by_day": [dict(item) for item in self.by_day],
+            "by_project": [item.to_payload() for item in self.by_project],
+            "by_chain": [item.to_payload() for item in self.by_chain],
+            "by_task": [item.to_payload() for item in self.by_task],
+            "by_day": [item.to_payload() for item in self.by_day],
             "entries": [dict(item) for item in self.entries],
         }
 
