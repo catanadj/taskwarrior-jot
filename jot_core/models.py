@@ -1134,6 +1134,42 @@ class ResourceOpenResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class NoteHeadingsResult(PayloadModel):
+    note_kind: str
+    path: Path
+    headings: tuple[Mapping[str, Any], ...]
+    identity: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "note_kind": self.note_kind,
+            **dict(self.identity),
+            "path": str(self.path),
+            "headings": [dict(item) for item in self.headings],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class NoteSectionResult(PayloadModel):
+    note_kind: str
+    path: Path
+    heading: str
+    heading_match: str
+    content: str
+    identity: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "note_kind": self.note_kind,
+            **dict(self.identity),
+            "path": str(self.path),
+            "heading": self.heading,
+            "heading_match": self.heading_match,
+            "content": self.content,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectListItem(PayloadModel):
     project: str
     path: str

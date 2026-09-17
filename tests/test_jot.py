@@ -65,6 +65,8 @@ from jot_core.models import (
     ResourceOperationResult,
     ResourceCommandResult,
     ResourceOpenResult,
+    NoteHeadingsResult,
+    NoteSectionResult,
     SearchResults,
     SearchHit,
     SearchCommandResult,
@@ -360,6 +362,24 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(result["path"], "task.md")
         self.assertTrue(result["opened"])
         self.assertEqual(opened["opener"][0], "true")
+
+    def test_note_read_results_preserve_heading_contracts(self) -> None:
+        headings = NoteHeadingsResult(
+            note_kind="task",
+            path=Path("task.md"),
+            headings=({"level": 2, "title": "Next", "line": 3},),
+            identity={"task_short_uuid": "12345678"},
+        )
+        section = NoteSectionResult(
+            note_kind="task",
+            path=Path("task.md"),
+            heading="Next",
+            heading_match="fuzzy",
+            content="call vendor",
+            identity={"task_short_uuid": "12345678"},
+        )
+        self.assertEqual(headings["headings"][0]["title"], "Next")
+        self.assertEqual(section["heading_match"], "fuzzy")
 
     def test_note_delete_result_exposes_paths_and_identity(self) -> None:
         result = NoteDeleteResult.from_mapping(

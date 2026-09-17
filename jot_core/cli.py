@@ -27,7 +27,9 @@ from .models import (
     EventAddResult,
     NoteAppendCommandResult,
     NoteDeleteCommandResult,
+    NoteHeadingsResult,
     NoteOpenResult,
+    NoteSectionResult,
     NoteSummary,
     NotesCommandResult,
     ProgressMutationCommandResult,
@@ -1883,12 +1885,12 @@ def _run_headings(ctx, args) -> CommandResult:
     result = list_note_headings(note_path)
     return CommandResult(
         command="headings",
-        payload={
-            "note_kind": args.note_kind,
-            **identity,
-            "path": str(result.note_path),
-            "headings": result.headings,
-        },
+        data=NoteHeadingsResult(
+            note_kind=args.note_kind,
+            path=result.note_path,
+            headings=tuple(result.headings),
+            identity=identity,
+        ),
     )
 
 
@@ -1897,14 +1899,14 @@ def _run_section(ctx, args) -> CommandResult:
     result = read_note_section(note_path, args.heading, exact=bool(args.heading_exact))
     return CommandResult(
         command="section",
-        payload={
-            "note_kind": args.note_kind,
-            **identity,
-            "path": str(result.note_path),
-            "heading": result.heading,
-            "heading_match": result.match,
-            "content": result.content,
-        },
+        data=NoteSectionResult(
+            note_kind=args.note_kind,
+            path=result.note_path,
+            heading=result.heading,
+            heading_match=result.match,
+            content=result.content,
+            identity=identity,
+        ),
     )
 
 
