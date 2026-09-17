@@ -16,7 +16,7 @@ from .index import (
     remove_project_note_index,
     remove_task_note_index,
 )
-from .models import AppConfig, AppendResult, NotePaths, ResolvedTask
+from .models import AppConfig, AppendResult, NotePaths, ProgressMutationResult, ResolvedTask
 from .nautical import chain_id_for_task
 from .notes import (
     attach_note_resource,
@@ -108,7 +108,7 @@ def append_task_note_idempotent(
     operation_id: str,
     entry_id: str,
     request_digest: str | None = None,
-) -> dict[str, object]:
+) -> ProgressMutationResult:
     """Append one agent entry, making retries return the original result."""
     operation_id = str(operation_id or "").strip()
     entry_id = str(entry_id or "").strip()
@@ -263,7 +263,7 @@ def add_to_task_heading_storage(
     text: str,
     create_heading: bool,
     exact: bool,
-) -> dict[str, object]:
+) -> ProgressMutationResult:
     result = add_to_task_heading(
         config,
         task,
@@ -563,14 +563,14 @@ def mutate_task_progress_storage(
         entry=result.entry,
         path=str(result.note_path),
     )
-    return {
-        "note_path": result.note_path,
-        "opened": note.existed,
-        "progress": result.progress,
-        "track": result.track,
-        "tracks": [item.to_payload() for item in result.tracks],
-        "entry": result.entry,
-    }
+    return ProgressMutationResult(
+        note_path=result.note_path,
+        opened=note.existed,
+        progress=result.progress,
+        track=result.track,
+        tracks=result.tracks,
+        entry=result.entry,
+    )
 
 
 def mutate_project_progress_storage(
@@ -612,14 +612,14 @@ def mutate_project_progress_storage(
         entry=result.entry,
         path=str(result.note_path),
     )
-    return {
-        "note_path": result.note_path,
-        "opened": note.existed,
-        "progress": result.progress,
-        "track": result.track,
-        "tracks": [item.to_payload() for item in result.tracks],
-        "entry": result.entry,
-    }
+    return ProgressMutationResult(
+        note_path=result.note_path,
+        opened=note.existed,
+        progress=result.progress,
+        track=result.track,
+        tracks=result.tracks,
+        entry=result.entry,
+    )
 
 
 def _mutate_progress(

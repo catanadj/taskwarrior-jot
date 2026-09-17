@@ -474,6 +474,43 @@ class ProgressTrack(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class ProgressMutationResult(PayloadModel):
+    note_path: Path
+    opened: bool
+    progress: ProgressTrack | None
+    track: str
+    tracks: tuple[ProgressTrack, ...]
+    entry: str | None
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "ProgressMutationResult":
+        raw_progress = item.get("progress")
+        raw_tracks = item.get("tracks")
+        return cls(
+            note_path=Path(str(item.get("note_path") or "")),
+            opened=bool(item.get("opened")),
+            progress=ProgressTrack.from_mapping(raw_progress) if isinstance(raw_progress, Mapping) else None,
+            track=str(item.get("track") or "default").strip() or "default",
+            tracks=tuple(
+                ProgressTrack.from_mapping(row)
+                for row in raw_tracks
+                if isinstance(row, Mapping)
+            ) if isinstance(raw_tracks, list) else (),
+            entry=str(item.get("entry") or "") or None,
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "note_path": str(self.note_path),
+            "opened": self.opened,
+            "progress": self.progress.to_payload() if self.progress is not None else None,
+            "track": self.track,
+            "tracks": [item.to_payload() for item in self.tracks],
+            "entry": self.entry,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ProgressHistoryEntry(PayloadModel):
     timestamp: str
     track: str

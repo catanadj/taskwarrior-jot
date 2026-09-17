@@ -43,6 +43,7 @@ from jot_core.models import (
     NoteSummary,
     ProgressTrack,
     ProgressHistoryEntry,
+    ProgressMutationResult,
     ProgressTrend,
     ProjectTreeRow,
     ResolvedTask,
@@ -166,6 +167,31 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(track.target, "100")
         self.assertEqual(track.percentage, "20")
         self.assertEqual(track["unit"], "pages")
+
+    def test_progress_mutation_exposes_typed_result_and_serializes_path(self) -> None:
+        result = ProgressMutationResult.from_mapping(
+            {
+                "note_path": "/notes/book.md",
+                "opened": True,
+                "progress": {
+                    "track": "pages",
+                    "current": "20",
+                    "target": "100",
+                    "unit": "pages",
+                    "status": "active",
+                    "updated": "2026-09-16T12:00:00Z",
+                    "percentage": "20",
+                },
+                "track": "pages",
+                "tracks": [],
+                "entry": "- progress",
+            }
+        )
+
+        self.assertEqual(result.note_path, Path("/notes/book.md"))
+        self.assertTrue(result.opened)
+        self.assertEqual(result.progress.current, "20")
+        self.assertEqual(result["note_path"], "/notes/book.md")
 
     def test_progress_history_and_trend_models_preserve_dynamic_fields(self) -> None:
         history = ProgressHistoryEntry.from_mapping(

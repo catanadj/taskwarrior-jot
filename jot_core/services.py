@@ -12,6 +12,7 @@ from .models import (
     AppConfig,
     NoteSummary,
     ProjectTreeRow,
+    ProgressMutationResult,
     TaskSummary,
     TimelogEntryMutation,
     TimelogReport,
@@ -334,7 +335,7 @@ class JotService:
         *,
         max_body_bytes: int = 64 * 1024,
         max_events: int = 100,
-    ) -> dict[str, Any]:
+    ) -> ProgressMutationResult:
         """Build a bounded, read-only context snapshot for machine consumers."""
         task = self.taskwarrior.resolve_task(task_ref)
         warnings: list[str] = []
@@ -486,7 +487,7 @@ class JotService:
         text: str,
         create_heading: bool = False,
         exact: bool = False,
-    ) -> dict[str, Any]:
+    ) -> ProgressMutationResult:
         task = self.taskwarrior.resolve_task(task_ref)
         result = add_to_task_heading_storage(
             self.config,
