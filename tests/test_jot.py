@@ -47,6 +47,7 @@ from jot_core.models import (
     TaskRef,
     TaskSummary,
     TimelogSession,
+    TimelogReport,
     TimelogWriteResult,
     normalize_task,
 )
@@ -1188,6 +1189,7 @@ class ServiceProgressRowTests(unittest.TestCase):
 
         service = JotService(config=self.config, taskwarrior=FakeTaskwarrior())  # type: ignore[arg-type]
         report = service.timelog_report("all")
+        self.assertIsInstance(report, TimelogReport)
         self.assertEqual(report["total_minutes"], 60)
         self.assertEqual(report["by_project"][0]["name"], "reading")
         self.assertEqual(report["entries"][0]["key"], "a1b2c3d4e5f60708")

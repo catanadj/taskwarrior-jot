@@ -8,7 +8,7 @@ from typing import Any
 
 from .editor import open_in_editor
 from .frontmatter import read_document
-from .models import AppConfig, NoteSummary, ProjectTreeRow, TaskSummary, TimelogSession
+from .models import AppConfig, NoteSummary, ProjectTreeRow, TaskSummary, TimelogReport, TimelogSession
 from .nautical import nautical_summary
 from .notes import (
     ensure_chain_note,
@@ -182,7 +182,7 @@ class JotService:
     def search(self, query: str) -> dict[str, list[dict[str, Any]]]:
         return search_all(self.config, query)
 
-    def timelog_report(self, period: str = "week", *, details: bool = True) -> dict[str, Any]:
+    def timelog_report(self, period: str = "week", *, details: bool = True) -> TimelogReport:
         return report_time_logs(self.config, period=period, details=details)
 
     def timelog_start(self, task_ref: str, *, started_at: str = "") -> dict[str, Any]:

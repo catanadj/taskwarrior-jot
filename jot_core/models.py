@@ -177,6 +177,66 @@ class TimelogWriteResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class TimelogReport(PayloadModel):
+    period: str
+    details: bool
+    window_start: str | None
+    window_end: str | None
+    filters: Mapping[str, Any]
+    total_minutes: float
+    total: str
+    entry_count: int
+    by_project: tuple[Mapping[str, Any], ...]
+    by_chain: tuple[Mapping[str, Any], ...]
+    by_task: tuple[Mapping[str, Any], ...]
+    by_day: tuple[Mapping[str, Any], ...]
+    entries: tuple[Mapping[str, Any], ...]
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "TimelogReport":
+        def rows(name: str) -> tuple[Mapping[str, Any], ...]:
+            value = item.get(name)
+            return tuple(row for row in value if isinstance(row, Mapping)) if isinstance(value, list) else ()
+
+        try:
+            total_minutes = float(item.get("total_minutes") or 0)
+        except (TypeError, ValueError):
+            total_minutes = 0.0
+        return cls(
+            period=str(item.get("period") or "all"),
+            details=bool(item.get("details")),
+            window_start=str(item.get("window_start") or "").strip() or None,
+            window_end=str(item.get("window_end") or "").strip() or None,
+            filters=dict(item.get("filters") or {}) if isinstance(item.get("filters"), Mapping) else {},
+            total_minutes=total_minutes,
+            total=str(item.get("total") or "0m"),
+            entry_count=int(item.get("entry_count") or 0),
+            by_project=rows("by_project"),
+            by_chain=rows("by_chain"),
+            by_task=rows("by_task"),
+            by_day=rows("by_day"),
+            entries=rows("entries"),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "period": self.period,
+            "details": self.details,
+            "window_start": self.window_start,
+            "window_end": self.window_end,
+            "filters": dict(self.filters),
+            "total_minutes": self.total_minutes,
+            "total": self.total,
+            "entry_count": self.entry_count,
+            "by_project": [dict(item) for item in self.by_project],
+            "by_chain": [dict(item) for item in self.by_chain],
+            "by_task": [dict(item) for item in self.by_task],
+            "by_day": [dict(item) for item in self.by_day],
+            "entries": [dict(item) for item in self.entries],
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ProgressTrack(PayloadModel):
     track: str
     current: str

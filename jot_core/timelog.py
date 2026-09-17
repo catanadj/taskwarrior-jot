@@ -9,7 +9,7 @@ from typing import Any
 
 from .frontmatter import atomic_write_text, exclusive_file_lock, read_document, write_document
 from .index import update_chain_note_index, update_task_note_index
-from .models import ResolvedTask, TaskRef, TimelogSession, TimelogWriteResult
+from .models import ResolvedTask, TaskRef, TimelogReport, TimelogSession, TimelogWriteResult
 from .nautical import chain_id_for_task
 from .notes import append_under_heading_once, ensure_chain_note, ensure_task_note
 from .ops import append_op, iso_now, read_ops
@@ -274,7 +274,7 @@ def write_time_log(
     started: datetime,
     stopped: datetime,
     scope: str = "auto",
-) -> dict[str, Any]:
+) -> TimelogWriteResult:
     if stopped < started:
         raise RuntimeError("stop time is before start time")
     note_kind = _resolve_scope(
@@ -589,7 +589,7 @@ def report_time_logs(
     since: str = "",
     until: str = "",
     now: datetime | None = None,
-) -> dict[str, Any]:
+) -> TimelogReport:
     window_start, window_end = _report_window(period, since=since, until=until, now=now)
     records = _read_time_log_records(config)
     if project:
@@ -618,7 +618,7 @@ def report_time_logs(
 
     total_minutes = round(sum(float(item.get("minutes") or 0) for item in records), 2)
     report_period = "custom" if since or until else period
-    return {
+    return TimelogReport.from_mapping({
         "period": report_period,
         "details": bool(details),
         "window_start": _iso_z(window_start) if window_start else None,
@@ -638,7 +638,7 @@ def report_time_logs(
         "by_task": _time_log_groups(records, "task_short_uuid", fallback="(no task)"),
         "by_day": _time_log_day_groups(day_segments),
         "entries": records if details else [],
-    }
+    })
 
 
 def _resolved_task_from_json(task_json: dict[str, Any]) -> ResolvedTask:
