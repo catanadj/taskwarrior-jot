@@ -19,9 +19,9 @@ from .index import (
 from .models import (
     AgentAppendResult,
     AppConfig,
-    AppendResult,
     HeadingMutationResult,
     NoteDeleteResult,
+    NoteAppendStorageResult,
     NotePaths,
     ProgressMutationResult,
     ResolvedTask,
@@ -97,7 +97,7 @@ def finalize_project_note_edit(config: AppConfig, project_name: str, note: NoteP
     )
 
 
-def append_task_note_storage(config: AppConfig, task: ResolvedTask, text: str) -> AppendResult:
+def append_task_note_storage(config: AppConfig, task: ResolvedTask, text: str) -> NoteAppendStorageResult:
     result = append_to_task_note(config, task, text)
     update_task_note_index(config, task, result.note_path)
     append_op(
@@ -182,7 +182,7 @@ def _note_digest(path: Path) -> str:
     return "sha256:" + hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
-def append_chain_note_storage(config: AppConfig, task: ResolvedTask, text: str) -> AppendResult:
+def append_chain_note_storage(config: AppConfig, task: ResolvedTask, text: str) -> NoteAppendStorageResult:
     result = append_to_chain_note(config, task, text)
     update_chain_note_index(config, task, result.note_path)
     append_op(
@@ -196,7 +196,7 @@ def append_chain_note_storage(config: AppConfig, task: ResolvedTask, text: str) 
     return result
 
 
-def append_project_note_storage(config: AppConfig, project_name: str, text: str) -> AppendResult:
+def append_project_note_storage(config: AppConfig, project_name: str, text: str) -> NoteAppendStorageResult:
     result = append_to_project_note(config, project_name, text)
     update_project_note_index(config, project_name, result.note_path)
     append_op(

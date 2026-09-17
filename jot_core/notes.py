@@ -10,7 +10,7 @@ import shutil
 import re
 
 from .frontmatter import atomic_write_text, exclusive_file_lock, read_document, update_metadata, write_document
-from .models import AppConfig, AppendResult, DeleteResult, NotePaths, ResolvedTask
+from .models import AppConfig, NoteAppendStorageResult, NoteDeleteStorageResult, NotePaths, ResolvedTask
 from .nautical import chain_id_for_task
 from .ops import iso_now
 from .resources import format_resource_line, parse_resource_bullets
@@ -180,31 +180,31 @@ def _touch_updated_unlocked(path: Path) -> None:
     update_metadata(path, {"updated": iso_now()})
 
 
-def append_to_task_note(config: AppConfig, task: ResolvedTask, text: str) -> AppendResult:
+def append_to_task_note(config: AppConfig, task: ResolvedTask, text: str) -> NoteAppendStorageResult:
     note = ensure_task_note(config, task)
     with exclusive_file_lock(note.note_path):
         _append_text(note.note_path, text)
         _touch_updated_unlocked(note.note_path)
-    return AppendResult(note_path=note.note_path, existed=note.existed, appended_text=text)
+    return NoteAppendStorageResult(note_path=note.note_path, existed=note.existed, appended_text=text)
 
 
-def append_to_chain_note(config: AppConfig, task: ResolvedTask, text: str) -> AppendResult:
+def append_to_chain_note(config: AppConfig, task: ResolvedTask, text: str) -> NoteAppendStorageResult:
     note = ensure_chain_note(config, task)
     with exclusive_file_lock(note.note_path):
         _append_text(note.note_path, text)
         _touch_updated_unlocked(note.note_path)
-    return AppendResult(note_path=note.note_path, existed=note.existed, appended_text=text)
+    return NoteAppendStorageResult(note_path=note.note_path, existed=note.existed, appended_text=text)
 
 
-def append_to_project_note(config: AppConfig, project_name: str, text: str) -> AppendResult:
+def append_to_project_note(config: AppConfig, project_name: str, text: str) -> NoteAppendStorageResult:
     note = ensure_project_note(config, project_name)
     with exclusive_file_lock(note.note_path):
         _append_text(note.note_path, text)
         _touch_updated_unlocked(note.note_path)
-    return AppendResult(note_path=note.note_path, existed=note.existed, appended_text=text)
+    return NoteAppendStorageResult(note_path=note.note_path, existed=note.existed, appended_text=text)
 
 
-def delete_task_note(config: AppConfig, task: ResolvedTask) -> DeleteResult:
+def delete_task_note(config: AppConfig, task: ResolvedTask) -> NoteDeleteStorageResult:
     note_path = find_task_note(config, task)
     if note_path is None:
         raise RuntimeError(f"task note does not exist for {task.task_short_uuid}")
@@ -214,10 +214,10 @@ def delete_task_note(config: AppConfig, task: ResolvedTask) -> DeleteResult:
             raise RuntimeError(f"task note disappeared during delete: {note_path}")
         _move_to_trash(note_path, trash_path)
         _write_trash_manifest(config, note_path, trash_path, kind="task-note")
-    return DeleteResult(note_path=note_path, trash_path=trash_path, existed=True)
+    return NoteDeleteStorageResult(note_path=note_path, trash_path=trash_path, existed=True)
 
 
-def delete_chain_note(config: AppConfig, task: ResolvedTask) -> DeleteResult:
+def delete_chain_note(config: AppConfig, task: ResolvedTask) -> NoteDeleteStorageResult:
     note_path = find_chain_note(config, task)
     if note_path is None:
         raise RuntimeError(f"chain note does not exist for {task.task_short_uuid}")
@@ -227,10 +227,10 @@ def delete_chain_note(config: AppConfig, task: ResolvedTask) -> DeleteResult:
             raise RuntimeError(f"chain note disappeared during delete: {note_path}")
         _move_to_trash(note_path, trash_path)
         _write_trash_manifest(config, note_path, trash_path, kind="chain-note")
-    return DeleteResult(note_path=note_path, trash_path=trash_path, existed=True)
+    return NoteDeleteStorageResult(note_path=note_path, trash_path=trash_path, existed=True)
 
 
-def delete_project_note(config: AppConfig, project_name: str) -> DeleteResult:
+def delete_project_note(config: AppConfig, project_name: str) -> NoteDeleteStorageResult:
     note_path = find_project_note(config, project_name)
     if note_path is None:
         raise RuntimeError(f"project note does not exist for {project_name}")
@@ -240,7 +240,7 @@ def delete_project_note(config: AppConfig, project_name: str) -> DeleteResult:
             raise RuntimeError(f"project note disappeared during delete: {note_path}")
         _move_to_trash(note_path, trash_path)
         _write_trash_manifest(config, note_path, trash_path, kind="project-note")
-    return DeleteResult(note_path=note_path, trash_path=trash_path, existed=True)
+    return NoteDeleteStorageResult(note_path=note_path, trash_path=trash_path, existed=True)
 
 
 def preview_trash_path(config: AppConfig, note_path: Path) -> Path:

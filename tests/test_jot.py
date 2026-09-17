@@ -78,7 +78,9 @@ from jot_core.models import (
     NoteWorkspace,
     NoteDeleteResult,
     NoteAppendCommandResult,
+    NoteAppendStorageResult,
     NoteDeleteCommandResult,
+    NoteDeleteStorageResult,
     NoteOpenResult,
     NotesCommandResult,
     ResourceListResult,
@@ -611,6 +613,18 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertFalse(appended["opened"])
         self.assertEqual(deleted["trash_path"], ".jot_trash/task.md")
         self.assertEqual(event["event_type"], "note")
+
+    def test_note_storage_results_are_explicit_and_immutable(self) -> None:
+        appended = NoteAppendStorageResult(
+            note_path=Path("task.md"), existed=True, appended_text="entry"
+        )
+        deleted = NoteDeleteStorageResult(
+            note_path=Path("task.md"), trash_path=Path(".jot_trash/task.md"), existed=True
+        )
+        self.assertEqual(appended.note_path, Path("task.md"))
+        self.assertTrue(deleted.existed)
+        with self.assertRaises(AttributeError):
+            appended.existed = False
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(

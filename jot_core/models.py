@@ -1951,15 +1951,15 @@ class NotePaths:
     existed: bool
 
 
-@dataclass(slots=True)
-class AppendResult:
+@dataclass(frozen=True, slots=True)
+class NoteAppendStorageResult:
     note_path: Path
     existed: bool
     appended_text: str
 
 
-@dataclass(slots=True)
-class DeleteResult:
+@dataclass(frozen=True, slots=True)
+class NoteDeleteStorageResult:
     note_path: Path
     trash_path: Path
     existed: bool
