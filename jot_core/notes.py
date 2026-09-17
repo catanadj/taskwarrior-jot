@@ -256,17 +256,13 @@ def add_to_task_heading(
     create_heading: bool = False,
     exact: bool = False,
 ) -> HeadingInsertResult:
-    note = ensure_task_note(config, task)
-    with exclusive_file_lock(note.note_path):
-        result = _append_under_heading(
-            note.note_path,
-            heading,
-            text,
-            create_heading=create_heading,
-            exact=exact,
-        )
-        _touch_updated_unlocked(note.note_path)
-    return HeadingInsertResult(note_path=note.note_path, existed=note.existed, **result)
+    return _add_to_heading(
+        ensure_task_note(config, task),
+        heading,
+        text,
+        create_heading=create_heading,
+        exact=exact,
+    )
 
 
 def add_to_chain_heading(
@@ -278,17 +274,13 @@ def add_to_chain_heading(
     create_heading: bool = False,
     exact: bool = False,
 ) -> HeadingInsertResult:
-    note = ensure_chain_note(config, task)
-    with exclusive_file_lock(note.note_path):
-        result = _append_under_heading(
-            note.note_path,
-            heading,
-            text,
-            create_heading=create_heading,
-            exact=exact,
-        )
-        _touch_updated_unlocked(note.note_path)
-    return HeadingInsertResult(note_path=note.note_path, existed=note.existed, **result)
+    return _add_to_heading(
+        ensure_chain_note(config, task),
+        heading,
+        text,
+        create_heading=create_heading,
+        exact=exact,
+    )
 
 
 def append_under_heading_once(
@@ -329,7 +321,23 @@ def add_to_project_heading(
     create_heading: bool = False,
     exact: bool = False,
 ) -> HeadingInsertResult:
-    note = ensure_project_note(config, project_name)
+    return _add_to_heading(
+        ensure_project_note(config, project_name),
+        heading,
+        text,
+        create_heading=create_heading,
+        exact=exact,
+    )
+
+
+def _add_to_heading(
+    note: NotePaths,
+    heading: str,
+    text: str,
+    *,
+    create_heading: bool,
+    exact: bool,
+) -> HeadingInsertResult:
     with exclusive_file_lock(note.note_path):
         result = _append_under_heading(
             note.note_path,
