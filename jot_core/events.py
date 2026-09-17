@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import tempfile
+import warnings
 from pathlib import Path
 
 from .editor import open_in_editor
@@ -61,8 +62,12 @@ def _text_from_editor(editor_command: str, task_short_uuid: str, description: st
     finally:
         try:
             path.unlink(missing_ok=True)
-        except Exception:
-            pass
+        except OSError as exc:
+            warnings.warn(
+                f"could not remove temporary event file {path}: {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
 
 def _slugify(text: str, max_len: int = 24) -> str:
