@@ -874,6 +874,64 @@ class ResourceOperationResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class NoteDeleteResult(PayloadModel):
+    note_path: Path
+    trash_path: Path
+    identity: Mapping[str, Any]
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "NoteDeleteResult":
+        identity = {
+            key: value
+            for key, value in item.items()
+            if key not in {"note_path", "trash_path"}
+        }
+        return cls(
+            note_path=Path(str(item.get("note_path") or "")),
+            trash_path=Path(str(item.get("trash_path") or "")),
+            identity=identity,
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "note_path": str(self.note_path),
+            "trash_path": str(self.trash_path),
+            **dict(self.identity),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class HeadingMutationResult(PayloadModel):
+    note_path: Path
+    opened: bool
+    heading: str
+    heading_match: str
+    timestamp: str
+    entry: str
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "HeadingMutationResult":
+        return cls(
+            note_path=Path(str(item.get("note_path") or "")),
+            opened=bool(item.get("opened")),
+            heading=str(item.get("heading") or "").strip(),
+            heading_match=str(item.get("heading_match") or "").strip(),
+            timestamp=str(item.get("timestamp") or "").strip(),
+            entry=str(item.get("entry") or ""),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "note_path": str(self.note_path),
+            "opened": self.opened,
+            "heading": self.heading,
+            "heading_match": self.heading_match,
+            "timestamp": self.timestamp,
+            "entry": self.entry,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class TaskWorkspace(PayloadModel):
     task: Mapping[str, Any]
     nautical: Mapping[str, Any]

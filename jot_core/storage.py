@@ -16,7 +16,16 @@ from .index import (
     remove_project_note_index,
     remove_task_note_index,
 )
-from .models import AppConfig, AppendResult, NotePaths, ProgressMutationResult, ResolvedTask, ResourceOperationResult
+from .models import (
+    AppConfig,
+    AppendResult,
+    HeadingMutationResult,
+    NoteDeleteResult,
+    NotePaths,
+    ProgressMutationResult,
+    ResolvedTask,
+    ResourceOperationResult,
+)
 from .nautical import chain_id_for_task
 from .notes import (
     attach_note_resource,
@@ -108,7 +117,7 @@ def append_task_note_idempotent(
     operation_id: str,
     entry_id: str,
     request_digest: str | None = None,
-) -> ProgressMutationResult:
+) -> dict[str, object]:
     """Append one agent entry, making retries return the original result."""
     operation_id = str(operation_id or "").strip()
     entry_id = str(entry_id or "").strip()
@@ -198,7 +207,7 @@ def append_project_note_storage(config: AppConfig, project_name: str, text: str)
     return result
 
 
-def delete_task_note_storage(config: AppConfig, task: ResolvedTask) -> dict[str, object]:
+def delete_task_note_storage(config: AppConfig, task: ResolvedTask) -> NoteDeleteResult:
     result = delete_task_note(config, task)
     remove_task_note_index(config, task.task_short_uuid)
     append_op(
@@ -209,14 +218,10 @@ def delete_task_note_storage(config: AppConfig, task: ResolvedTask) -> dict[str,
         path=str(result.note_path),
         trash_path=str(result.trash_path),
     )
-    return {
-        "note_path": result.note_path,
-        "trash_path": result.trash_path,
-        "task_short_uuid": task.task_short_uuid,
-    }
+    return NoteDeleteResult(result.note_path, result.trash_path, {"task_short_uuid": task.task_short_uuid})
 
 
-def delete_chain_note_storage(config: AppConfig, task: ResolvedTask) -> dict[str, object]:
+def delete_chain_note_storage(config: AppConfig, task: ResolvedTask) -> NoteDeleteResult:
     chain_id = chain_id_for_task(task.task)
     result = delete_chain_note(config, task)
     if chain_id:
@@ -230,15 +235,14 @@ def delete_chain_note_storage(config: AppConfig, task: ResolvedTask) -> dict[str
         path=str(result.note_path),
         trash_path=str(result.trash_path),
     )
-    return {
-        "note_path": result.note_path,
-        "trash_path": result.trash_path,
-        "task_short_uuid": task.task_short_uuid,
-        "chain_id": chain_id,
-    }
+    return NoteDeleteResult(
+        result.note_path,
+        result.trash_path,
+        {"task_short_uuid": task.task_short_uuid, "chain_id": chain_id},
+    )
 
 
-def delete_project_note_storage(config: AppConfig, project_name: str) -> dict[str, object]:
+def delete_project_note_storage(config: AppConfig, project_name: str) -> NoteDeleteResult:
     result = delete_project_note(config, project_name)
     remove_project_note_index(config, project_name)
     append_op(
@@ -248,11 +252,7 @@ def delete_project_note_storage(config: AppConfig, project_name: str) -> dict[st
         path=str(result.note_path),
         trash_path=str(result.trash_path),
     )
-    return {
-        "note_path": result.note_path,
-        "trash_path": result.trash_path,
-        "project": project_name,
-    }
+    return NoteDeleteResult(result.note_path, result.trash_path, {"project": project_name})
 
 
 def add_to_task_heading_storage(
@@ -263,7 +263,7 @@ def add_to_task_heading_storage(
     text: str,
     create_heading: bool,
     exact: bool,
-) -> ProgressMutationResult:
+) -> HeadingMutationResult:
     result = add_to_task_heading(
         config,
         task,
@@ -283,14 +283,14 @@ def add_to_task_heading_storage(
         entry=result.entry,
         path=str(result.note_path),
     )
-    return {
-        "note_path": result.note_path,
-        "opened": result.existed,
-        "heading": result.heading,
-        "heading_match": result.match,
-        "timestamp": result.timestamp,
-        "entry": result.entry,
-    }
+    return HeadingMutationResult(
+        result.note_path,
+        result.existed,
+        result.heading,
+        result.match,
+        result.timestamp,
+        result.entry,
+    )
 
 
 def add_to_chain_heading_storage(
@@ -301,7 +301,7 @@ def add_to_chain_heading_storage(
     text: str,
     create_heading: bool,
     exact: bool,
-) -> dict[str, object]:
+) -> HeadingMutationResult:
     result = add_to_chain_heading(
         config,
         task,
@@ -322,14 +322,14 @@ def add_to_chain_heading_storage(
         entry=result.entry,
         path=str(result.note_path),
     )
-    return {
-        "note_path": result.note_path,
-        "opened": result.existed,
-        "heading": result.heading,
-        "heading_match": result.match,
-        "timestamp": result.timestamp,
-        "entry": result.entry,
-    }
+    return HeadingMutationResult(
+        result.note_path,
+        result.existed,
+        result.heading,
+        result.match,
+        result.timestamp,
+        result.entry,
+    )
 
 
 def add_to_project_heading_storage(
@@ -340,7 +340,7 @@ def add_to_project_heading_storage(
     text: str,
     create_heading: bool,
     exact: bool,
-) -> dict[str, object]:
+) -> HeadingMutationResult:
     result = add_to_project_heading(
         config,
         project_name,
@@ -359,14 +359,14 @@ def add_to_project_heading_storage(
         entry=result.entry,
         path=str(result.note_path),
     )
-    return {
-        "note_path": result.note_path,
-        "opened": result.existed,
-        "heading": result.heading,
-        "heading_match": result.match,
-        "timestamp": result.timestamp,
-        "entry": result.entry,
-    }
+    return HeadingMutationResult(
+        result.note_path,
+        result.existed,
+        result.heading,
+        result.match,
+        result.timestamp,
+        result.entry,
+    )
 
 
 def attach_task_resource_storage(
@@ -540,7 +540,7 @@ def mutate_task_progress_storage(
     unit: str | None = None,
     status: str | None = None,
     track: str | None = None,
-) -> dict[str, object]:
+) -> ProgressMutationResult:
     if note_kind == "task":
         note = _task_progress_note(config, task, operation)
         chain_id = None
@@ -596,7 +596,7 @@ def mutate_project_progress_storage(
     unit: str | None = None,
     status: str | None = None,
     track: str | None = None,
-) -> dict[str, object]:
+) -> ProgressMutationResult:
     if operation == "set":
         note = ensure_project_note(config, project_name)
     else:

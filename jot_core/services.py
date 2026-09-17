@@ -13,6 +13,7 @@ from .models import (
     AppConfig,
     AgentContext,
     NoteSummary,
+    NoteDeleteResult,
     ProjectTreeRow,
     ProgressMutationResult,
     ProjectWorkspace,
@@ -551,15 +552,15 @@ class JotService:
         )
         return result
 
-    def delete_task_note(self, task_ref: str) -> dict[str, Any]:
+    def delete_task_note(self, task_ref: str) -> NoteDeleteResult:
         task = self.taskwarrior.resolve_task(task_ref)
         return delete_task_note_storage(self.config, task)
 
-    def delete_chain_note(self, task_ref: str) -> dict[str, Any]:
+    def delete_chain_note(self, task_ref: str) -> NoteDeleteResult:
         task = self.taskwarrior.resolve_task(task_ref)
         return delete_chain_note_storage(self.config, task)
 
-    def delete_project_note(self, project_name: str) -> dict[str, Any]:
+    def delete_project_note(self, project_name: str) -> NoteDeleteResult:
         return delete_project_note_storage(self.config, project_name)
 
     def attach_resource(

@@ -56,6 +56,7 @@ from jot_core.models import (
     SearchHit,
     AgentContext,
     NoteWorkspace,
+    NoteDeleteResult,
     ResolvedTask,
     TaskRef,
     TaskSummary,
@@ -313,6 +314,19 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertTrue(result.opened)
         self.assertEqual(result.resource["id"], 1)
         self.assertEqual(result["resources"][0]["target"], "https://example.test")
+
+    def test_note_delete_result_exposes_paths_and_identity(self) -> None:
+        result = NoteDeleteResult.from_mapping(
+            {
+                "note_path": "/notes/book.md",
+                "trash_path": "/trash/book.md",
+                "task_short_uuid": "12345678",
+            }
+        )
+
+        self.assertEqual(result.note_path, Path("/notes/book.md"))
+        self.assertEqual(result.trash_path, Path("/trash/book.md"))
+        self.assertEqual(result["task_short_uuid"], "12345678")
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(
