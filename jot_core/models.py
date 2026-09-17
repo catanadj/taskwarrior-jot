@@ -649,6 +649,38 @@ class SearchResults(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class SearchCommandResult(PayloadModel):
+    query: str
+    kinds: tuple[str, ...]
+    project: str | None
+    chain_id: str | None
+    results: SearchResults
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "query": self.query,
+            "kinds": list(self.kinds),
+            "project": self.project,
+            "chain_id": self.chain_id,
+            **self.results.to_payload(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class RecentReport(PayloadModel):
+    limit: int
+    kinds: tuple[str, ...]
+    items: tuple[ActivityItem, ...]
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "limit": self.limit,
+            "kinds": list(self.kinds),
+            "items": [item.to_payload() for item in self.items],
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ActivityItem(PayloadModel):
     kind: str
     timestamp: str

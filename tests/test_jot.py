@@ -55,6 +55,8 @@ from jot_core.models import (
     ResourceOperationResult,
     SearchResults,
     SearchHit,
+    SearchCommandResult,
+    RecentReport,
     AgentContext,
     NoteWorkspace,
     NoteDeleteResult,
@@ -342,6 +344,21 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(completion["description"], "Finish")
         self.assertEqual(append.status, "applied")
         self.assertEqual(append["revision"], 2)
+
+    def test_cli_report_models_preserve_envelope_shape(self) -> None:
+        search = SearchCommandResult(
+            query="book",
+            kinds=("task-note",),
+            project=None,
+            chain_id=None,
+            results=SearchResults(notes=(), events=()),
+        )
+        recent = RecentReport(limit=5, kinds=("event",), items=())
+
+        self.assertEqual(search["query"], "book")
+        self.assertEqual(search["notes"], [])
+        self.assertEqual(recent["limit"], 5)
+        self.assertEqual(recent["items"], [])
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(

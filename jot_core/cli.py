@@ -21,7 +21,7 @@ from .frontmatter import atomic_write_text, exclusive_file_lock, parse_document,
 from .index import rebuild_index, read_index_status, save_index
 from .integrity import reconcile_integrity, scan_integrity
 from .migrations import migrate_notes
-from .models import CommandResult
+from .models import CommandResult, RecentReport, SearchCommandResult
 from .nautical import chain_id_for_task, nautical_summary
 from .notes import (
     chain_note_path,
@@ -1684,11 +1684,11 @@ def _run_recent(ctx, args) -> CommandResult:
     kinds = normalize_kinds(getattr(args, "kinds", None))
     return CommandResult(
         command="report-recent",
-        payload={
-            "limit": args.limit,
-            "kinds": sorted(kinds),
-            "items": recent_activity(ctx.config, limit=args.limit, kinds=kinds),
-        },
+        data=RecentReport(
+            limit=args.limit,
+            kinds=tuple(sorted(kinds)),
+            items=tuple(recent_activity(ctx.config, limit=args.limit, kinds=kinds)),
+        ),
     )
 
 
@@ -2489,14 +2489,16 @@ def _run_search(
     kinds = normalize_kinds(raw_kinds)
     project = normalize_project(raw_project)
     chain_id = normalize_chain_id(raw_chain_id)
-    payload = {
-        "query": query,
-        "kinds": sorted(kinds),
-        "project": project,
-        "chain_id": chain_id,
-        **search_all(ctx.config, query, kinds=kinds, project=project, chain_id=chain_id),
-    }
-    return CommandResult(command="search", payload=payload)
+    return CommandResult(
+        command="search",
+        data=SearchCommandResult(
+            query=query,
+            kinds=tuple(sorted(kinds)),
+            project=project,
+            chain_id=chain_id,
+            results=search_all(ctx.config, query, kinds=kinds, project=project, chain_id=chain_id),
+        ),
+    )
 
 
 def _text_from_args(parts: list[str]) -> str:
