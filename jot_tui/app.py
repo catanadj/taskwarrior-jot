@@ -1778,7 +1778,12 @@ def build_tui(
         async def _refresh_recent_async(self) -> None:
             table = self.query_one("#recent-table", DataTable)
             table.clear()
-            self.recent_rows = await asyncio.to_thread(self.svc.recent, 80)
+            try:
+                self.recent_rows = await asyncio.to_thread(self.svc.recent, 80)
+            except Exception as exc:
+                self.recent_rows = []
+                self.notify(f"Recent activity refresh failed: {exc}", severity="error")
+                return
             for item in self.recent_rows:
                 ident = (
                     str(item.get("task_short_uuid") or "").strip()
@@ -1822,13 +1827,25 @@ def build_tui(
                 )
 
         async def _refresh_tasks_async(self) -> None:
-            self.task_all_rows = await asyncio.to_thread(self.svc.tasks, 250)
+            try:
+                self.task_all_rows = await asyncio.to_thread(self.svc.tasks, 250)
+            except Exception as exc:
+                self.task_all_rows = []
+                self.task_rows = []
+                self._render_tasks_table()
+                self.notify(f"Tasks refresh failed: {exc}", severity="error")
+                return
             self._render_tasks_table()
 
         async def _refresh_projects_async(self) -> None:
             table = self.query_one("#projects-table", DataTable)
             table.clear()
-            self.project_rows = await asyncio.to_thread(self.svc.project_tree_rows)
+            try:
+                self.project_rows = await asyncio.to_thread(self.svc.project_tree_rows)
+            except Exception as exc:
+                self.project_rows = []
+                self.notify(f"Projects refresh failed: {exc}", severity="error")
+                return
             for item in self.project_rows:
                 table.add_row(
                     str(_read_row_field(item, "label") or _read_row_field(item, "project") or ""),
@@ -2142,7 +2159,13 @@ def build_tui(
             events_table = self.query_one("#search-events-table", DataTable)
             notes_table.clear()
             events_table.clear()
-            data = await asyncio.to_thread(self.svc.search, query)
+            try:
+                data = await asyncio.to_thread(self.svc.search, query)
+            except Exception as exc:
+                self.search_note_rows = []
+                self.search_event_rows = []
+                self.notify(f"Search failed: {exc}", severity="error")
+                return
             self.search_note_rows = list(data.get("notes", []))
             self.search_event_rows = list(data.get("events", []))
             for item in self.search_note_rows:

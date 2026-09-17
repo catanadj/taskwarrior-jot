@@ -25,6 +25,7 @@ class FakeTuiService:
         self.intervals: list[dict[str, Any]] = []
         self.cancelled: list[str] = []
         self.config = SimpleNamespace(root_dir=Path("/tmp"), trash_dir=Path("/tmp/.jot_trash"))
+        self.fail_tasks = False
 
     def recent(self, limit: int = 50) -> list[dict[str, Any]]:
         return [
@@ -37,6 +38,8 @@ class FakeTuiService:
         ]
 
     def tasks(self, limit: int = 200) -> list[dict[str, Any]]:
+        if self.fail_tasks:
+            raise RuntimeError("task service unavailable")
         return [
             {
                 "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
@@ -212,6 +215,15 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertIn("Week: 0m", str(app.query_one("#time-summary", Static).render()))
             self.assertEqual(app.query_one("#time-sessions-table", DataTable).row_count, 0)
+
+    async def test_task_refresh_failure_resets_rows_without_background_exception(self) -> None:
+        service = FakeTuiService()
+        service.fail_tasks = True
+        app = build_tui(service, session_refresh_seconds=None)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            self.assertEqual(app.task_all_rows, [])
 
     async def test_timer_can_be_started_and_stopped_from_time_workspace(self) -> None:
         service = FakeTuiService()
