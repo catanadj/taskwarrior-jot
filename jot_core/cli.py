@@ -21,7 +21,17 @@ from .frontmatter import atomic_write_text, exclusive_file_lock, parse_document,
 from .index import rebuild_index, read_index_status, save_index
 from .integrity import reconcile_integrity, scan_integrity
 from .migrations import migrate_notes
-from .models import CommandResult, NoteSummary, NotesCommandResult, RecentReport, ResourceListResult, SearchCommandResult
+from .models import (
+    CommandResult,
+    NoteSummary,
+    NotesCommandResult,
+    ProgressMutationCommandResult,
+    ProgressShowItem,
+    ProgressShowResult,
+    RecentReport,
+    ResourceListResult,
+    SearchCommandResult,
+)
 from .nautical import chain_id_for_task, nautical_summary
 from .notes import (
     chain_note_path,
@@ -2025,22 +2035,20 @@ def _run_progress(ctx, args) -> CommandResult:
         if len(note_refs) > 1:
             return CommandResult(
                 command="progress",
-                payload={
-                    "operation": operation,
-                    "note_kind": note_kind,
-                    "track": track,
-                    "items": items,
-                },
+                data=ProgressShowResult(
+                    note_kind=note_kind,
+                    track=track,
+                    items=tuple(ProgressShowItem.from_mapping(item) for item in items),
+                ),
             )
         item = items[0]
         return CommandResult(
             command="progress",
-            payload={
-                "operation": operation,
-                "note_kind": note_kind,
-                **item,
-                "entry": None,
-            },
+            data=ProgressShowResult(
+                note_kind=note_kind,
+                track=track,
+                item=ProgressShowItem.from_mapping(item),
+            ),
         )
     if operation == "clear" and not bool(args.yes):
         raise RuntimeError("progress clear requires --yes; history will be retained")
@@ -2089,16 +2097,12 @@ def _run_progress(ctx, args) -> CommandResult:
         identity = {"project": note_ref}
     return CommandResult(
         command="progress",
-        payload={
-            "operation": operation,
-            "note_kind": note_kind,
-            **identity,
-            "path": str(result["note_path"]),
-            "progress": result["progress"],
-            "track": result["track"],
-            "tracks": result["tracks"],
-            "entry": result["entry"],
-        },
+        data=ProgressMutationCommandResult(
+            operation=operation,
+            note_kind=note_kind,
+            identity=identity,
+            result=result,
+        ),
     )
 
 

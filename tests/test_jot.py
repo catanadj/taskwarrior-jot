@@ -50,6 +50,9 @@ from jot_core.models import (
     ProgressTrack,
     ProgressHistoryEntry,
     ProgressMutationResult,
+    ProgressMutationCommandResult,
+    ProgressShowItem,
+    ProgressShowResult,
     ProgressTrend,
     ProjectTreeRow,
     ResourceOperationResult,
@@ -374,6 +377,29 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(notes["kinds"], ["task-note"])
         self.assertEqual(resources["task_short_uuid"], "12345678")
         self.assertEqual(resources["path"], "/notes/book.md")
+
+    def test_progress_command_models_preserve_single_and_multi_shapes(self) -> None:
+        mutation = ProgressMutationCommandResult(
+            operation="add",
+            note_kind="task",
+            identity={"task_short_uuid": "12345678"},
+            result=ProgressMutationResult(
+                note_path=Path("/notes/book.md"),
+                opened=True,
+                progress=None,
+                track="default",
+                tracks=(),
+                entry="- progress",
+            ),
+        )
+        item = ProgressShowItem.from_mapping(
+            {"reference": "12345678", "path": "/notes/book.md", "tracks": [], "history": [], "trends": []}
+        )
+        shown = ProgressShowResult(note_kind="task", track=None, item=item)
+
+        self.assertEqual(mutation["path"], "/notes/book.md")
+        self.assertEqual(shown["operation"], "show")
+        self.assertEqual(shown["reference"], "12345678")
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(

@@ -511,6 +511,97 @@ class ProgressMutationResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class ProgressMutationCommandResult(PayloadModel):
+    operation: str
+    note_kind: str
+    identity: Mapping[str, Any]
+    result: ProgressMutationResult
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = {
+            "operation": self.operation,
+            "note_kind": self.note_kind,
+            **dict(self.identity),
+        }
+        mutation = self.result.to_payload()
+        payload.update(
+            {
+                "path": mutation["note_path"],
+                "progress": mutation["progress"],
+                "track": mutation["track"],
+                "tracks": mutation["tracks"],
+                "entry": mutation["entry"],
+            }
+        )
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressShowItem(PayloadModel):
+    reference: str
+    identity: Mapping[str, Any]
+    path: str
+    progress: ProgressTrack | None
+    track: str | None
+    tracks: tuple[ProgressTrack, ...]
+    history: tuple[ProgressHistoryEntry, ...]
+    trends: tuple[ProgressTrend, ...]
+    entry: str | None = None
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "ProgressShowItem":
+        excluded = {"reference", "path", "progress", "track", "tracks", "history", "trends", "entry"}
+        raw_tracks = item.get("tracks")
+        raw_history = item.get("history")
+        raw_trends = item.get("trends")
+        raw_progress = item.get("progress")
+        return cls(
+            reference=str(item.get("reference") or "").strip(),
+            identity={key: value for key, value in item.items() if key not in excluded},
+            path=str(item.get("path") or ""),
+            progress=ProgressTrack.from_mapping(raw_progress) if isinstance(raw_progress, Mapping) else None,
+            track=str(item.get("track") or "").strip() or None,
+            tracks=tuple(ProgressTrack.from_mapping(row) for row in raw_tracks if isinstance(row, Mapping))
+            if isinstance(raw_tracks, list) else (),
+            history=tuple(ProgressHistoryEntry.from_mapping(row) for row in raw_history if isinstance(row, Mapping))
+            if isinstance(raw_history, list) else (),
+            trends=tuple(ProgressTrend.from_mapping(row) for row in raw_trends if isinstance(row, Mapping))
+            if isinstance(raw_trends, list) else (),
+            entry=str(item.get("entry") or "") or None,
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            **dict(self.identity),
+            "reference": self.reference,
+            "path": self.path,
+            "progress": self.progress.to_payload() if self.progress is not None else None,
+            "track": self.track,
+            "tracks": [item.to_payload() for item in self.tracks],
+            "history": [item.to_payload() for item in self.history],
+            "trends": [item.to_payload() for item in self.trends],
+            "entry": self.entry,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressShowResult(PayloadModel):
+    note_kind: str
+    track: str | None
+    item: ProgressShowItem | None = None
+    items: tuple[ProgressShowItem, ...] = ()
+
+    def to_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"operation": "show", "note_kind": self.note_kind, "track": self.track}
+        if self.items:
+            payload["items"] = [item.to_payload() for item in self.items]
+        elif self.item is not None:
+            payload.update(self.item.to_payload())
+            payload["entry"] = None
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
 class NoteWorkspace(PayloadModel):
     path: str
     body: str
