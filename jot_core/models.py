@@ -772,6 +772,26 @@ class RecentReport(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectRollup(PayloadModel):
+    project: str
+    note: Mapping[str, Any]
+    tasks: tuple[Mapping[str, Any], ...]
+    recent: tuple[ActivityItem, ...]
+    chains: tuple[Mapping[str, Any], ...]
+    timelog: TimelogReport
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "project": self.project,
+            "note": dict(self.note),
+            "tasks": [dict(item) for item in self.tasks],
+            "recent": [item.to_payload() for item in self.recent],
+            "chains": [dict(item) for item in self.chains],
+            "timelog": self.timelog.to_payload(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ActivityItem(PayloadModel):
     kind: str
     timestamp: str

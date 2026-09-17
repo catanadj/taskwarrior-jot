@@ -1822,7 +1822,7 @@ def _run_project_report(ctx, project_name: str, limit: int, timelog_period: str)
     tasks = ctx.taskwarrior.list_tasks(limit=1000, status="pending")
     return CommandResult(
         command="project-report",
-        payload=project_rollup(
+        data=project_rollup(
             ctx.config,
             tasks,
             project_name,

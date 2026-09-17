@@ -55,6 +55,7 @@ from jot_core.models import (
     ProgressShowResult,
     ProgressTrend,
     ProjectTreeRow,
+    ProjectRollup,
     ResourceOperationResult,
     SearchResults,
     SearchHit,
@@ -400,6 +401,33 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(mutation["path"], "/notes/book.md")
         self.assertEqual(shown["operation"], "show")
         self.assertEqual(shown["reference"], "12345678")
+
+    def test_project_rollup_preserves_typed_timelog_and_activity_rows(self) -> None:
+        rollup = ProjectRollup(
+            project="reading",
+            note={"exists": True},
+            tasks=(),
+            recent=(),
+            chains=(),
+            timelog=TimelogReport(
+                period="week",
+                details=False,
+                window_start=None,
+                window_end=None,
+                filters={},
+                total_minutes=0,
+                total="0m",
+                entry_count=0,
+                by_project=(),
+                by_chain=(),
+                by_task=(),
+                by_day=(),
+                entries=(),
+            ),
+        )
+
+        self.assertEqual(rollup.project, "reading")
+        self.assertEqual(rollup["timelog"]["total_minutes"], 0)
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(

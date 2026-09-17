@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .frontmatter import read_document
-from .models import ActivityItem, AppConfig
+from .models import ActivityItem, AppConfig, ProjectRollup
 from .notes import find_project_note, list_note_resources
 from .ops import read_ops
 from .progress import format_progress_tracks_summary, read_note_progress_tracks
@@ -195,7 +195,7 @@ def project_rollup(
     *,
     limit: int = 20,
     timelog_period: str = "week",
-) -> dict[str, Any]:
+) -> ProjectRollup:
     if limit <= 0:
         raise RuntimeError("limit must be greater than zero")
     project = str(project_name or "").strip()
@@ -209,14 +209,14 @@ def project_rollup(
     ]
     recent = _project_recent_activity(config, project, exact_tasks, limit=limit)
     chains = _project_chains(config, exact_tasks)
-    return {
-        "project": project,
-        "note": _project_note_payload(config, project),
-        "tasks": exact_tasks,
-        "recent": recent,
-        "chains": chains,
-        "timelog": report_time_logs(config, period=timelog_period, project=project),
-    }
+    return ProjectRollup(
+        project=project,
+        note=_project_note_payload(config, project),
+        tasks=tuple(exact_tasks),
+        recent=tuple(recent),
+        chains=tuple(chains),
+        timelog=report_time_logs(config, period=timelog_period, project=project),
+    )
 
 
 def _project_note_payload(config: AppConfig, project: str) -> dict[str, Any]:
