@@ -42,6 +42,8 @@ from jot_core.models import (
     CommandResult,
     NoteSummary,
     ProgressTrack,
+    ProgressHistoryEntry,
+    ProgressTrend,
     ProjectTreeRow,
     ResolvedTask,
     TaskRef,
@@ -159,6 +161,31 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(track.target, "100")
         self.assertEqual(track.percentage, "20")
         self.assertEqual(track["unit"], "pages")
+
+    def test_progress_history_and_trend_models_preserve_dynamic_fields(self) -> None:
+        history = ProgressHistoryEntry.from_mapping(
+            {
+                "timestamp": "2026-09-17T10:00:00Z",
+                "track": "pages",
+                "action": "adjust",
+                "summary": "120/350 pages; change +20",
+                "change": "+20",
+            }
+        )
+        trend = ProgressTrend.from_mapping(
+            {
+                "track": "pages",
+                "updates": 3,
+                "delta": "+40",
+                "custom": "kept",
+            }
+        )
+
+        self.assertEqual(history.action, "adjust")
+        self.assertEqual(history.change, "+20")
+        self.assertEqual(history["summary"], "120/350 pages; change +20")
+        self.assertEqual(trend.updates, 3)
+        self.assertEqual(trend["custom"], "kept")
 
 
 def _write_fake_task_script(bin_dir: Path, state_path: Path) -> None:

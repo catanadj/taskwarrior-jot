@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .frontmatter import locked_document, read_document, write_document
-from .models import ProgressTrack
+from .models import ProgressHistoryEntry, ProgressTrack, ProgressTrend
 from .ops import iso_now
 
 
@@ -90,26 +90,26 @@ def read_note_progress_analysis(
     }
 
 
-def read_note_progress_history(note_path: Path, *, track: str | None = None) -> list[dict[str, object]]:
+def read_note_progress_history(note_path: Path, *, track: str | None = None) -> list[ProgressHistoryEntry]:
     _metadata, body = read_document(note_path)
     selected_track = normalize_progress_track(track) if track else None
-    entries: list[dict[str, object]] = []
+    entries: list[ProgressHistoryEntry] = []
     for line in _progress_history_lines(body):
         entry = _parse_progress_history_line(line)
         if entry is None:
             continue
         if selected_track is not None and not _same_track(entry, selected_track):
             continue
-        entries.append(entry)
+        entries.append(ProgressHistoryEntry.from_mapping(entry))
     return entries
 
 
 def build_progress_trends(
-    history: list[dict[str, object]],
+    history: list[ProgressHistoryEntry],
     *,
     tracks: tuple[ProgressTrack, ...] | list[ProgressTrack] = (),
     track: str | None = None,
-) -> list[dict[str, object]]:
+) -> list[ProgressTrend]:
     selected_track = normalize_progress_track(track) if track else None
     ordered_tracks: list[str] = []
     for item in tracks:
@@ -124,7 +124,7 @@ def build_progress_trends(
             continue
         ordered_tracks.append(name)
 
-    trends: list[dict[str, object]] = []
+    trends: list[ProgressTrend] = []
     seen: set[str] = set()
     for name in ordered_tracks:
         key = name.casefold()
@@ -133,7 +133,7 @@ def build_progress_trends(
         seen.add(key)
         trend = _build_progress_trend(name, [item for item in history if _same_track(item, name)], tracks)
         if trend is not None:
-            trends.append(trend)
+            trends.append(ProgressTrend.from_mapping(trend))
     return trends
 
 

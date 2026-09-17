@@ -271,6 +271,74 @@ class ProgressTrack(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class ProgressHistoryEntry(PayloadModel):
+    timestamp: str
+    track: str
+    action: str
+    summary: str
+    raw: Mapping[str, Any] = field(repr=False)
+    current: str | None = None
+    target: str | None = None
+    unit: str | None = None
+    percentage: str | None = None
+    change: str | None = None
+    status: str | None = None
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "ProgressHistoryEntry":
+        return cls(
+            timestamp=str(item.get("timestamp") or "").strip(),
+            track=str(item.get("track") or "default").strip() or "default",
+            action=str(item.get("action") or "unknown").strip() or "unknown",
+            summary=str(item.get("summary") or "").strip(),
+            raw=dict(item),
+            current=str(item.get("current") or "").strip() or None,
+            target=str(item.get("target") or "").strip() or None,
+            unit=str(item.get("unit") or "").strip() or None,
+            percentage=str(item.get("percentage") or "").strip() or None,
+            change=str(item.get("change") or "").strip() or None,
+            status=str(item.get("status") or "").strip() or None,
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return dict(self.raw)
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressTrend(PayloadModel):
+    track: str
+    raw: Mapping[str, Any] = field(repr=False)
+    updates: int = 0
+    entries: int = 0
+    delta: str | None = None
+    direction: str | None = None
+    remaining: str | None = None
+    last_change: str | None = None
+    average_change: str | None = None
+    unit: str | None = None
+    status: str | None = None
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "ProgressTrend":
+        return cls(
+            track=str(item.get("track") or "default").strip() or "default",
+            raw=dict(item),
+            updates=int(item.get("updates") or 0),
+            entries=int(item.get("entries") or 0),
+            delta=str(item.get("delta") or "").strip() or None,
+            direction=str(item.get("direction") or "").strip() or None,
+            remaining=str(item.get("remaining") or "").strip() or None,
+            last_change=str(item.get("last_change") or "").strip() or None,
+            average_change=str(item.get("average_change") or "").strip() or None,
+            unit=str(item.get("unit") or "").strip() or None,
+            status=str(item.get("status") or "").strip() or None,
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return dict(self.raw)
+
+
+@dataclass(frozen=True, slots=True)
 class TaskSummary(PayloadModel):
     uuid: str
     short_uuid: str

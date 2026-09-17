@@ -1070,7 +1070,7 @@ def _emit_progress_analysis(payload: dict[str, Any], *, track: str | None = None
     if isinstance(trends, list):
         filtered = [
             item for item in trends
-            if isinstance(item, dict)
+            if isinstance(item, Mapping)
             and (not selected_track or str(item.get("track") or "default").casefold() == selected_track.casefold())
         ]
         if filtered:
@@ -1080,7 +1080,7 @@ def _emit_progress_analysis(payload: dict[str, Any], *, track: str | None = None
     if isinstance(history, list) and history:
         filtered_history = [
             item for item in history
-            if isinstance(item, dict)
+            if isinstance(item, Mapping)
             and (not selected_track or str(item.get("track") or "default").casefold() == selected_track.casefold())
         ]
         if filtered_history:
