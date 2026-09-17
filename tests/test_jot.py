@@ -59,6 +59,7 @@ from jot_core.models import (
     ProjectTreeRow,
     ProjectRollup,
     ProjectListResult,
+    ProjectShowResult,
     PathsResult,
     RebuildIndexResult,
     StatsResult,
@@ -67,6 +68,7 @@ from jot_core.models import (
     ResourceOpenResult,
     NoteHeadingsResult,
     NoteSectionResult,
+    NoteContentResult,
     SearchResults,
     SearchHit,
     SearchCommandResult,
@@ -380,6 +382,21 @@ class TypedTaskModelTests(unittest.TestCase):
         )
         self.assertEqual(headings["headings"][0]["title"], "Next")
         self.assertEqual(section["heading_match"], "fuzzy")
+
+    def test_summary_and_cat_results_preserve_public_keys(self) -> None:
+        summary = ProjectShowResult(
+            kind="project-summary", project="work", note={"exists": True}
+        )
+        content = NoteContentResult(
+            path=Path("task.md"),
+            metadata={"updated": "now"},
+            body="body",
+            content="---\nbody\n",
+            identity={"task_short_uuid": "12345678"},
+        )
+        self.assertTrue(summary["note"]["exists"])
+        self.assertEqual(content["content"], "---\nbody\n")
+        self.assertEqual(content["task_short_uuid"], "12345678")
 
     def test_note_delete_result_exposes_paths_and_identity(self) -> None:
         result = NoteDeleteResult.from_mapping(

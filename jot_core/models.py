@@ -1170,6 +1170,24 @@ class NoteSectionResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class NoteContentResult(PayloadModel):
+    path: Path
+    metadata: Mapping[str, Any]
+    body: str
+    content: str
+    identity: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            **dict(self.identity),
+            "path": str(self.path),
+            "metadata": dict(self.metadata),
+            "body": self.body,
+            "content": self.content,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectListItem(PayloadModel):
     project: str
     path: str
@@ -1193,6 +1211,16 @@ class ProjectListResult(PayloadModel):
 
     def to_payload(self) -> dict[str, Any]:
         return {"projects": [item.to_payload() for item in self.projects]}
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectShowResult(PayloadModel):
+    kind: str
+    project: str
+    note: Mapping[str, Any]
+
+    def to_payload(self) -> dict[str, Any]:
+        return {"kind": self.kind, "project": self.project, "note": dict(self.note)}
 
 
 @dataclass(frozen=True, slots=True)

@@ -27,6 +27,7 @@ from .models import (
     EventAddResult,
     NoteAppendCommandResult,
     NoteDeleteCommandResult,
+    NoteContentResult,
     NoteHeadingsResult,
     NoteOpenResult,
     NoteSectionResult,
@@ -37,6 +38,7 @@ from .models import (
     ProgressShowResult,
     ProjectListItem,
     ProjectListResult,
+    ProjectShowResult,
     PathsResult,
     RebuildIndexResult,
     RecentReport,
@@ -1782,12 +1784,12 @@ def _run_chain(ctx, task_ref: str) -> CommandResult:
     post_save_action = _offer_post_save_task_action(ctx, task)
     return CommandResult(
         command="chain",
-        payload={
-            "path": str(note.note_path),
-            "opened": note.existed,
-            "task_short_uuid": task.task_short_uuid,
-            "post_save_action": post_save_action,
-        },
+        data=NoteOpenResult(
+            path=note.note_path,
+            opened=note.existed,
+            identity={"task_short_uuid": task.task_short_uuid},
+            post_save_action=post_save_action,
+        ),
     )
 
 
@@ -1811,27 +1813,23 @@ def _run_project_show(ctx, project_name: str) -> CommandResult:
     if note_path is None:
         return CommandResult(
             command="project-show",
-            payload={
-                "kind": "project-summary",
-                "project": project_name,
-                "note": note_summary,
-            },
+            data=ProjectShowResult(kind="project-summary", project=project_name, note=note_summary),
         )
 
     metadata, body = read_document(note_path)
     return CommandResult(
         command="project-show",
-        payload={
-            "kind": "project-summary",
-            "project": project_name,
-            "note": {
+        data=ProjectShowResult(
+            kind="project-summary",
+            project=project_name,
+            note={
                 **note_summary,
                 "created": metadata.get("created"),
                 "updated": metadata.get("updated"),
                 "project_path": metadata.get("project_path") or [],
                 "preview": _body_preview(body),
             },
-        },
+        ),
     )
 
 
@@ -2569,14 +2567,16 @@ def _body_preview(body: str, width: int = 120) -> str:
 
 def _cat_result(command: str, note_path, **extra: str) -> CommandResult:
     metadata, body = read_document(note_path)
-    payload = {
-        **extra,
-        "path": str(note_path),
-        "metadata": dict(metadata),
-        "body": body,
-        "content": note_path.read_text(encoding="utf-8"),
-    }
-    return CommandResult(command=command, payload=payload)
+    return CommandResult(
+        command=command,
+        data=NoteContentResult(
+            path=note_path,
+            metadata=metadata,
+            body=body,
+            content=note_path.read_text(encoding="utf-8"),
+            identity=extra,
+        ),
+    )
 
 
 def _latest_op_timestamp(items: list[dict[str, object]]) -> str | None:
