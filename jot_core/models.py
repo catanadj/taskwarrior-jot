@@ -177,6 +177,72 @@ class TimelogWriteResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class TimelogIngestResult(PayloadModel):
+    written: bool
+    reason: str
+    raw: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "TimelogIngestResult":
+        return cls(
+            written=bool(item.get("written")),
+            reason=str(item.get("reason") or "").strip(),
+            raw=dict(item),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = dict(self.raw)
+        payload.update({"written": self.written, "reason": self.reason})
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class TimewarriorShowResult(PayloadModel):
+    operation: str
+    raw: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "TimewarriorShowResult":
+        return cls(operation=str(item.get("operation") or "show"), raw=dict(item))
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = dict(self.raw)
+        payload["operation"] = self.operation
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class TimewarriorMutationResult(PayloadModel):
+    operation: str
+    scope: str
+    reference: str
+    changed: bool
+    raw: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "TimewarriorMutationResult":
+        return cls(
+            operation=str(item.get("operation") or "").strip(),
+            scope=str(item.get("scope") or "").strip(),
+            reference=str(item.get("reference") or "").strip(),
+            changed=bool(item.get("changed")),
+            raw=dict(item),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = dict(self.raw)
+        payload.update(
+            {
+                "operation": self.operation,
+                "scope": self.scope,
+                "reference": self.reference,
+                "changed": self.changed,
+            }
+        )
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
 class TimelogSessionResult(PayloadModel):
     task_uuid: str
     task_short_uuid: str

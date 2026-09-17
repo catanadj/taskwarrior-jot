@@ -48,10 +48,13 @@ from .models import (
     ResourceOpenResult,
     SearchCommandResult,
     StatsResult,
+    TimelogIngestResult,
     TaskSummaryCommandResult,
     TrashListResult,
     TimelogPendingResult,
     TimelogTrashResult,
+    TimewarriorMutationResult,
+    TimewarriorShowResult,
     DeletedTimelogItem,
 )
 from .nautical import chain_id_for_task, nautical_summary
@@ -2466,12 +2469,14 @@ def _run_timelog(ctx, args) -> CommandResult:
         raise RuntimeError(f"invalid hook JSON: {exc}") from exc
     return CommandResult(
         command="timelog-ingest",
-        payload=ingest_time_log(
-            ctx.config,
-            old,
-            new,
-            scope=args.scope,
-            stopped_at=args.stopped_at,
+        data=TimelogIngestResult.from_mapping(
+            ingest_time_log(
+                ctx.config,
+                old,
+                new,
+                scope=args.scope,
+                stopped_at=args.stopped_at,
+            )
         ),
     )
 
@@ -2482,14 +2487,16 @@ def _run_timewarrior(ctx, args) -> CommandResult:
         resolution = resolve_timewarrior_tags(ctx.config, task)
         return CommandResult(
             command="timew",
-            payload={
-                "operation": "show",
-                "task_uuid": task.task_uuid,
-                "task_short_uuid": task.task_short_uuid,
-                "chain_id": chain_id_for_task(task.task) or None,
-                "project": task.project or None,
-                **resolution,
-            },
+            data=TimewarriorShowResult.from_mapping(
+                {
+                    "operation": "show",
+                    "task_uuid": task.task_uuid,
+                    "task_short_uuid": task.task_short_uuid,
+                    "chain_id": chain_id_for_task(task.task) or None,
+                    "project": task.project or None,
+                    **resolution,
+                }
+            ),
         )
 
     scope = args.note_kind
@@ -2516,7 +2523,7 @@ def _run_timewarrior(ctx, args) -> CommandResult:
         payload = inherit_timewarrior_tags(ctx.config, **common)
     else:  # pragma: no cover
         raise RuntimeError(f"unknown timew command '{args.timew_command}'")
-    return CommandResult(command="timew", payload=payload)
+    return CommandResult(command="timew", data=TimewarriorMutationResult.from_mapping(payload))
 
 
 def _run_search(

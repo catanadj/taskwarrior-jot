@@ -89,6 +89,7 @@ from jot_core.models import (
     TaskCompletionResult,
     TimelogSession,
     TimelogReport,
+    TimelogIngestResult,
     TimelogPendingResult,
     TimelogTrashResult,
     DeletedTimelogItem,
@@ -97,6 +98,8 @@ from jot_core.models import (
     TimelogStopAllResult,
     TimelogStopResult,
     TimelogWriteResult,
+    TimewarriorMutationResult,
+    TimewarriorShowResult,
     TrashItem,
     TrashListResult,
     normalize_task,
@@ -412,6 +415,18 @@ class TypedTaskModelTests(unittest.TestCase):
         )
         self.assertEqual(result["heading_match"], "fuzzy")
         self.assertEqual(result["entry"], "call vendor")
+
+    def test_timewarrior_and_ingest_results_preserve_raw_details(self) -> None:
+        ingest = TimelogIngestResult.from_mapping({"written": False, "reason": "not a task stop"})
+        shown = TimewarriorShowResult.from_mapping(
+            {"operation": "show", "task_short_uuid": "12345678", "tags": ["focus"]}
+        )
+        mutation = TimewarriorMutationResult.from_mapping(
+            {"operation": "set", "scope": "task", "reference": "12345678", "changed": True}
+        )
+        self.assertEqual(ingest["reason"], "not a task stop")
+        self.assertEqual(shown["tags"], ["focus"])
+        self.assertTrue(mutation["changed"])
 
     def test_note_delete_result_exposes_paths_and_identity(self) -> None:
         result = NoteDeleteResult.from_mapping(
