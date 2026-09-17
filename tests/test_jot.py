@@ -56,6 +56,7 @@ from jot_core.models import (
     ProgressTrend,
     ProjectTreeRow,
     ProjectRollup,
+    ProjectListResult,
     ResourceOperationResult,
     SearchResults,
     SearchHit,
@@ -81,6 +82,7 @@ from jot_core.models import (
     TimelogStopResult,
     TimelogWriteResult,
     TrashItem,
+    TrashListResult,
     normalize_task,
 )
 from jot_core.notes import NoteIdentityConflictError, append_to_task_note
@@ -450,6 +452,13 @@ class TypedTaskModelTests(unittest.TestCase):
 
         self.assertEqual(pending["sessions"], [])
         self.assertEqual(trash["items"][0]["task_short_uuid"], "12345678")
+
+    def test_project_and_trash_list_envelopes_preserve_rows(self) -> None:
+        projects = ProjectListResult(projects=())
+        trash = TrashListResult(items=())
+
+        self.assertEqual(projects["projects"], [])
+        self.assertEqual(trash["items"], [])
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(

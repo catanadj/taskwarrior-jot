@@ -28,9 +28,12 @@ from .models import (
     ProgressMutationCommandResult,
     ProgressShowItem,
     ProgressShowResult,
+    ProjectListItem,
+    ProjectListResult,
     RecentReport,
     ResourceListResult,
     SearchCommandResult,
+    TrashListResult,
     TimelogPendingResult,
     TimelogTrashResult,
     DeletedTimelogItem,
@@ -1537,7 +1540,10 @@ def _offer_post_save_task_action(ctx, task) -> dict | None:
 
 
 def _run_trash_list(ctx) -> CommandResult:
-    return CommandResult(command="trash-list", payload={"items": list_trash(ctx.config)})
+    return CommandResult(
+        command="trash-list",
+        data=TrashListResult(items=tuple(list_trash(ctx.config))),
+    )
 
 
 def _run_trash_restore(ctx, trash_id: int) -> CommandResult:
@@ -1671,7 +1677,9 @@ def _run_stats(ctx) -> CommandResult:
 def _run_project_list(ctx) -> CommandResult:
     return CommandResult(
         command="project-list",
-        payload={"projects": list_project_notes(ctx.config)},
+        data=ProjectListResult(
+            projects=tuple(ProjectListItem.from_mapping(item) for item in list_project_notes(ctx.config)),
+        ),
     )
 
 

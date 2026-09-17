@@ -1094,6 +1094,40 @@ class ResourceOperationResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectListItem(PayloadModel):
+    project: str
+    path: str
+    updated: str | None
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "ProjectListItem":
+        return cls(
+            project=str(item.get("project") or "").strip(),
+            path=str(item.get("path") or "").strip(),
+            updated=str(item.get("updated") or "").strip() or None,
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {"project": self.project, "path": self.path, "updated": self.updated}
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectListResult(PayloadModel):
+    projects: tuple[ProjectListItem, ...]
+
+    def to_payload(self) -> dict[str, Any]:
+        return {"projects": [item.to_payload() for item in self.projects]}
+
+
+@dataclass(frozen=True, slots=True)
+class TrashListResult(PayloadModel):
+    items: tuple[TrashItem, ...]
+
+    def to_payload(self) -> dict[str, Any]:
+        return {"items": [item.to_payload() for item in self.items]}
+
+
+@dataclass(frozen=True, slots=True)
 class ResourceListResult(PayloadModel):
     note_kind: str
     path: Path
