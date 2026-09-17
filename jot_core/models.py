@@ -177,6 +177,209 @@ class TimelogWriteResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class TimelogSessionResult(PayloadModel):
+    task_uuid: str
+    task_short_uuid: str
+    chain_id: str | None
+    started: str
+    path: str
+    operation: str
+    stopped: str | None = None
+    session_cleared: bool = False
+    already_started: bool = False
+    timewarrior: Mapping[str, Any] | None = None
+    timewarrior_retry: bool = False
+    raw: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any], *, operation: str = "") -> "TimelogSessionResult":
+        return cls(
+            task_uuid=str(item.get("task_uuid") or "").strip(),
+            task_short_uuid=str(item.get("task_short_uuid") or "").strip(),
+            chain_id=str(item.get("chain_id") or "").strip() or None,
+            started=str(item.get("started") or "").strip(),
+            path=str(item.get("path") or "").strip(),
+            operation=operation or str(item.get("operation") or "").strip(),
+            stopped=str(item.get("stopped") or "").strip() or None,
+            session_cleared=bool(item.get("session_cleared")),
+            already_started=bool(item.get("already_started")),
+            timewarrior=item.get("timewarrior") if isinstance(item.get("timewarrior"), Mapping) else None,
+            timewarrior_retry=bool(item.get("timewarrior_retry")),
+            raw=dict(item),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = dict(self.raw)
+        payload.update(
+            {
+                "task_uuid": self.task_uuid,
+                "task_short_uuid": self.task_short_uuid,
+                "chain_id": self.chain_id,
+                "started": self.started,
+                "path": self.path,
+                "operation": self.operation,
+            }
+        )
+        optional = {
+            "stopped": self.stopped,
+            "session_cleared": self.session_cleared,
+            "already_started": self.already_started,
+            "timewarrior": dict(self.timewarrior) if self.timewarrior is not None else None,
+            "timewarrior_retry": self.timewarrior_retry,
+        }
+        for key, value in optional.items():
+            if key in self.raw or value not in (None, False):
+                payload[key] = value
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class TimelogStopResult(PayloadModel):
+    written: bool
+    duplicate: bool
+    task_short_uuid: str
+    task_uuid: str
+    chain_id: str | None
+    started: str
+    stopped: str
+    duration_minutes: float
+    timelog_key: str
+    path: str
+    session_cleared: bool
+    session_path: str
+    note_kind: str = ""
+    reason: str = ""
+    raw: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "TimelogStopResult":
+        try:
+            duration = float(item.get("duration_minutes") or 0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        return cls(
+            written=bool(item.get("written")),
+            duplicate=bool(item.get("duplicate")),
+            task_short_uuid=str(item.get("task_short_uuid") or "").strip(),
+            task_uuid=str(item.get("task_uuid") or "").strip(),
+            chain_id=str(item.get("chain_id") or "").strip() or None,
+            started=str(item.get("started") or "").strip(),
+            stopped=str(item.get("stopped") or "").strip(),
+            duration_minutes=duration,
+            timelog_key=str(item.get("timelog_key") or "").strip(),
+            path=str(item.get("path") or "").strip(),
+            session_cleared=bool(item.get("session_cleared")),
+            session_path=str(item.get("session_path") or "").strip(),
+            note_kind=str(item.get("note_kind") or "").strip(),
+            reason=str(item.get("reason") or "").strip(),
+            raw=dict(item),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = dict(self.raw)
+        payload.update({
+            "written": self.written,
+            "duplicate": self.duplicate,
+            "task_short_uuid": self.task_short_uuid,
+            "task_uuid": self.task_uuid,
+            "chain_id": self.chain_id,
+            "started": self.started,
+            "stopped": self.stopped,
+            "duration_minutes": self.duration_minutes,
+            "timelog_key": self.timelog_key,
+            "path": self.path,
+            "session_cleared": self.session_cleared,
+            "session_path": self.session_path,
+            "note_kind": self.note_kind,
+            "reason": self.reason,
+        })
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class TimelogEntryMutation(PayloadModel):
+    operation: str
+    key: str
+    task_short_uuid: str
+    path: str
+    archive_path: str
+    new_key: str | None = None
+    started: str | None = None
+    stopped: str | None = None
+    duration_minutes: float | None = None
+    raw: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any], *, operation: str) -> "TimelogEntryMutation":
+        duration_value = item.get("duration_minutes")
+        try:
+            duration = float(duration_value) if duration_value is not None else None
+        except (TypeError, ValueError):
+            duration = None
+        return cls(
+            operation=operation,
+            key=str(item.get("timelog_key") or "").strip(),
+            task_short_uuid=str(item.get("task_short_uuid") or "").strip(),
+            path=str(item.get("path") or "").strip(),
+            archive_path=str(item.get("archive_path") or "").strip(),
+            new_key=str(item.get("new_timelog_key") or "").strip() or None,
+            started=str(item.get("started") or "").strip() or None,
+            stopped=str(item.get("stopped") or "").strip() or None,
+            duration_minutes=duration,
+            raw=dict(item),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = dict(self.raw)
+        payload.update({
+            "operation": self.operation,
+            "timelog_key": self.key,
+            "task_short_uuid": self.task_short_uuid,
+            "path": self.path,
+            "archive_path": self.archive_path,
+            "new_timelog_key": self.new_key,
+            "started": self.started,
+            "stopped": self.stopped,
+            "duration_minutes": self.duration_minutes,
+        })
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class TimelogStopAllResult(PayloadModel):
+    stopped: str
+    count: int
+    error_count: int
+    # Mapping.items is inherited, so explicit defaults avoid dataclass treating
+    # that method as a field default during class construction.
+    items: tuple[TimelogStopResult, ...] = field(default_factory=tuple)
+    errors: tuple[Mapping[str, str], ...] = field(default_factory=tuple)
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "TimelogStopAllResult":
+        raw_items = item.get("items")
+        raw_errors = item.get("errors")
+        return cls(
+            stopped=str(item.get("stopped") or "").strip(),
+            count=int(item.get("count") or 0),
+            error_count=int(item.get("error_count") or 0),
+            items=tuple(TimelogStopResult.from_mapping(row) for row in raw_items if isinstance(row, Mapping))
+            if isinstance(raw_items, list) else (),
+            errors=tuple(dict(row) for row in raw_errors if isinstance(row, Mapping))
+            if isinstance(raw_errors, list) else (),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "stopped": self.stopped,
+            "count": self.count,
+            "error_count": self.error_count,
+            "items": [item.to_payload() for item in self.items],
+            "errors": [dict(item) for item in self.errors],
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class TimelogReport(PayloadModel):
     period: str
     details: bool

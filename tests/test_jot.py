@@ -50,6 +50,10 @@ from jot_core.models import (
     TaskSummary,
     TimelogSession,
     TimelogReport,
+    TimelogEntryMutation,
+    TimelogSessionResult,
+    TimelogStopAllResult,
+    TimelogStopResult,
     TimelogWriteResult,
     TrashItem,
     normalize_task,
@@ -1276,10 +1280,13 @@ class ServiceProgressRowTests(unittest.TestCase):
             started_at="2026-07-14T09:00:00Z",
             stopped_at="2026-07-14T10:30:00Z",
         )
+        self.assertIsInstance(amended, TimelogEntryMutation)
         deleted = service.timelog_delete(str(amended["new_timelog_key"]))
+        self.assertIsInstance(deleted, TimelogEntryMutation)
         self.assertEqual(service.timelog_report("all")["entry_count"], 0)
         self.assertEqual(service.timelog_trash()[0]["key"], deleted["timelog_key"])
         restored = service.timelog_restore("#1")
+        self.assertIsInstance(restored, TimelogEntryMutation)
         self.assertEqual(restored["timelog_key"], deleted["timelog_key"])
         self.assertEqual(service.timelog_report("all")["total_minutes"], 90)
 
@@ -1307,6 +1314,7 @@ class ServiceProgressRowTests(unittest.TestCase):
 
         service = JotService(config=self.config, taskwarrior=FakeTaskwarrior())  # type: ignore[arg-type]
         started = service.timelog_start("2d6d7d7d", started_at="2026-07-14T09:00:00Z")
+        self.assertIsInstance(started, TimelogSessionResult)
         self.assertNotIn("already_started", started)
         pending = service.timelog_pending()
         self.assertIsInstance(pending[0], TimelogSession)
@@ -1316,16 +1324,19 @@ class ServiceProgressRowTests(unittest.TestCase):
         self.assertTrue(duplicate["already_started"])
 
         cancelled = service.timelog_cancel("2d6d7d7d")
+        self.assertIsInstance(cancelled, TimelogSessionResult)
         self.assertEqual(cancelled["task_short_uuid"], "2d6d7d7d")
         self.assertEqual(service.timelog_pending(), [])
 
         service.timelog_start("2d6d7d7d", started_at="2026-07-14T10:00:00Z")
         stopped = service.timelog_stop("2d6d7d7d", stopped_at="2026-07-14T10:30:00Z")
+        self.assertIsInstance(stopped, TimelogStopResult)
         self.assertEqual(stopped["duration_minutes"], 30)
         self.assertEqual(service.timelog_pending(), [])
 
         service.timelog_start("2d6d7d7d", started_at="2026-07-14T11:00:00Z")
         stopped_all = service.timelog_stop_all(stopped_at="2026-07-14T11:20:00Z")
+        self.assertIsInstance(stopped_all, TimelogStopAllResult)
         self.assertEqual(stopped_all["count"], 1)
         self.assertEqual(stopped_all["error_count"], 0)
         self.assertEqual(service.timelog_report("all")["total_minutes"], 50)

@@ -9,7 +9,17 @@ from typing import Any
 
 from .frontmatter import atomic_write_text, exclusive_file_lock, read_document, write_document
 from .index import update_chain_note_index, update_task_note_index
-from .models import ResolvedTask, TaskRef, TimelogReport, TimelogSession, TimelogWriteResult
+from .models import (
+    ResolvedTask,
+    TaskRef,
+    TimelogEntryMutation,
+    TimelogReport,
+    TimelogSession,
+    TimelogSessionResult,
+    TimelogStopAllResult,
+    TimelogStopResult,
+    TimelogWriteResult,
+)
 from .nautical import chain_id_for_task
 from .notes import append_under_heading_once, ensure_chain_note, ensure_task_note
 from .ops import append_op, iso_now, read_ops
@@ -39,7 +49,7 @@ def ingest_time_log(config, old: dict[str, Any], new: dict[str, Any], *, scope: 
     return write_time_log(config, task, started=started, stopped=stopped, scope=scope)
 
 
-def start_time_session(config, task: ResolvedTask, *, started_at: str = "") -> dict[str, Any]:
+def start_time_session(config, task: ResolvedTask, *, started_at: str = "") -> TimelogSessionResult:
     started = _parse_datetime(started_at) if started_at else datetime.now(timezone.utc)
     path = _session_store_path(config)
     existing = None
@@ -88,7 +98,7 @@ def start_time_session(config, task: ResolvedTask, *, started_at: str = "") -> d
             "reason": "timewarrior-attempt-in-progress" if attempt_in_progress else "already-started",
             "error": None,
         }
-        return result
+        return TimelogSessionResult.from_mapping(result, operation="start")
 
     if not isinstance(existing, dict):
         append_op(
@@ -126,7 +136,7 @@ def start_time_session(config, task: ResolvedTask, *, started_at: str = "") -> d
             else:
                 current.pop("timewarrior_error", None)
             _write_sessions_unlocked(path, sessions)
-    return result
+    return TimelogSessionResult.from_mapping(result, operation="start")
 
 
 def _timewarrior_retry_state(existing: dict[str, Any] | None) -> tuple[bool, bool]:
@@ -169,7 +179,7 @@ def _timewarrior_result_state(result: dict[str, Any]) -> str:
     return "skipped"
 
 
-def stop_time_session(config, task: ResolvedTask, *, stopped_at: str = "", scope: str = "auto") -> dict[str, Any]:
+def stop_time_session(config, task: ResolvedTask, *, stopped_at: str = "", scope: str = "auto") -> TimelogStopResult:
     stopped = _parse_datetime(stopped_at) if stopped_at else datetime.now(timezone.utc)
     path = _session_store_path(config)
     with exclusive_file_lock(path):
@@ -195,17 +205,17 @@ def stop_time_session(config, task: ResolvedTask, *, stopped_at: str = "", scope
         duplicate=bool(result.get("duplicate")),
         timelog_key=result.get("timelog_key"),
     )
-    return {
+    return TimelogStopResult.from_mapping({
         **result,
         "session_cleared": True,
         "session_path": str(path),
-    }
+    })
 
 
-def stop_all_time_sessions(config, taskwarrior, *, stopped_at: str = "", scope: str = "auto") -> dict[str, Any]:
+def stop_all_time_sessions(config, taskwarrior, *, stopped_at: str = "", scope: str = "auto") -> TimelogStopAllResult:
     stopped = _parse_datetime(stopped_at) if stopped_at else datetime.now(timezone.utc)
     sessions = list_time_sessions(config, now=stopped)
-    results: list[dict[str, Any]] = []
+    results: list[TimelogStopResult] = []
     errors: list[dict[str, str]] = []
     for session in sessions:
         task_uuid = str(session.get("task_uuid") or "").strip()
@@ -216,13 +226,13 @@ def stop_all_time_sessions(config, taskwarrior, *, stopped_at: str = "", scope: 
             results.append(stop_time_session(config, task, stopped_at=_iso_z(stopped), scope=scope))
         except Exception as exc:
             errors.append({"task_uuid": task_uuid, "error": str(exc)})
-    return {
+    return TimelogStopAllResult.from_mapping({
         "stopped": _iso_z(stopped),
         "count": len(results),
         "error_count": len(errors),
-        "items": results,
+        "items": [item.to_payload() for item in results],
         "errors": errors,
-    }
+    })
 
 
 def list_time_sessions(config, *, now: datetime | None = None) -> list[TimelogSession]:
@@ -242,7 +252,7 @@ def list_time_sessions(config, *, now: datetime | None = None) -> list[TimelogSe
     return [TimelogSession.from_mapping(item) for item in sorted_items]
 
 
-def cancel_time_session(config, task: ResolvedTask) -> dict[str, Any]:
+def cancel_time_session(config, task: ResolvedTask) -> TimelogSessionResult:
     path = _session_store_path(config)
     with exclusive_file_lock(path):
         sessions = _read_sessions_unlocked(path)
@@ -258,13 +268,13 @@ def cancel_time_session(config, task: ResolvedTask) -> dict[str, Any]:
         chain_id=chain_id_for_task(task.task) or None,
         started=session.get("started"),
     )
-    return {
+    return TimelogSessionResult.from_mapping({
         "task_uuid": task.task_uuid,
         "task_short_uuid": task.task_short_uuid,
         "chain_id": chain_id_for_task(task.task) or None,
         "started": session.get("started"),
         "path": str(path),
-    }
+    }, operation="cancel")
 
 
 def write_time_log(
@@ -367,7 +377,7 @@ def add_time_log(
     started_at: str,
     stopped_at: str,
     scope: str = "auto",
-) -> dict[str, Any]:
+) -> TimelogWriteResult:
     started = _parse_user_datetime(started_at)
     stopped = _parse_user_datetime(stopped_at)
     return write_time_log(config, task, started=started, stopped=stopped, scope=scope)
@@ -379,7 +389,7 @@ def amend_time_log(
     *,
     started_at: str = "",
     stopped_at: str = "",
-) -> dict[str, Any]:
+) -> TimelogEntryMutation:
     if not started_at and not stopped_at:
         raise RuntimeError("timelog amend requires --from or --to")
     location = _find_time_log_location(config, key)
@@ -424,7 +434,7 @@ def amend_time_log(
         path=str(note_path),
         archive_path=str(archive_path),
     )
-    return {
+    return TimelogEntryMutation.from_mapping({
         "amended": True,
         "timelog_key": old_key,
         "new_timelog_key": new_key,
@@ -434,10 +444,10 @@ def amend_time_log(
         "duration_minutes": round((stopped - started).total_seconds() / 60, 2),
         "path": str(note_path),
         "archive_path": str(archive_path),
-    }
+    }, operation="amend")
 
 
-def delete_time_log(config, key: str) -> dict[str, Any]:
+def delete_time_log(config, key: str) -> TimelogEntryMutation:
     location = _find_time_log_location(config, key)
     record = dict(location["record"])
     note_path = Path(str(location["path"]))
@@ -471,13 +481,13 @@ def delete_time_log(config, key: str) -> dict[str, Any]:
         path=str(note_path),
         archive_path=str(archive_path),
     )
-    return {
+    return TimelogEntryMutation.from_mapping({
         "deleted": True,
         "timelog_key": exact_key,
         "task_short_uuid": task.task_short_uuid,
         "path": str(note_path),
         "archive_path": str(archive_path),
-    }
+    }, operation="delete")
 
 
 def list_deleted_time_logs(config, *, include_internal: bool = False) -> list[dict[str, Any]]:
@@ -530,7 +540,7 @@ def list_deleted_time_logs(config, *, include_internal: bool = False) -> list[di
     return items
 
 
-def restore_deleted_time_log(config, reference: str) -> dict[str, Any]:
+def restore_deleted_time_log(config, reference: str) -> TimelogEntryMutation:
     archive = _select_deleted_time_log(
         list_deleted_time_logs(config, include_internal=True),
         reference,
@@ -569,13 +579,13 @@ def restore_deleted_time_log(config, reference: str) -> dict[str, Any]:
         path=str(note_path),
         archive_path=str(archive["archive_path"]),
     )
-    return {
+    return TimelogEntryMutation.from_mapping({
         "restored": True,
         "timelog_key": key,
         "task_short_uuid": task.task_short_uuid,
         "path": str(note_path),
         "archive_path": str(archive["archive_path"]),
-    }
+    }, operation="restore")
 
 
 def report_time_logs(

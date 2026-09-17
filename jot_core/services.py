@@ -8,7 +8,19 @@ from typing import Any
 
 from .editor import open_in_editor
 from .frontmatter import read_document
-from .models import AppConfig, NoteSummary, ProjectTreeRow, TaskSummary, TimelogReport, TimelogSession
+from .models import (
+    AppConfig,
+    NoteSummary,
+    ProjectTreeRow,
+    TaskSummary,
+    TimelogEntryMutation,
+    TimelogReport,
+    TimelogSession,
+    TimelogSessionResult,
+    TimelogStopAllResult,
+    TimelogStopResult,
+    TimelogWriteResult,
+)
 from .nautical import nautical_summary
 from .notes import (
     ensure_chain_note,
@@ -185,7 +197,7 @@ class JotService:
     def timelog_report(self, period: str = "week", *, details: bool = True) -> TimelogReport:
         return report_time_logs(self.config, period=period, details=details)
 
-    def timelog_start(self, task_ref: str, *, started_at: str = "") -> dict[str, Any]:
+    def timelog_start(self, task_ref: str, *, started_at: str = "") -> TimelogSessionResult:
         task = self.taskwarrior.resolve_task(task_ref)
         return start_time_session(self.config, task, started_at=started_at)
 
@@ -198,7 +210,7 @@ class JotService:
         *,
         stopped_at: str = "",
         scope: str = "auto",
-    ) -> dict[str, Any]:
+    ) -> TimelogStopResult:
         task = self.taskwarrior.resolve_task(task_ref)
         return stop_time_session(
             self.config,
@@ -207,7 +219,7 @@ class JotService:
             scope=scope,
         )
 
-    def timelog_stop_all(self, *, stopped_at: str = "", scope: str = "auto") -> dict[str, Any]:
+    def timelog_stop_all(self, *, stopped_at: str = "", scope: str = "auto") -> TimelogStopAllResult:
         return stop_all_time_sessions(
             self.config,
             self.taskwarrior,
@@ -215,7 +227,7 @@ class JotService:
             scope=scope,
         )
 
-    def timelog_cancel(self, task_ref: str) -> dict[str, Any]:
+    def timelog_cancel(self, task_ref: str) -> TimelogSessionResult:
         task = self.taskwarrior.resolve_task(task_ref)
         return cancel_time_session(self.config, task)
 
@@ -226,7 +238,7 @@ class JotService:
         started_at: str,
         stopped_at: str,
         scope: str = "auto",
-    ) -> dict[str, Any]:
+    ) -> TimelogWriteResult:
         task = self.taskwarrior.resolve_task(task_ref)
         return add_time_log(
             self.config,
@@ -236,7 +248,7 @@ class JotService:
             scope=scope,
         )
 
-    def timelog_amend(self, key: str, *, started_at: str, stopped_at: str) -> dict[str, Any]:
+    def timelog_amend(self, key: str, *, started_at: str, stopped_at: str) -> TimelogEntryMutation:
         return amend_time_log(
             self.config,
             key,
@@ -244,13 +256,13 @@ class JotService:
             stopped_at=stopped_at,
         )
 
-    def timelog_delete(self, key: str) -> dict[str, Any]:
+    def timelog_delete(self, key: str) -> TimelogEntryMutation:
         return delete_time_log(self.config, key)
 
     def timelog_trash(self) -> list[dict[str, Any]]:
         return list_deleted_time_logs(self.config)
 
-    def timelog_restore(self, reference: str) -> dict[str, Any]:
+    def timelog_restore(self, reference: str) -> TimelogEntryMutation:
         return restore_deleted_time_log(self.config, reference)
 
     def task_summary(self, task_ref: str) -> dict[str, Any]:
