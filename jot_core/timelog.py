@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from datetime import datetime, time as datetime_time, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +29,6 @@ from .timelog_report import build_time_log_report
 
 TIME_LOG_HEADING = "Time log"
 TIME_LOG_DATA_RE = re.compile(r"<!--\s*jot-time-log\s+({.*?})\s*-->")
-DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TIME_LOG_HEADING_RE = re.compile(r"^##\s+Time log\s*$", re.IGNORECASE)
 SECTION_END_RE = re.compile(r"^#{1,2}\s+")
 TIMEW_ATTEMPT_LEASE_SECONDS = 60
@@ -892,148 +891,6 @@ def _update_time_log_index(config, task: ResolvedTask, note_kind: str, note_path
         update_chain_note_index(config, task, note_path)
     else:
         update_task_note_index(config, task, note_path)
-
-
-def _report_window(
-    period: str,
-    *,
-    since: str = "",
-    until: str = "",
-    now: datetime | None = None,
-) -> tuple[datetime | None, datetime | None]:
-    normalized = str(period or "all").strip().casefold()
-    if normalized not in {"all", "today", "week", "month"}:
-        raise RuntimeError("timelog report period must be all, today, week, or month")
-    if since or until:
-        if normalized != "all":
-            raise RuntimeError("timelog report --since/--until cannot be combined with a named period")
-        start = _parse_report_boundary(since, end_of_date=False) if since else None
-        end = _parse_report_boundary(until, end_of_date=True) if until else None
-        if start is not None and end is not None and end <= start:
-            raise RuntimeError("timelog report --until must be after --since")
-        return start, end
-    if normalized == "all":
-        return None, None
-    local_now = (now or datetime.now(timezone.utc)).astimezone()
-    if normalized == "today":
-        start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    elif normalized == "week":
-        day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-        start = day_start - timedelta(days=day_start.weekday())
-    else:
-        start = local_now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    if normalized == "month":
-        if start.month == 12:
-            end = start.replace(year=start.year + 1, month=1)
-        else:
-            end = start.replace(month=start.month + 1)
-    elif normalized == "week":
-        end = start + timedelta(days=7)
-    else:
-        end = start + timedelta(days=1)
-    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
-
-
-def _time_log_groups(records: list[dict[str, Any]], key: str, *, fallback: str) -> list[dict[str, Any]]:
-    groups: dict[str, dict[str, Any]] = {}
-    for record in records:
-        label = str(record.get(key) or "").strip() or fallback
-        item = groups.setdefault(label, {"name": label, "minutes": 0.0, "entry_count": 0})
-        item["minutes"] = round(float(item["minutes"]) + float(record.get("minutes") or 0), 2)
-        item["entry_count"] = int(item["entry_count"]) + 1
-    for item in groups.values():
-        item["duration"] = _duration_text(float(item["minutes"]))
-    return sorted(groups.values(), key=lambda item: (-float(item["minutes"]), str(item["name"])))
-
-
-def _time_log_day_groups(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    groups: dict[str, dict[str, Any]] = {}
-    for record in records:
-        day = str(record.get("day") or "").strip() or "(unknown)"
-        item = groups.setdefault(day, {"name": day, "minutes": 0.0, "entry_count": 0})
-        item["minutes"] = round(float(item["minutes"]) + float(record.get("minutes") or 0), 2)
-        item["entry_count"] = int(item["entry_count"]) + 1
-    for item in groups.values():
-        item["duration"] = _duration_text(float(item["minutes"]))
-    return sorted(groups.values(), key=lambda item: str(item["name"]))
-
-
-def _time_log_report_record(
-    record: dict[str, Any],
-    *,
-    window_start: datetime | None = None,
-    window_end: datetime | None = None,
-) -> dict[str, Any] | None:
-    item = dict(record)
-    try:
-        started = _parse_datetime(str(item.get("started") or ""))
-        stopped = _parse_datetime(str(item.get("stopped") or ""))
-    except RuntimeError:
-        return None
-    effective_start = max(started, window_start) if window_start is not None else started
-    effective_stop = min(stopped, window_end) if window_end is not None else stopped
-    if effective_stop <= effective_start:
-        return None
-    minutes = round((effective_stop - effective_start).total_seconds() / 60, 2)
-    day_segments = _split_interval_by_local_day(effective_start, effective_stop)
-    item["stored_minutes"] = float(item.get("minutes") or 0)
-    item["minutes"] = minutes
-    item["report_started"] = _iso_z(effective_start)
-    item["report_stopped"] = _iso_z(effective_stop)
-    item["clipped"] = effective_start != started or effective_stop != stopped
-    item["display_range"] = _time_range(effective_start, effective_stop)
-    item["day"] = (
-        str(day_segments[0]["day"])
-        if len(day_segments) == 1
-        else f"{day_segments[0]['day']}..{day_segments[-1]['day']}"
-    )
-    item["duration"] = _duration_text(minutes)
-    item["day_segments"] = day_segments
-    return item
-
-
-def _split_interval_by_local_day(started: datetime, stopped: datetime) -> list[dict[str, Any]]:
-    segments: list[dict[str, Any]] = []
-    cursor = started
-    while cursor < stopped:
-        local_cursor = cursor.astimezone()
-        next_date = local_cursor.date() + timedelta(days=1)
-        next_midnight = datetime.combine(next_date, datetime_time.min).astimezone(timezone.utc)
-        segment_stop = min(stopped, next_midnight)
-        if segment_stop <= cursor:
-            segment_stop = stopped
-        minutes = round((segment_stop - cursor).total_seconds() / 60, 2)
-        segments.append(
-            {
-                "day": local_cursor.strftime("%Y-%m-%d"),
-                "minutes": minutes,
-                "started": _iso_z(cursor),
-                "stopped": _iso_z(segment_stop),
-            }
-        )
-        cursor = segment_stop
-    return segments
-
-
-def _parse_report_boundary(value: str, *, end_of_date: bool) -> datetime:
-    raw = str(value or "").strip()
-    if not raw:
-        raise RuntimeError("timelog report boundary is empty")
-    if DATE_ONLY_RE.fullmatch(raw):
-        try:
-            local = datetime.combine(datetime.fromisoformat(raw).date(), datetime_time.min)
-        except ValueError as exc:
-            raise RuntimeError(f"invalid report date: {value}") from exc
-        if end_of_date:
-            local += timedelta(days=1)
-        return local.astimezone(timezone.utc)
-    try:
-        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise RuntimeError(f"invalid report datetime: {value}") from exc
-    if parsed.tzinfo is None:
-        parsed = parsed.astimezone()
-    return parsed.astimezone(timezone.utc)
 
 
 def _time_log_key(task_uuid: str, started: datetime, stopped: datetime) -> str:
