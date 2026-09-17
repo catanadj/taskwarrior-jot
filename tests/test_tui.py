@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest import mock
 
@@ -22,6 +24,7 @@ class FakeTuiService:
         self.sessions: dict[str, dict[str, Any]] = {}
         self.intervals: list[dict[str, Any]] = []
         self.cancelled: list[str] = []
+        self.config = SimpleNamespace(root_dir=Path("/tmp"), trash_dir=Path("/tmp/.jot_trash"))
 
     def recent(self, limit: int = 50) -> list[dict[str, Any]]:
         return [
@@ -77,6 +80,37 @@ class FakeTuiService:
                 "path": "/tmp/2d6d7d7d--read-book.md",
             }
         ]
+
+    def task_workspace(self, task_ref: str) -> dict[str, Any]:
+        return {
+            "task": {
+                "short_uuid": task_ref,
+                "description": "Read book",
+                "project": "reading",
+                "tags": ["study"],
+            },
+            "nautical": {},
+            "notes": {
+                "task": {
+                    "path": "/tmp/2d6d7d7d--read-book.md",
+                    "body": "Chapter 4 notes",
+                    "resources": [],
+                    "progress": None,
+                },
+                "chain": {},
+                "project": {},
+            },
+            "events": [],
+        }
+
+    def task_note_path_for_task_ref(self, task_ref: str) -> str:
+        return f"/tmp/{task_ref}--read-book.md"
+
+    def chain_note_path_for_task_ref(self, task_ref: str) -> str:
+        return f"/tmp/{task_ref}--chain.md"
+
+    def project_note_path_for_name(self, project_name: str) -> str:
+        return f"/tmp/{project_name}.md"
 
     def timelog_pending(self) -> list[dict[str, Any]]:
         return [dict(item) for item in self.sessions.values()]
@@ -197,6 +231,22 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(service.intervals), 1)
             self.assertEqual(app.query_one("#time-sessions-table", DataTable).row_count, 0)
             self.assertEqual(app.query_one("#time-details-table", DataTable).row_count, 1)
+
+    async def test_recent_selection_keeps_details_in_latest_workspace(self) -> None:
+        service = FakeTuiService()
+        app = build_tui(service, session_refresh_seconds=None)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            recent = app.query_one("#recent-table", DataTable)
+            recent.focus()
+            recent.move_cursor(row=0)
+            await pilot.press("enter")
+            await pilot.pause(0.1)
+
+            self.assertEqual(app.query_one("#main-tabs", TabbedContent).active, "latest-tab")
+            self.assertIn("Read book", str(app.query_one("#latest-summary", Static).render()))
+            self.assertIn("Chapter 4 notes", str(app.query_one("#latest-task-note-preview", Static).render()))
 
     async def test_timer_cancel_and_stop_all_confirmations(self) -> None:
         service = FakeTuiService()
