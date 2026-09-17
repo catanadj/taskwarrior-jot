@@ -927,7 +927,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "migrate":
             result = CommandResult(
                 command="migrate",
-                payload=migrate_notes(ctx.config, dry_run=bool(args.dry_run)),
+                data=migrate_notes(ctx.config, dry_run=bool(args.dry_run)),
             )
         elif args.command == "paths":
             result = _run_paths(ctx)
@@ -948,7 +948,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "cleanup":
             result = CommandResult(
                 command="cleanup",
-                payload=cleanup_trash(
+                data=cleanup_trash(
                     ctx.config,
                     older_than_days=args.trash_older_than,
                     apply=bool(args.yes),
@@ -1052,18 +1052,18 @@ def main(argv: list[str] | None = None) -> int:
 
             result = CommandResult(
                 command="context",
-                payload=success_envelope("jot.context", payload, list(payload.warnings)),
+                data=success_envelope("jot.context", payload, list(payload.warnings)),
             )
         elif args.command == "integrity":
             from .output import success_envelope
 
-            result = CommandResult(command="integrity", payload=success_envelope("jot.integrity", scan_integrity(ctx.config, ctx.taskwarrior)))
+            result = CommandResult(command="integrity", data=success_envelope("jot.integrity", scan_integrity(ctx.config, ctx.taskwarrior)))
         elif args.command == "reconcile":
             if args.dry_run == args.apply:
                 raise RuntimeError("choose exactly one of --dry-run or --apply")
             from .output import success_envelope
 
-            result = CommandResult(command="reconcile", payload=success_envelope("jot.reconcile", reconcile_integrity(ctx.config, ctx.taskwarrior, apply=args.apply)))
+            result = CommandResult(command="reconcile", data=success_envelope("jot.reconcile", reconcile_integrity(ctx.config, ctx.taskwarrior, apply=args.apply)))
         else:  # pragma: no cover
             parser.error(f"unknown command {args.command}")
             return 2
@@ -1084,12 +1084,12 @@ def main(argv: list[str] | None = None) -> int:
     if result.command == "doctor":
         failed = [
             item
-            for item in result.payload.get("checks") or []
+            for item in result.data.get("checks") or []
             if not item.get("ok") and str(item.get("severity") or "error") != "warning"
         ]
         if failed:
             return 1
-    if result.command == "migrate" and result.payload.get("blocked"):
+    if result.command == "migrate" and result.data.get("blocked"):
         return 1
     return 0
 
@@ -2338,7 +2338,7 @@ def _run_timelog(ctx, args) -> CommandResult:
             warn(f"Timewarrior: {timewarrior['error']}")
         return CommandResult(
             command="timelog-start",
-            payload=payload,
+            data=payload,
         )
     if args.timelog_command == "stop":
         if args.all:
@@ -2346,14 +2346,14 @@ def _run_timelog(ctx, args) -> CommandResult:
                 raise RuntimeError("timelog stop --all does not accept a task reference")
             return CommandResult(
                 command="timelog-stop-all",
-                payload=stop_all_time_sessions(ctx.config, ctx.taskwarrior, stopped_at=args.at, scope=args.scope),
+                data=stop_all_time_sessions(ctx.config, ctx.taskwarrior, stopped_at=args.at, scope=args.scope),
             )
         if not args.task_ref:
             raise RuntimeError("timelog stop requires a task reference or --all")
         task = ctx.taskwarrior.resolve_task(args.task_ref)
         return CommandResult(
             command="timelog-stop",
-            payload=stop_time_session(ctx.config, task, stopped_at=args.at, scope=args.scope),
+            data=stop_time_session(ctx.config, task, stopped_at=args.at, scope=args.scope),
         )
     if args.timelog_command == "pending":
         return CommandResult(
@@ -2366,13 +2366,13 @@ def _run_timelog(ctx, args) -> CommandResult:
         task = ctx.taskwarrior.resolve_task(args.task_ref)
         return CommandResult(
             command="timelog-cancel",
-            payload=cancel_time_session(ctx.config, task),
+            data=cancel_time_session(ctx.config, task),
         )
     if args.timelog_command == "add":
         task = ctx.taskwarrior.resolve_task(args.task_ref)
         return CommandResult(
             command="timelog-add",
-            payload=add_time_log(
+            data=add_time_log(
                 ctx.config,
                 task,
                 started_at=args.started_at,
@@ -2383,7 +2383,7 @@ def _run_timelog(ctx, args) -> CommandResult:
     if args.timelog_command == "amend":
         return CommandResult(
             command="timelog-amend",
-            payload=amend_time_log(
+            data=amend_time_log(
                 ctx.config,
                 args.key,
                 started_at=args.started_at,
@@ -2395,7 +2395,7 @@ def _run_timelog(ctx, args) -> CommandResult:
             raise RuntimeError("timelog delete requires --yes")
         return CommandResult(
             command="timelog-delete",
-            payload=delete_time_log(ctx.config, args.key),
+            data=delete_time_log(ctx.config, args.key),
         )
     if args.timelog_command == "trash":
         return CommandResult(
@@ -2407,14 +2407,14 @@ def _run_timelog(ctx, args) -> CommandResult:
     if args.timelog_command == "restore":
         return CommandResult(
             command="timelog-restore",
-            payload=restore_deleted_time_log(ctx.config, args.reference),
+            data=restore_deleted_time_log(ctx.config, args.reference),
         )
     if args.timelog_command == "report":
         if args.csv and args.json:
             raise RuntimeError("timelog report --csv cannot be combined with --json")
         return CommandResult(
             command="timelog-report-csv" if args.csv else "timelog-report",
-            payload=report_time_logs(
+            data=report_time_logs(
                 ctx.config,
                 period=args.period,
                 project=args.project,

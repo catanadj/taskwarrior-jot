@@ -90,7 +90,7 @@ def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
         return
 
     command = result.command
-    payload = result.payload
+    payload = result.data
     if command == "doctor":
         _emit_doctor(payload)
         return
