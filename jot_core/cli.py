@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from datetime import datetime, timezone
 import difflib
 import os
@@ -36,6 +37,7 @@ from .models import (
     ResourceListResult,
     SearchCommandResult,
     StatsResult,
+    TaskSummaryCommandResult,
     TrashListResult,
     TimelogPendingResult,
     TimelogTrashResult,
@@ -2157,35 +2159,37 @@ def _run_chain_delete(ctx, task_ref: str) -> CommandResult:
 def _run_show(ctx, task_ref: str) -> CommandResult:
     task = ctx.taskwarrior.resolve_task(task_ref)
     payload = _task_summary_payload(ctx, task)
-    return CommandResult(command="show", payload=payload)
+    return CommandResult(command="show", data=payload)
 
 
 def _run_export(ctx, task_ref: str) -> CommandResult:
     task = ctx.taskwarrior.resolve_task(task_ref)
     payload = _task_summary_payload(ctx, task)
-    payload["events"] = ctx.taskwarrior.annotations_for_task(task)
-    payload["exported_at"] = iso_now()
-    return CommandResult(command="export", payload=payload)
+    payload = replace(
+        payload,
+        events=tuple(ctx.taskwarrior.annotations_for_task(task)),
+        exported_at=iso_now(),
+    )
+    return CommandResult(command="export", data=payload)
 
 
-def _task_summary_payload(ctx, task) -> dict:
-    payload: dict[str, object] = {
-        "kind": "task-summary",
-        "task": {
+def _task_summary_payload(ctx, task) -> TaskSummaryCommandResult:
+    return TaskSummaryCommandResult(
+        kind="task-summary",
+        task={
             "uuid": task.task_uuid,
             "short_uuid": task.task_short_uuid,
             "description": task.description,
             "project": task.project or None,
             "tags": list(task.tags),
         },
-        "notes": {
+        notes={
             "task": _task_note_summary(ctx, task),
             "chain": _chain_note_summary(ctx, task),
             "project": _project_note_summary(ctx, task.project),
         },
-        "nautical": nautical_summary(task.task),
-    }
-    return payload
+        nautical=nautical_summary(task.task),
+    )
 
 
 def _run_add(ctx, task_ref: str, text_parts: list[str], event_type: str) -> CommandResult:
@@ -2214,8 +2218,10 @@ def _run_add(ctx, task_ref: str, text_parts: list[str], event_type: str) -> Comm
 def _run_list(ctx, task_ref: str) -> CommandResult:
     task = ctx.taskwarrior.resolve_task(task_ref)
     payload = _task_summary_payload(ctx, task)
-    payload["events"] = ctx.taskwarrior.annotations_for_task(task)
-    return CommandResult(command="list", payload=payload)
+    return CommandResult(
+        command="list",
+        data=replace(payload, events=tuple(ctx.taskwarrior.annotations_for_task(task))),
+    )
 
 
 def _run_note_append(ctx, task_ref: str, text: str) -> CommandResult:

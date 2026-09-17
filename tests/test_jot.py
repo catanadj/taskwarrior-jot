@@ -12,6 +12,7 @@ import tempfile
 import textwrap
 import unittest
 from collections import OrderedDict
+from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -73,6 +74,7 @@ from jot_core.models import (
     ResolvedTask,
     TaskRef,
     TaskSummary,
+    TaskSummaryCommandResult,
     TaskCompletionResult,
     TimelogSession,
     TimelogReport,
@@ -482,6 +484,19 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(paths["taskwarrior"]["data_path"], "/taskdata")
         self.assertEqual(index["counts"]["tasks"], 1)
         self.assertFalse(stats["index"]["stale"])
+
+    def test_task_summary_envelope_keeps_optional_events_and_export_time(self) -> None:
+        summary = TaskSummaryCommandResult(
+            kind="task-summary",
+            task={"short_uuid": "12345678"},
+            notes={},
+            nautical={},
+        )
+
+        self.assertNotIn("events", summary)
+        exported = replace(summary, events=({"entry": "1"},), exported_at="now")
+        self.assertEqual(exported["events"][0]["entry"], "1")
+        self.assertEqual(exported["exported_at"], "now")
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(

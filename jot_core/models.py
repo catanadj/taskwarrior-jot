@@ -1176,6 +1176,29 @@ class StatsResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class TaskSummaryCommandResult(PayloadModel):
+    kind: str
+    task: Mapping[str, Any]
+    notes: Mapping[str, Any]
+    nautical: Mapping[str, Any]
+    events: tuple[Mapping[str, Any], ...] | None = None
+    exported_at: str | None = None
+
+    def to_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "kind": self.kind,
+            "task": dict(self.task),
+            "notes": dict(self.notes),
+            "nautical": dict(self.nautical),
+        }
+        if self.events is not None:
+            payload["events"] = [dict(item) for item in self.events]
+        if self.exported_at is not None:
+            payload["exported_at"] = self.exported_at
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
 class ResourceListResult(PayloadModel):
     note_kind: str
     path: Path
