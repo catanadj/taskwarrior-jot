@@ -895,7 +895,7 @@ def _update_time_log_index(config, task: ResolvedTask, note_kind: str, note_path
 
 def _time_log_key(task_uuid: str, started: datetime, stopped: datetime) -> str:
     raw = "|".join([str(task_uuid), _iso_z(started), _iso_z(stopped)])
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()[:16]
 
 
 def _duration_text(minutes: float) -> str:
