@@ -441,6 +441,50 @@ class NoteSummary(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class TrashItem(PayloadModel):
+    id: int
+    kind: str
+    deleted_at: str
+    path: str
+    trash_path: str
+    raw: Mapping[str, Any] = field(repr=False)
+    task_short_uuid: str = ""
+    task_uuid: str = ""
+    chain_id: str = ""
+    project: str = ""
+    orphaned: bool = False
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "TrashItem":
+        return cls(
+            id=int(item.get("id") or 0),
+            kind=str(item.get("kind") or "").strip(),
+            deleted_at=str(item.get("deleted_at") or "").strip(),
+            path=str(item.get("path") or "").strip(),
+            trash_path=str(item.get("trash_path") or "").strip(),
+            raw=dict(item),
+            task_short_uuid=str(item.get("task_short_uuid") or "").strip(),
+            task_uuid=str(item.get("task_uuid") or "").strip(),
+            chain_id=str(item.get("chain_id") or "").strip(),
+            project=str(item.get("project") or "").strip(),
+            orphaned=bool(item.get("orphaned")),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = dict(self.raw)
+        payload.update(
+            {
+                "id": self.id,
+                "kind": self.kind,
+                "deleted_at": self.deleted_at,
+                "path": self.path,
+                "trash_path": self.trash_path,
+            }
+        )
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectTreeRow(PayloadModel):
     project: str
     label: str

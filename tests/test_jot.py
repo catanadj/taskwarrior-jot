@@ -51,6 +51,7 @@ from jot_core.models import (
     TimelogSession,
     TimelogReport,
     TimelogWriteResult,
+    TrashItem,
     normalize_task,
 )
 from jot_core.notes import NoteIdentityConflictError, append_to_task_note
@@ -186,6 +187,25 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(history["summary"], "120/350 pages; change +20")
         self.assertEqual(trend.updates, 3)
         self.assertEqual(trend["custom"], "kept")
+
+    def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
+        item = TrashItem.from_mapping(
+            {
+                "id": 3,
+                "kind": "task-note",
+                "deleted_at": "2026-09-17T10:00:00Z",
+                "path": "/notes/task.md",
+                "trash_path": "/trash/task.md",
+                "task_short_uuid": "12345678",
+                "orphaned": True,
+            }
+        )
+
+        self.assertEqual(item.id, 3)
+        self.assertEqual(item.kind, "task-note")
+        self.assertEqual(item.task_short_uuid, "12345678")
+        self.assertTrue(item.orphaned)
+        self.assertEqual(item["trash_path"], "/trash/task.md")
 
 
 def _write_fake_task_script(bin_dir: Path, state_path: Path) -> None:

@@ -8,7 +8,7 @@ from typing import Any
 
 from .frontmatter import exclusive_file_lock, read_document
 from .index import rebuild_index, save_index
-from .models import AppConfig
+from .models import AppConfig, TrashItem
 from .notes import trash_manifest_path
 from .ops import append_op, read_ops
 
@@ -20,7 +20,7 @@ DELETE_OPS = {
 }
 
 
-def list_trash(config: AppConfig) -> list[dict[str, Any]]:
+def list_trash(config: AppConfig) -> list[TrashItem]:
     operations = read_ops(config)
     restored = {
         str(item.get("trash_path") or "").strip()
@@ -55,10 +55,10 @@ def list_trash(config: AppConfig) -> list[dict[str, Any]]:
     items.sort(key=lambda entry: str(entry.get("deleted_at") or ""), reverse=True)
     for index, item in enumerate(items, start=1):
         item["id"] = index
-    return items
+    return [TrashItem.from_mapping(item) for item in items]
 
 
-def restore_trash_item(config: AppConfig, item_id: int) -> dict[str, Any]:
+def restore_trash_item(config: AppConfig, item_id: int) -> TrashItem:
     items = list_trash(config)
     if item_id < 1 or item_id > len(items):
         raise RuntimeError(f"trash item {item_id} does not exist")
@@ -84,15 +84,15 @@ def restore_trash_item(config: AppConfig, item_id: int) -> dict[str, Any]:
     )
     trash_manifest_path(trash_path).unlink(missing_ok=True)
     save_index(config, rebuild_index(config))
-    return {
+    return TrashItem.from_mapping({
         **item,
         "path": str(original_path),
         "trash_path": str(trash_path),
-    }
+    })
 
 
-def repair_trash(config: AppConfig) -> list[dict[str, Any]]:
-    repaired: list[dict[str, Any]] = []
+def repair_trash(config: AppConfig) -> list[TrashItem]:
+    repaired: list[TrashItem] = []
     for item in list_trash(config):
         if not item.get("orphaned"):
             continue
