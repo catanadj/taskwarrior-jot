@@ -39,6 +39,8 @@ from .models import (
     RebuildIndexResult,
     RecentReport,
     ResourceListResult,
+    ResourceCommandResult,
+    ResourceOpenResult,
     SearchCommandResult,
     StatsResult,
     TaskSummaryCommandResult,
@@ -1958,14 +1960,14 @@ def _run_attach(ctx, args) -> CommandResult:
         identity = {"project": project_name}
     return CommandResult(
         command="attach",
-        payload={
-            "note_kind": args.note_kind,
-            **identity,
-            "path": str(result["note_path"]),
-            "opened": bool(result["opened"]),
-            "resource": result["resource"],
-            "resources": result["resources"],
-        },
+        data=ResourceCommandResult(
+            note_kind=args.note_kind,
+            path=result.note_path,
+            opened=result.opened,
+            resource=result.resource,
+            resources=result.resources,
+            identity=identity,
+        ),
     )
 
 
@@ -1978,13 +1980,13 @@ def _run_open_resource(ctx, args) -> CommandResult:
     command = open_resource_target(str(resource.get("target") or ""))
     return CommandResult(
         command="open-resource",
-        payload={
-            "note_kind": args.note_kind,
-            **identity,
-            "path": str(note_path),
-            "resource": resource,
-            "opener": command,
-        },
+        data=ResourceOpenResult(
+            note_kind=args.note_kind,
+            path=note_path,
+            resource=resource,
+            opener=tuple(command),
+            identity=identity,
+        ),
     )
 
 
@@ -2006,13 +2008,13 @@ def _run_detach_resource(ctx, args) -> CommandResult:
         )
     return CommandResult(
         command="detach-resource",
-        payload={
-            "note_kind": args.note_kind,
-            **identity,
-            "path": str(result["note_path"]),
-            "resource": result["resource"],
-            "resources": result["resources"],
-        },
+        data=ResourceCommandResult(
+            note_kind=args.note_kind,
+            path=result.note_path,
+            resource=result.resource,
+            resources=result.resources,
+            identity=identity,
+        ),
     )
 
 

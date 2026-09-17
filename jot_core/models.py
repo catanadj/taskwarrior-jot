@@ -1094,6 +1094,46 @@ class ResourceOperationResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class ResourceCommandResult(PayloadModel):
+    note_kind: str
+    path: Path
+    resource: Mapping[str, Any]
+    resources: tuple[Mapping[str, Any], ...]
+    identity: Mapping[str, Any] = field(repr=False, default_factory=dict)
+    opened: bool | None = None
+
+    def to_payload(self) -> dict[str, Any]:
+        payload = {
+            "note_kind": self.note_kind,
+            **dict(self.identity),
+            "path": str(self.path),
+            "resource": dict(self.resource),
+            "resources": [dict(item) for item in self.resources],
+        }
+        if self.opened is not None:
+            payload["opened"] = self.opened
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceOpenResult(PayloadModel):
+    note_kind: str
+    path: Path
+    resource: Mapping[str, Any]
+    opener: tuple[str, ...]
+    identity: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "note_kind": self.note_kind,
+            **dict(self.identity),
+            "path": str(self.path),
+            "resource": dict(self.resource),
+            "opener": list(self.opener),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectListItem(PayloadModel):
     project: str
     path: str

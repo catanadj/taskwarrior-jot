@@ -63,6 +63,8 @@ from jot_core.models import (
     RebuildIndexResult,
     StatsResult,
     ResourceOperationResult,
+    ResourceCommandResult,
+    ResourceOpenResult,
     SearchResults,
     SearchHit,
     SearchCommandResult,
@@ -338,6 +340,26 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertTrue(result.opened)
         self.assertEqual(result.resource["id"], 1)
         self.assertEqual(result["resources"][0]["target"], "https://example.test")
+
+    def test_resource_command_results_preserve_path_and_identity(self) -> None:
+        result = ResourceCommandResult(
+            note_kind="task",
+            path=Path("task.md"),
+            resource={"id": 1},
+            resources=({"id": 1},),
+            identity={"task_short_uuid": "12345678"},
+            opened=True,
+        )
+        opened = ResourceOpenResult(
+            note_kind="task",
+            path=Path("task.md"),
+            resource={"id": 1},
+            opener=("true", "https://example.test"),
+            identity={"task_short_uuid": "12345678"},
+        )
+        self.assertEqual(result["path"], "task.md")
+        self.assertTrue(result["opened"])
+        self.assertEqual(opened["opener"][0], "true")
 
     def test_note_delete_result_exposes_paths_and_identity(self) -> None:
         result = NoteDeleteResult.from_mapping(
