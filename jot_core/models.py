@@ -906,6 +906,36 @@ class ResourceOperationResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class ResourceListResult(PayloadModel):
+    note_kind: str
+    path: Path
+    resources: tuple[Mapping[str, Any], ...]
+    identity: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "note_kind": self.note_kind,
+            **dict(self.identity),
+            "path": str(self.path),
+            "resources": [dict(item) for item in self.resources],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class NotesCommandResult(PayloadModel):
+    kinds: tuple[str, ...]
+    project: str | None
+    notes: tuple["NoteSummary", ...]
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "kinds": list(self.kinds),
+            "project": self.project,
+            "notes": [item.to_payload() for item in self.notes],
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class NoteDeleteResult(PayloadModel):
     note_path: Path
     trash_path: Path

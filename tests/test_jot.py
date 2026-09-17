@@ -60,6 +60,8 @@ from jot_core.models import (
     AgentContext,
     NoteWorkspace,
     NoteDeleteResult,
+    NotesCommandResult,
+    ResourceListResult,
     ResolvedTask,
     TaskRef,
     TaskSummary,
@@ -359,6 +361,19 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(search["notes"], [])
         self.assertEqual(recent["limit"], 5)
         self.assertEqual(recent["items"], [])
+
+    def test_notes_and_resources_envelopes_preserve_metadata(self) -> None:
+        notes = NotesCommandResult(kinds=("task-note",), project=None, notes=())
+        resources = ResourceListResult(
+            note_kind="task",
+            path=Path("/notes/book.md"),
+            resources=(),
+            identity={"task_short_uuid": "12345678"},
+        )
+
+        self.assertEqual(notes["kinds"], ["task-note"])
+        self.assertEqual(resources["task_short_uuid"], "12345678")
+        self.assertEqual(resources["path"], "/notes/book.md")
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(

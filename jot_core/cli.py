@@ -21,7 +21,7 @@ from .frontmatter import atomic_write_text, exclusive_file_lock, parse_document,
 from .index import rebuild_index, read_index_status, save_index
 from .integrity import reconcile_integrity, scan_integrity
 from .migrations import migrate_notes
-from .models import CommandResult, RecentReport, SearchCommandResult
+from .models import CommandResult, NoteSummary, NotesCommandResult, RecentReport, ResourceListResult, SearchCommandResult
 from .nautical import chain_id_for_task, nautical_summary
 from .notes import (
     chain_note_path,
@@ -1666,11 +1666,14 @@ def _run_notes(ctx, args) -> CommandResult:
     kinds = normalize_note_kinds(getattr(args, "kinds", None))
     return CommandResult(
         command="notes",
-        payload={
-            "kinds": sorted(kinds or {"task-note", "chain-note", "project-note"}),
-            "project": getattr(args, "project", None),
-            "notes": list_notes(ctx.config, kinds=kinds, project=getattr(args, "project", None)),
-        },
+        data=NotesCommandResult(
+            kinds=tuple(sorted(kinds or {"task-note", "chain-note", "project-note"})),
+            project=getattr(args, "project", None),
+            notes=tuple(
+                NoteSummary.from_mapping(item)
+                for item in list_notes(ctx.config, kinds=kinds, project=getattr(args, "project", None))
+            ),
+        ),
     )
 
 
@@ -1901,12 +1904,12 @@ def _run_resources(ctx, args) -> CommandResult:
     result = list_note_resources(note_path)
     return CommandResult(
         command="resources",
-        payload={
-            "note_kind": args.note_kind,
-            **identity,
-            "path": str(result.note_path),
-            "resources": result.resources,
-        },
+        data=ResourceListResult(
+            note_kind=args.note_kind,
+            path=result.note_path,
+            resources=tuple(result.resources),
+            identity=identity,
+        ),
     )
 
 
