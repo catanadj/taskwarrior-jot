@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .frontmatter import read_document
-from .models import AppConfig
+from .models import ActivityItem, AppConfig
 from .notes import find_project_note, list_note_resources
 from .ops import read_ops
 from .progress import format_progress_tracks_summary, read_note_progress_tracks
@@ -27,7 +27,7 @@ def list_notes(
     *,
     kinds: set[str] | None = None,
     project: str | None = None,
-) -> list[dict[str, Any]]:
+) -> list[ActivityItem]:
     selected = set(kinds or {"task-note", "chain-note", "project-note"})
     project_filter = str(project or "").strip()
     items: list[dict[str, Any]] = []
@@ -185,7 +185,7 @@ def recent_activity(
     if "event" in selected:
         items.extend(_recent_events(config))
     items.sort(key=lambda item: str(item.get("ts") or ""), reverse=True)
-    return items[:limit]
+    return [ActivityItem.from_mapping(item) for item in items[:limit]]
 
 
 def project_rollup(

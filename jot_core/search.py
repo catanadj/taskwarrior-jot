@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from .frontmatter import read_document
-from .models import AppConfig
+from .models import AppConfig, SearchResults
 from .ops import read_ops
 
 ALLOWED_KINDS = {"task-note", "chain-note", "project-note", "event"}
@@ -17,14 +17,14 @@ def search_all(
     kinds: set[str] | None = None,
     project: str | None = None,
     chain_id: str | None = None,
-) -> dict[str, list[dict[str, Any]]]:
+) -> SearchResults:
     needle = str(query or "").strip().lower()
     if not needle:
         raise RuntimeError("search query is empty")
     selected = set(kinds or ALLOWED_KINDS)
     task_metadata = _task_note_metadata(config)
 
-    return {
+    return SearchResults.from_mapping({
         "notes": _search_notes(config, needle, selected, project=project, chain_id=chain_id),
         "events": _search_events(
             config,
@@ -34,7 +34,7 @@ def search_all(
             chain_id=chain_id,
             task_metadata=task_metadata,
         ),
-    }
+    })
 
 
 def _search_notes(

@@ -9,12 +9,14 @@ from typing import Any
 from .editor import open_in_editor
 from .frontmatter import read_document
 from .models import (
+    ActivityItem,
     AppConfig,
     AgentContext,
     NoteSummary,
     ProjectTreeRow,
     ProgressMutationResult,
     ProjectWorkspace,
+    SearchResults,
     TaskSummary,
     TimelogEntryMutation,
     TimelogReport,
@@ -88,7 +90,7 @@ class JotService:
     config: AppConfig
     taskwarrior: TaskwarriorClient
 
-    def recent(self, limit: int = 50) -> list[dict[str, Any]]:
+    def recent(self, limit: int = 50) -> list[ActivityItem]:
         return recent_activity(self.config, limit=limit)
 
     def projects(self) -> list[NoteSummary]:
@@ -196,7 +198,7 @@ class JotService:
             item["progress"] = " | ".join(summaries) or "-"
         return [TaskSummary.from_mapping(item) for item in items]
 
-    def search(self, query: str) -> dict[str, list[dict[str, Any]]]:
+    def search(self, query: str) -> SearchResults:
         return search_all(self.config, query)
 
     def timelog_report(self, period: str = "week", *, details: bool = True) -> TimelogReport:

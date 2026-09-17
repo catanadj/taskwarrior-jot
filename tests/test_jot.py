@@ -39,6 +39,7 @@ from jot_core.frontmatter import (
 from jot_core.index import migrate_index_keys, rebuild_index
 from jot_core.models import (
     AppConfig,
+    ActivityItem,
     CommandResult,
     NoteSummary,
     ProgressTrack,
@@ -46,6 +47,8 @@ from jot_core.models import (
     ProgressMutationResult,
     ProgressTrend,
     ProjectTreeRow,
+    SearchResults,
+    SearchHit,
     AgentContext,
     NoteWorkspace,
     ResolvedTask,
@@ -245,6 +248,22 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(note.progress.current, "20")
         self.assertEqual(context.task["uuid"], "1234")
         self.assertEqual(context["notes"]["task"]["body"], "# Book")
+
+    def test_search_and_activity_models_preserve_result_rows(self) -> None:
+        results = SearchResults.from_mapping(
+            {
+                "notes": [{"kind": "task-note", "path": "/notes/a.md", "match": "book"}],
+                "events": [{"kind": "event", "ts": "2026-09-17T10:00:00Z", "annotation": "read"}],
+            }
+        )
+        activity = ActivityItem.from_mapping(
+            {"kind": "task-note", "ts": "2026-09-17T10:00:00Z", "title": "Read book"}
+        )
+
+        self.assertIsInstance(results.notes[0], SearchHit)
+        self.assertEqual(results["events"][0]["annotation"], "read")
+        self.assertEqual(activity.title, "Read book")
+        self.assertEqual(activity["kind"], "task-note")
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(

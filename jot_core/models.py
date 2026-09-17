@@ -596,6 +596,87 @@ class TaskSummaryResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class SearchHit(PayloadModel):
+    kind: str
+    path: str
+    match: str
+    description: str = ""
+    project: str | None = None
+    chain_id: str | None = None
+    task_short_uuid: str | None = None
+    timestamp: str | None = None
+    annotation: str | None = None
+    raw: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "SearchHit":
+        return cls(
+            kind=str(item.get("kind") or "").strip(),
+            path=str(item.get("path") or "").strip(),
+            match=str(item.get("match") or "").strip(),
+            description=str(item.get("description") or "").strip(),
+            project=str(item.get("project") or "").strip() or None,
+            chain_id=str(item.get("chain_id") or "").strip() or None,
+            task_short_uuid=str(item.get("task_short_uuid") or "").strip() or None,
+            timestamp=str(item.get("ts") or "").strip() or None,
+            annotation=str(item.get("annotation") or "") or None,
+            raw=dict(item),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return dict(self.raw)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchResults(PayloadModel):
+    notes: tuple[SearchHit, ...]
+    events: tuple[SearchHit, ...]
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "SearchResults":
+        def hits(key: str) -> tuple[SearchHit, ...]:
+            value = item.get(key)
+            return tuple(SearchHit.from_mapping(row) for row in value if isinstance(row, Mapping)) \
+                if isinstance(value, list) else ()
+
+        return cls(notes=hits("notes"), events=hits("events"))
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "notes": [item.to_payload() for item in self.notes],
+            "events": [item.to_payload() for item in self.events],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ActivityItem(PayloadModel):
+    kind: str
+    timestamp: str
+    title: str
+    path: str = ""
+    project: str | None = None
+    chain_id: str | None = None
+    task_short_uuid: str | None = None
+    raw: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "ActivityItem":
+        return cls(
+            kind=str(item.get("kind") or "").strip(),
+            timestamp=str(item.get("ts") or "").strip(),
+            title=str(item.get("title") or item.get("description") or item.get("annotation") or "").strip(),
+            path=str(item.get("path") or "").strip(),
+            project=str(item.get("project") or "").strip() or None,
+            chain_id=str(item.get("chain_id") or "").strip() or None,
+            task_short_uuid=str(item.get("task_short_uuid") or "").strip() or None,
+            raw=dict(item),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return dict(self.raw)
+
+
+@dataclass(frozen=True, slots=True)
 class TaskWorkspace(PayloadModel):
     task: Mapping[str, Any]
     nautical: Mapping[str, Any]
