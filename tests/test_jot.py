@@ -46,6 +46,8 @@ from jot_core.models import (
     ProgressMutationResult,
     ProgressTrend,
     ProjectTreeRow,
+    AgentContext,
+    NoteWorkspace,
     ResolvedTask,
     TaskRef,
     TaskSummary,
@@ -217,6 +219,32 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(history["summary"], "120/350 pages; change +20")
         self.assertEqual(trend.updates, 3)
         self.assertEqual(trend["custom"], "kept")
+
+    def test_workspace_models_expose_nested_note_contracts(self) -> None:
+        note = NoteWorkspace.from_mapping(
+            {
+                "path": "/notes/book.md",
+                "body": "# Book",
+                "resources": [{"target": "https://example.test"}],
+                "progress": {"track": "pages", "current": "20", "target": "100"},
+                "progress_tracks": [],
+            }
+        )
+        context = AgentContext.from_mapping(
+            {
+                "task": {"uuid": "1234"},
+                "context": {"projects": ["reading"]},
+                "notes": {"task": note.to_payload()},
+                "events": {"items": [], "truncated": False},
+                "nautical": {"fields": {}},
+                "warnings": [],
+            }
+        )
+
+        self.assertEqual(note.path, "/notes/book.md")
+        self.assertEqual(note.progress.current, "20")
+        self.assertEqual(context.task["uuid"], "1234")
+        self.assertEqual(context["notes"]["task"]["body"], "# Book")
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(

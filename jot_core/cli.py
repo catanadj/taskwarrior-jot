@@ -1039,7 +1039,7 @@ def main(argv: list[str] | None = None) -> int:
 
             result = CommandResult(
                 command="context",
-                payload=success_envelope("jot.context", payload, payload.pop("warnings", [])),
+                payload=success_envelope("jot.context", payload, list(payload.warnings)),
             )
         elif args.command == "integrity":
             from .output import success_envelope

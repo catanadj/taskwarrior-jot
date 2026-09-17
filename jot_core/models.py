@@ -511,6 +511,170 @@ class ProgressMutationResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class NoteWorkspace(PayloadModel):
+    path: str
+    body: str
+    resources: tuple[Mapping[str, Any], ...]
+    progress: ProgressTrack | None
+    progress_tracks: tuple[ProgressTrack, ...]
+    exists: bool = True
+    truncated: bool = False
+    digest: str | None = None
+    revision: int | None = None
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "NoteWorkspace":
+        raw_resources = item.get("resources")
+        raw_tracks = item.get("progress_tracks")
+        raw_progress = item.get("progress")
+        revision = item.get("revision")
+        return cls(
+            path=str(item.get("path") or ""),
+            body=str(item.get("body") or ""),
+            resources=tuple(dict(row) for row in raw_resources if isinstance(row, Mapping))
+            if isinstance(raw_resources, list) else (),
+            progress=ProgressTrack.from_mapping(raw_progress) if isinstance(raw_progress, Mapping) else None,
+            progress_tracks=tuple(
+                ProgressTrack.from_mapping(row)
+                for row in raw_tracks
+                if isinstance(row, Mapping)
+            ) if isinstance(raw_tracks, list) else (),
+            exists=bool(item.get("exists", True)),
+            truncated=bool(item.get("truncated")),
+            digest=str(item.get("digest") or "").strip() or None,
+            revision=int(revision) if revision is not None else None,
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "path": self.path,
+            "body": self.body,
+            "resources": [dict(item) for item in self.resources],
+            "progress": self.progress.to_payload() if self.progress is not None else None,
+            "progress_tracks": [item.to_payload() for item in self.progress_tracks],
+        }
+        if not self.exists:
+            payload["exists"] = False
+        if self.truncated:
+            payload["truncated"] = True
+        if self.digest is not None:
+            payload["digest"] = self.digest
+        if self.revision is not None:
+            payload["revision"] = self.revision
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class TaskSummaryResult(PayloadModel):
+    task: Mapping[str, Any]
+    notes: Mapping[str, str]
+    events: tuple[Mapping[str, Any], ...]
+    nautical: Mapping[str, Any]
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "TaskSummaryResult":
+        raw_task = item.get("task")
+        raw_notes = item.get("notes")
+        raw_events = item.get("events")
+        raw_nautical = item.get("nautical")
+        return cls(
+            task=dict(raw_task) if isinstance(raw_task, Mapping) else {},
+            notes={str(key): str(value or "") for key, value in raw_notes.items()}
+            if isinstance(raw_notes, Mapping) else {},
+            events=tuple(dict(row) for row in raw_events if isinstance(row, Mapping))
+            if isinstance(raw_events, list) else (),
+            nautical=dict(raw_nautical) if isinstance(raw_nautical, Mapping) else {},
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "task": dict(self.task),
+            "notes": dict(self.notes),
+            "events": [dict(item) for item in self.events],
+            "nautical": dict(self.nautical),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class TaskWorkspace(PayloadModel):
+    task: Mapping[str, Any]
+    nautical: Mapping[str, Any]
+    notes: Mapping[str, NoteWorkspace]
+    events: tuple[Mapping[str, Any], ...]
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "TaskWorkspace":
+        raw_notes = item.get("notes")
+        raw_events = item.get("events")
+        return cls(
+            task=dict(item.get("task")) if isinstance(item.get("task"), Mapping) else {},
+            nautical=dict(item.get("nautical")) if isinstance(item.get("nautical"), Mapping) else {},
+            notes={str(key): NoteWorkspace.from_mapping(value) for key, value in raw_notes.items()
+                   if isinstance(value, Mapping)} if isinstance(raw_notes, Mapping) else {},
+            events=tuple(dict(row) for row in raw_events if isinstance(row, Mapping))
+            if isinstance(raw_events, list) else (),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "task": dict(self.task),
+            "nautical": dict(self.nautical),
+            "notes": {key: value.to_payload() for key, value in self.notes.items()},
+            "events": [dict(item) for item in self.events],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectWorkspace(PayloadModel):
+    project: str
+    note: NoteWorkspace
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "ProjectWorkspace":
+        raw_note = item.get("note")
+        return cls(
+            project=str(item.get("project") or "").strip(),
+            note=NoteWorkspace.from_mapping(raw_note) if isinstance(raw_note, Mapping)
+            else NoteWorkspace(path="", body="", resources=(), progress=None, progress_tracks=(), exists=False),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {"project": self.project, "note": self.note.to_payload()}
+
+
+@dataclass(frozen=True, slots=True)
+class AgentContext(PayloadModel):
+    task: Mapping[str, Any]
+    context: Mapping[str, Any]
+    notes: Mapping[str, Any]
+    events: Mapping[str, Any]
+    nautical: Mapping[str, Any]
+    warnings: tuple[str, ...]
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "AgentContext":
+        raw_warnings = item.get("warnings")
+        return cls(
+            task=dict(item.get("task")) if isinstance(item.get("task"), Mapping) else {},
+            context=dict(item.get("context")) if isinstance(item.get("context"), Mapping) else {},
+            notes=dict(item.get("notes")) if isinstance(item.get("notes"), Mapping) else {},
+            events=dict(item.get("events")) if isinstance(item.get("events"), Mapping) else {},
+            nautical=dict(item.get("nautical")) if isinstance(item.get("nautical"), Mapping) else {},
+            warnings=tuple(str(value) for value in raw_warnings) if isinstance(raw_warnings, list) else (),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "task": dict(self.task),
+            "context": dict(self.context),
+            "notes": dict(self.notes),
+            "events": dict(self.events),
+            "nautical": dict(self.nautical),
+            "warnings": list(self.warnings),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ProgressHistoryEntry(PayloadModel):
     timestamp: str
     track: str

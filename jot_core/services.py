@@ -10,9 +10,11 @@ from .editor import open_in_editor
 from .frontmatter import read_document
 from .models import (
     AppConfig,
+    AgentContext,
     NoteSummary,
     ProjectTreeRow,
     ProgressMutationResult,
+    ProjectWorkspace,
     TaskSummary,
     TimelogEntryMutation,
     TimelogReport,
@@ -21,6 +23,8 @@ from .models import (
     TimelogStopAllResult,
     TimelogStopResult,
     TimelogWriteResult,
+    TaskSummaryResult,
+    TaskWorkspace,
 )
 from .nautical import nautical_summary
 from .notes import (
@@ -266,14 +270,14 @@ class JotService:
     def timelog_restore(self, reference: str) -> TimelogEntryMutation:
         return restore_deleted_time_log(self.config, reference)
 
-    def task_summary(self, task_ref: str) -> dict[str, Any]:
+    def task_summary(self, task_ref: str) -> TaskSummaryResult:
         task = self.taskwarrior.resolve_task(task_ref)
         task_note = find_task_note(self.config, task)
         chain_note = find_chain_note(self.config, task)
         project_note = find_project_note(self.config, task.project)
 
         chain_id = str(task.task.get("chainID") or "").strip()
-        return {
+        return TaskSummaryResult.from_mapping({
             "task": {
                 "uuid": task.task_uuid,
                 "short_uuid": task.task_short_uuid,
@@ -290,9 +294,9 @@ class JotService:
             },
             "events": self.taskwarrior.annotations_for_task(task),
             "nautical": nautical_summary(task.task),
-        }
+        })
 
-    def task_workspace(self, task_ref: str) -> dict[str, Any]:
+    def task_workspace(self, task_ref: str) -> TaskWorkspace:
         task = self.taskwarrior.resolve_task(task_ref)
         task_note = find_task_note(self.config, task)
         chain_note = find_chain_note(self.config, task)
@@ -312,7 +316,7 @@ class JotService:
                 "progress_tracks": list(progress_result.tracks),
             }
 
-        return {
+        return TaskWorkspace.from_mapping({
             "task": {
                 "uuid": task.task_uuid,
                 "short_uuid": task.task_short_uuid,
@@ -327,7 +331,7 @@ class JotService:
                 "project": _note_payload(project_note),
             },
             "events": self.taskwarrior.annotations_for_task(task),
-        }
+        })
 
     def agent_context(
         self,
@@ -335,7 +339,7 @@ class JotService:
         *,
         max_body_bytes: int = 64 * 1024,
         max_events: int = 100,
-    ) -> ProgressMutationResult:
+    ) -> AgentContext:
         """Build a bounded, read-only context snapshot for machine consumers."""
         task = self.taskwarrior.resolve_task(task_ref)
         warnings: list[str] = []
@@ -383,7 +387,7 @@ class JotService:
         if event_truncated:
             warnings.append("task events truncated")
             events = events[-max_events:]
-        return {
+        return AgentContext.from_mapping({
             "task": {
                 "uuid": task.task_uuid,
                 "id": task.task.get("id"),
@@ -411,9 +415,9 @@ class JotService:
                 "warnings": [],
             },
             "warnings": warnings,
-        }
+        })
 
-    def project_workspace(self, project_name: str) -> dict[str, Any]:
+    def project_workspace(self, project_name: str) -> ProjectWorkspace:
         note = find_project_note(self.config, project_name)
         if note:
             _metadata, body = read_document(note)
@@ -433,10 +437,10 @@ class JotService:
                 "progress": None,
                 "progress_tracks": [],
             }
-        return {
+        return ProjectWorkspace.from_mapping({
             "project": project_name,
             "note": note_data,
-        }
+        })
 
     def open_task_note_in_editor(self, task_ref: str) -> str:
         task = self.taskwarrior.resolve_task(task_ref)
@@ -487,7 +491,7 @@ class JotService:
         text: str,
         create_heading: bool = False,
         exact: bool = False,
-    ) -> ProgressMutationResult:
+    ) -> dict[str, Any]:
         task = self.taskwarrior.resolve_task(task_ref)
         result = add_to_task_heading_storage(
             self.config,
