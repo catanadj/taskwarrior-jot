@@ -40,6 +40,7 @@ from jot_core.index import migrate_index_keys, rebuild_index
 from jot_core.models import (
     AppConfig,
     ActivityItem,
+    AgentAppendResult,
     CommandResult,
     CleanupResult,
     DoctorReport,
@@ -60,6 +61,7 @@ from jot_core.models import (
     ResolvedTask,
     TaskRef,
     TaskSummary,
+    TaskCompletionResult,
     TimelogSession,
     TimelogReport,
     TimelogEntryMutation,
@@ -327,6 +329,19 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(result.note_path, Path("/notes/book.md"))
         self.assertEqual(result.trash_path, Path("/trash/book.md"))
         self.assertEqual(result["task_short_uuid"], "12345678")
+
+    def test_small_mutation_models_preserve_operation_identity(self) -> None:
+        completion = TaskCompletionResult.from_mapping(
+            {"task_uuid": "full", "task_short_uuid": "short", "description": "Finish"}
+        )
+        append = AgentAppendResult.from_mapping(
+            {"status": "applied", "operation_id": "op-1", "entry_id": "entry-1", "revision": 2, "digest": "sha256:x"}
+        )
+
+        self.assertEqual(completion.task_short_uuid, "short")
+        self.assertEqual(completion["description"], "Finish")
+        self.assertEqual(append.status, "applied")
+        self.assertEqual(append["revision"], 2)
 
     def test_trash_item_exposes_named_fields_and_preserves_optional_identity(self) -> None:
         item = TrashItem.from_mapping(

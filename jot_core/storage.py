@@ -17,6 +17,7 @@ from .index import (
     remove_task_note_index,
 )
 from .models import (
+    AgentAppendResult,
     AppConfig,
     AppendResult,
     HeadingMutationResult,
@@ -117,7 +118,7 @@ def append_task_note_idempotent(
     operation_id: str,
     entry_id: str,
     request_digest: str | None = None,
-) -> dict[str, object]:
+) -> AgentAppendResult:
     """Append one agent entry, making retries return the original result."""
     operation_id = str(operation_id or "").strip()
     entry_id = str(entry_id or "").strip()
@@ -129,13 +130,13 @@ def append_task_note_idempotent(
             if str(item.get("op") or "") != "agent_note_append":
                 continue
             if str(item.get("operation_id") or "") == operation_id or str(item.get("entry_id") or "") == entry_id:
-                return {
+                return AgentAppendResult.from_mapping({
                     "status": "duplicate",
                     "operation_id": operation_id,
                     "entry_id": entry_id,
                     "revision": int(item.get("revision") or 1),
                     "digest": str(item.get("digest") or ""),
-                }
+                })
         note = ensure_task_note(config, task)
         _metadata, body = read_document(note.note_path)
         if marker in body:
@@ -155,7 +156,7 @@ def append_task_note_idempotent(
                 digest=digest,
                 repaired=True,
             )
-            return {"status": "duplicate", "operation_id": operation_id, "entry_id": entry_id, "revision": revision, "digest": digest}
+            return AgentAppendResult.from_mapping({"status": "duplicate", "operation_id": operation_id, "entry_id": entry_id, "revision": revision, "digest": digest})
         result = append_to_task_note(config, task, f"{text.rstrip()}\n\n{marker}")
         update_task_note_index(config, task, result.note_path)
         digest = _note_digest(result.note_path)
@@ -172,7 +173,7 @@ def append_task_note_idempotent(
             revision=revision,
             digest=digest,
         )
-        return {"status": "applied", "operation_id": operation_id, "entry_id": entry_id, "revision": revision, "digest": digest}
+        return AgentAppendResult.from_mapping({"status": "applied", "operation_id": operation_id, "entry_id": entry_id, "revision": revision, "digest": digest})
 
 
 def _note_digest(path: Path) -> str:

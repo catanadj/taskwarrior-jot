@@ -901,6 +901,56 @@ class NoteDeleteResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class TaskCompletionResult(PayloadModel):
+    task_uuid: str
+    task_short_uuid: str
+    description: str
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "TaskCompletionResult":
+        return cls(
+            task_uuid=str(item.get("task_uuid") or "").strip(),
+            task_short_uuid=str(item.get("task_short_uuid") or "").strip(),
+            description=str(item.get("description") or "").strip(),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "task_uuid": self.task_uuid,
+            "task_short_uuid": self.task_short_uuid,
+            "description": self.description,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class AgentAppendResult(PayloadModel):
+    status: str
+    operation_id: str
+    entry_id: str
+    revision: int
+    digest: str
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "AgentAppendResult":
+        return cls(
+            status=str(item.get("status") or "").strip(),
+            operation_id=str(item.get("operation_id") or "").strip(),
+            entry_id=str(item.get("entry_id") or "").strip(),
+            revision=int(item.get("revision") or 0),
+            digest=str(item.get("digest") or "").strip(),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "operation_id": self.operation_id,
+            "entry_id": self.entry_id,
+            "revision": self.revision,
+            "digest": self.digest,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class HeadingMutationResult(PayloadModel):
     note_path: Path
     opened: bool
