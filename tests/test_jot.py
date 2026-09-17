@@ -37,7 +37,7 @@ from jot_core.frontmatter import (
     update_metadata,
     write_document,
 )
-from jot_core.index import migrate_index_keys, rebuild_index
+from jot_core.index import load_or_rebuild_index, migrate_index_keys, rebuild_index
 from jot_core.models import (
     AppConfig,
     ActivityItem,
@@ -1568,6 +1568,14 @@ class ServiceProgressRowTests(unittest.TestCase):
             self.config.templates_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
+
+    def test_corrupt_index_recovery_emits_a_diagnostic_warning(self) -> None:
+        (self.config.root_dir / "index.json").write_text("not json\n", encoding="utf-8")
+
+        with self.assertWarnsRegex(RuntimeWarning, "rebuilding invalid Jot index"):
+            rebuilt = load_or_rebuild_index(self.config)
+
+        self.assertEqual(rebuilt["tasks"], {})
 
     def test_task_and_project_rows_include_progress_summaries(self) -> None:
         task_path = self.config.tasks_dir / "2d6d7d7d--read-book.md"

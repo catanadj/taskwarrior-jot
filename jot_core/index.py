@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
+import warnings
 
 from .frontmatter import atomic_write_text, exclusive_file_lock, read_document
 from .models import AppConfig, ResolvedTask
@@ -79,15 +80,23 @@ def load_or_rebuild_index(config: AppConfig) -> dict[str, Any]:
 
 def _load_or_rebuild_index_unlocked(config: AppConfig) -> tuple[dict[str, Any], bool]:
     path = index_path(config)
+    recovery_reason: str | None = None
     if path.exists():
         try:
             with path.open("r", encoding="utf-8") as handle:
                 data = json.load(handle)
             if _valid_index_shape(data):
                 return data, False
-        except Exception:
-            pass
+            recovery_reason = "invalid index structure"
+        except Exception as exc:
+            recovery_reason = f"{type(exc).__name__}: {exc}"
     data = rebuild_index(config)
+    if recovery_reason:
+        warnings.warn(
+            f"rebuilding invalid Jot index at {path}: {recovery_reason}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
     return data, True
 
 
