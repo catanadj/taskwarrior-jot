@@ -69,6 +69,7 @@ from jot_core.models import (
     NoteHeadingsResult,
     NoteSectionResult,
     NoteContentResult,
+    HeadingCommandResult,
     SearchResults,
     SearchHit,
     SearchCommandResult,
@@ -397,6 +398,20 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertTrue(summary["note"]["exists"])
         self.assertEqual(content["content"], "---\nbody\n")
         self.assertEqual(content["task_short_uuid"], "12345678")
+
+    def test_heading_command_result_preserves_add_to_contract(self) -> None:
+        result = HeadingCommandResult(
+            note_kind="task",
+            path=Path("task.md"),
+            opened=True,
+            heading="Next steps",
+            heading_match="fuzzy",
+            timestamp="2026-09-17T10:00:00Z",
+            entry="call vendor",
+            identity={"task_short_uuid": "12345678"},
+        )
+        self.assertEqual(result["heading_match"], "fuzzy")
+        self.assertEqual(result["entry"], "call vendor")
 
     def test_note_delete_result_exposes_paths_and_identity(self) -> None:
         result = NoteDeleteResult.from_mapping(

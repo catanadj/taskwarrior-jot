@@ -25,6 +25,7 @@ from .migrations import migrate_notes
 from .models import (
     CommandResult,
     EventAddResult,
+    HeadingCommandResult,
     NoteAppendCommandResult,
     NoteDeleteCommandResult,
     NoteContentResult,
@@ -2296,16 +2297,16 @@ def _run_add_to(ctx, args) -> CommandResult:
         )
         return CommandResult(
             command="add-to",
-            payload={
-                "note_kind": "task",
-                "task_short_uuid": task.task_short_uuid,
-                "path": str(result["note_path"]),
-                "opened": bool(result["opened"]),
-                "heading": result["heading"],
-                "heading_match": result["heading_match"],
-                "timestamp": result["timestamp"],
-                "entry": result["entry"],
-            },
+            data=HeadingCommandResult(
+                note_kind="task",
+                path=result.note_path,
+                opened=result.opened,
+                heading=result.heading,
+                heading_match=result.heading_match,
+                timestamp=result.timestamp,
+                entry=result.entry,
+                identity={"task_short_uuid": task.task_short_uuid},
+            ),
         )
     if args.note_kind == "chain":
         task = ctx.taskwarrior.resolve_task(args.note_ref)
@@ -2319,16 +2320,16 @@ def _run_add_to(ctx, args) -> CommandResult:
         )
         return CommandResult(
             command="add-to",
-            payload={
-                "note_kind": "chain",
-                "task_short_uuid": task.task_short_uuid,
-                "path": str(result["note_path"]),
-                "opened": bool(result["opened"]),
-                "heading": result["heading"],
-                "heading_match": result["heading_match"],
-                "timestamp": result["timestamp"],
-                "entry": result["entry"],
-            },
+            data=HeadingCommandResult(
+                note_kind="chain",
+                path=result.note_path,
+                opened=result.opened,
+                heading=result.heading,
+                heading_match=result.heading_match,
+                timestamp=result.timestamp,
+                entry=result.entry,
+                identity={"task_short_uuid": task.task_short_uuid},
+            ),
         )
     project_name = str(args.note_ref).strip()
     result = add_to_project_heading_storage(
@@ -2341,16 +2342,16 @@ def _run_add_to(ctx, args) -> CommandResult:
     )
     return CommandResult(
         command="add-to",
-        payload={
-            "note_kind": "project",
-            "project": project_name,
-            "path": str(result["note_path"]),
-            "opened": bool(result["opened"]),
-            "heading": result["heading"],
-            "heading_match": result["heading_match"],
-            "timestamp": result["timestamp"],
-            "entry": result["entry"],
-        },
+        data=HeadingCommandResult(
+            note_kind="project",
+            path=result.note_path,
+            opened=result.opened,
+            heading=result.heading,
+            heading_match=result.heading_match,
+            timestamp=result.timestamp,
+            entry=result.entry,
+            identity={"project": project_name},
+        ),
     )
 
 

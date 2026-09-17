@@ -1489,6 +1489,30 @@ class HeadingMutationResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class HeadingCommandResult(PayloadModel):
+    note_kind: str
+    path: Path
+    opened: bool
+    heading: str
+    heading_match: str
+    timestamp: str
+    entry: str
+    identity: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "note_kind": self.note_kind,
+            **dict(self.identity),
+            "path": str(self.path),
+            "opened": self.opened,
+            "heading": self.heading,
+            "heading_match": self.heading_match,
+            "timestamp": self.timestamp,
+            "entry": self.entry,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class TaskWorkspace(PayloadModel):
     task: Mapping[str, Any]
     nautical: Mapping[str, Any]
