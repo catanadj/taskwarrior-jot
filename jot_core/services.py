@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .editor import open_in_editor
+from .contracts import normalize_note_kind, normalize_progress_operation
 from .frontmatter import read_document
 from .models import (
     ActivityItem,
@@ -573,6 +574,7 @@ class JotService:
         target: str,
         label: str | None = None,
     ) -> ResourceOperationResult:
+        kind = normalize_note_kind(kind, context="resource target")
         if kind == "task":
             task = self.taskwarrior.resolve_task(task_ref)
             return attach_task_resource_storage(self.config, task, target=target, label=label)
@@ -592,6 +594,7 @@ class JotService:
         note_path: str,
         resource_id: int,
     ) -> ResourceOperationResult:
+        kind = normalize_note_kind(kind, context="resource target")
         path = Path(note_path)
         if kind == "task":
             task = self.taskwarrior.resolve_task(task_ref)
@@ -624,17 +627,16 @@ class JotService:
         task_ref: str = "",
         project_name: str = "",
     ) -> list[str]:
-        if kind in {"task", "chain"}:
+        normalized_kind = normalize_note_kind(kind, context="progress target")
+        if normalized_kind in {"task", "chain"}:
             task = self.taskwarrior.resolve_task(task_ref)
             note = (
                 find_task_note(self.config, task)
-                if kind == "task"
+                if normalized_kind == "task"
                 else find_chain_note(self.config, task)
             )
-        elif kind == "project":
+        elif normalized_kind == "project":
             note = find_project_note(self.config, project_name)
-        else:
-            raise RuntimeError(f"unknown progress target kind: {kind}")
         if note is None or not note.exists():
             return []
         return [
@@ -656,7 +658,7 @@ class JotService:
         confirm_clear: bool = False,
     ) -> dict[str, Any]:
         current = target = amount = None
-        normalized_operation = str(operation or "").strip().lower()
+        normalized_operation = normalize_progress_operation(operation)
         if normalized_operation == "set":
             current, target = parse_progress_pair(value)
         elif normalized_operation in {"add", "subtract"}:
@@ -666,15 +668,13 @@ class JotService:
         elif normalized_operation == "clear":
             if not confirm_clear:
                 raise RuntimeError("progress clear requires confirmation")
-        else:
-            raise RuntimeError(f"unknown progress operation: {operation}")
-
-        if kind in {"task", "chain"}:
+        normalized_kind = normalize_note_kind(kind, context="progress target")
+        if normalized_kind in {"task", "chain"}:
             task = self.taskwarrior.resolve_task(task_ref)
             return mutate_task_progress_storage(
                 self.config,
                 task,
-                note_kind=kind,
+                note_kind=normalized_kind,
                 operation=normalized_operation,
                 current=current,
                 target=target,
@@ -683,7 +683,7 @@ class JotService:
                 status=status,
                 track=track,
             )
-        if kind == "project":
+        if normalized_kind == "project":
             return mutate_project_progress_storage(
                 self.config,
                 project_name,
@@ -695,7 +695,6 @@ class JotService:
                 status=status,
                 track=track,
             )
-        raise RuntimeError(f"unknown progress target kind: {kind}")
 
 
 def _progress_summary_for_path(path: object, *, prefix: str = "") -> str:

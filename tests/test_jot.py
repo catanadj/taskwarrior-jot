@@ -28,6 +28,7 @@ from jot_core.cli import (
 )
 from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
+from jot_core.contracts import normalize_note_kind, normalize_progress_operation, normalize_task_note_kind
 from jot_core.editor import colorize_diff, note_diff, open_in_editor
 from jot_core.frontmatter import (
     atomic_write_text,
@@ -1353,6 +1354,19 @@ class CommandPrefixTests(unittest.TestCase):
             expand_command_prefixes(self.parser, ["pro"])
         self.assertIn("progress", raised.exception.matches)
         self.assertIn("project", raised.exception.matches)
+
+
+class OperationContractTests(unittest.TestCase):
+    def test_normalizers_accept_case_and_reject_incompatible_values(self) -> None:
+        self.assertEqual(normalize_note_kind(" PROJECT "), "project")
+        self.assertEqual(normalize_progress_operation(" ADD "), "add")
+        self.assertEqual(normalize_task_note_kind("chain"), "chain")
+        with self.assertRaisesRegex(RuntimeError, "unknown resource target kind"):
+            normalize_note_kind("event", context="resource target")
+        with self.assertRaisesRegex(RuntimeError, "must be task or chain"):
+            normalize_task_note_kind("project")
+        with self.assertRaisesRegex(RuntimeError, "unknown progress operation"):
+            normalize_progress_operation("append")
 
 
 class ProgressValueTests(unittest.TestCase):

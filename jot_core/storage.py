@@ -6,6 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from .frontmatter import exclusive_file_lock, read_document
+from .contracts import normalize_progress_operation, normalize_task_note_kind
 
 from .index import (
     update_chain_note_index,
@@ -543,6 +544,8 @@ def mutate_task_progress_storage(
     status: str | None = None,
     track: str | None = None,
 ) -> ProgressMutationResult:
+    note_kind = normalize_task_note_kind(note_kind)
+    operation = normalize_progress_operation(operation)
     if note_kind == "task":
         note = _task_progress_note(config, task, operation)
         chain_id = None
@@ -599,6 +602,7 @@ def mutate_project_progress_storage(
     status: str | None = None,
     track: str | None = None,
 ) -> ProgressMutationResult:
+    operation = normalize_progress_operation(operation)
     if operation == "set":
         note = ensure_project_note(config, project_name)
     else:
@@ -647,6 +651,7 @@ def _mutate_progress(
     status: str | None,
     track: str | None,
 ) -> ProgressResult:
+    operation = normalize_progress_operation(operation)
     if operation == "set":
         if current is None or target is None:
             raise RuntimeError("set requires current and target values")
@@ -663,7 +668,6 @@ def _mutate_progress(
         return set_note_progress_status(note_path, str(status or ""), track=track)
     if operation == "clear":
         return clear_note_progress(note_path, track=track)
-    raise RuntimeError(f"unknown progress operation: {operation}")
 
 
 def _task_progress_note(config: AppConfig, task: ResolvedTask, operation: str) -> NotePaths:
