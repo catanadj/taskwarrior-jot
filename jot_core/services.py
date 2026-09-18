@@ -657,18 +657,139 @@ class JotService:
         track: str = "default",
         confirm_clear: bool = False,
     ) -> dict[str, Any]:
-        current = target = amount = None
         normalized_operation = normalize_progress_operation(operation)
         if normalized_operation == "set":
-            current, target = parse_progress_pair(value)
-        elif normalized_operation in {"add", "subtract"}:
-            amount = parse_progress_value(value)
-        elif normalized_operation == "status":
-            status = str(value or status or "").strip()
-        elif normalized_operation == "clear":
-            if not confirm_clear:
-                raise RuntimeError("progress clear requires confirmation")
+            return self.set_progress(
+                kind,
+                value,
+                task_ref=task_ref,
+                project_name=project_name,
+                unit=unit,
+                status=status,
+                track=track,
+            )
+        if normalized_operation in {"add", "subtract"}:
+            return self.adjust_progress(
+                kind,
+                value,
+                direction=normalized_operation,
+                task_ref=task_ref,
+                project_name=project_name,
+                track=track,
+            )
+        if normalized_operation == "status":
+            return self.set_progress_status(
+                kind,
+                str(value or status or ""),
+                task_ref=task_ref,
+                project_name=project_name,
+                track=track,
+            )
+        if not confirm_clear:
+            raise RuntimeError("progress clear requires confirmation")
+        return self.clear_progress(
+            kind,
+            task_ref=task_ref,
+            project_name=project_name,
+            track=track,
+        )
+
+    def set_progress(
+        self,
+        kind: str,
+        value: str,
+        *,
+        task_ref: str = "",
+        project_name: str = "",
+        unit: str | None = None,
+        status: str | None = None,
+        track: str = "default",
+    ) -> dict[str, Any]:
+        current, target = parse_progress_pair(value)
+        return self._mutate_progress_target(
+            kind,
+            operation="set",
+            task_ref=task_ref,
+            project_name=project_name,
+            current=current,
+            target=target,
+            unit=unit,
+            status=status,
+            track=track,
+        )
+
+    def adjust_progress(
+        self,
+        kind: str,
+        value: str,
+        *,
+        direction: str = "add",
+        task_ref: str = "",
+        project_name: str = "",
+        track: str = "default",
+    ) -> dict[str, Any]:
+        normalized_direction = normalize_progress_operation(direction)
+        if normalized_direction not in {"add", "subtract"}:
+            raise RuntimeError("progress adjustment direction must be add or subtract")
+        return self._mutate_progress_target(
+            kind,
+            operation=normalized_direction,
+            task_ref=task_ref,
+            project_name=project_name,
+            amount=parse_progress_value(value),
+            track=track,
+        )
+
+    def set_progress_status(
+        self,
+        kind: str,
+        status: str,
+        *,
+        task_ref: str = "",
+        project_name: str = "",
+        track: str = "default",
+    ) -> dict[str, Any]:
+        return self._mutate_progress_target(
+            kind,
+            operation="status",
+            task_ref=task_ref,
+            project_name=project_name,
+            status=str(status or "").strip(),
+            track=track,
+        )
+
+    def clear_progress(
+        self,
+        kind: str,
+        *,
+        task_ref: str = "",
+        project_name: str = "",
+        track: str = "default",
+    ) -> dict[str, Any]:
+        return self._mutate_progress_target(
+            kind,
+            operation="clear",
+            task_ref=task_ref,
+            project_name=project_name,
+            track=track,
+        )
+
+    def _mutate_progress_target(
+        self,
+        kind: str,
+        *,
+        operation: str,
+        task_ref: str = "",
+        project_name: str = "",
+        current=None,
+        target=None,
+        amount=None,
+        unit: str | None = None,
+        status: str | None = None,
+        track: str = "default",
+    ) -> dict[str, Any]:
         normalized_kind = normalize_note_kind(kind, context="progress target")
+        normalized_operation = normalize_progress_operation(operation)
         if normalized_kind in {"task", "chain"}:
             task = self.taskwarrior.resolve_task(task_ref)
             return mutate_task_progress_storage(
