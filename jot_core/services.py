@@ -16,7 +16,6 @@ from .models import (
     NoteSummary,
     NoteDeleteResult,
     ProjectTreeRow,
-    ProgressMutationResult,
     ProjectWorkspace,
     ResourceOperationResult,
     SearchResults,

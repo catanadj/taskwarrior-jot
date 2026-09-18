@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, Mapping
 
-from .models import CommandResult, DoctorCheck
+from .models import CommandResult
 from .progress_output import emit_progress
 
 

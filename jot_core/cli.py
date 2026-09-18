@@ -12,7 +12,6 @@ from pathlib import Path
 
 from . import __version__
 from .app import build_app_context
-from .command_help import build_command_catalog
 from .command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from .config import ensure_app_dirs
 from .doctor import run_doctor, run_doctor_config_error

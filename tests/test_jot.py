@@ -38,7 +38,7 @@ from jot_core.frontmatter import (
     update_metadata,
     write_document,
 )
-from jot_core.index import load_or_rebuild_index, migrate_index_keys, rebuild_index
+from jot_core.index import load_or_rebuild_index, migrate_index_keys
 from jot_core.models import (
     AppConfig,
     ActivityItem,
