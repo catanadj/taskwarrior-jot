@@ -1982,7 +1982,7 @@ def _run_open_resource(ctx, args) -> CommandResult:
         data=ResourceOpenResult(
             note_kind=args.note_kind,
             path=note_path,
-            resource=resource,
+            resource=ResourceRecord.from_mapping(resource),
             opener=tuple(command),
             identity=identity,
         ),

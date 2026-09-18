@@ -1163,11 +1163,54 @@ class CleanupResult(PayloadModel):
 
 
 @dataclass(frozen=True, slots=True)
+class ResourceRecord(PayloadModel):
+    id: int
+    label: str
+    target: str
+    kind: str
+    status: str
+    line: int
+    raw: str
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "ResourceRecord":
+        return cls(
+            id=int(item.get("id") or 0),
+            label=str(item.get("label") or ""),
+            target=str(item.get("target") or ""),
+            kind=str(item.get("kind") or ""),
+            status=str(item.get("status") or ""),
+            line=int(item.get("line") or 0),
+            raw=str(item.get("raw") or ""),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "label": self.label,
+            "target": self.target,
+            "kind": self.kind,
+            "status": self.status,
+            "line": self.line,
+            "raw": self.raw,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ResourceOperationResult(PayloadModel):
     note_path: Path
-    resource: Mapping[str, Any]
-    resources: tuple[Mapping[str, Any], ...]
+    resource: ResourceRecord
+    resources: tuple[ResourceRecord, ...]
     opened: bool | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.resource, Mapping):
+            object.__setattr__(self, "resource", ResourceRecord.from_mapping(self.resource))
+        object.__setattr__(
+            self,
+            "resources",
+            tuple(ResourceRecord.from_mapping(item) if isinstance(item, Mapping) else item for item in self.resources),
+        )
 
     @classmethod
     def from_mapping(cls, item: Mapping[str, Any]) -> "ResourceOperationResult":
@@ -1175,8 +1218,8 @@ class ResourceOperationResult(PayloadModel):
         raw_resources = item.get("resources")
         return cls(
             note_path=Path(str(item.get("note_path") or "")),
-            resource=dict(raw_resource) if isinstance(raw_resource, Mapping) else {},
-            resources=tuple(dict(row) for row in raw_resources if isinstance(row, Mapping))
+            resource=ResourceRecord.from_mapping(raw_resource) if isinstance(raw_resource, Mapping) else ResourceRecord.from_mapping({}),
+            resources=tuple(ResourceRecord.from_mapping(row) for row in raw_resources if isinstance(row, Mapping))
             if isinstance(raw_resources, list) else (),
             opened=bool(item["opened"]) if "opened" in item else None,
         )
@@ -1184,8 +1227,8 @@ class ResourceOperationResult(PayloadModel):
     def to_payload(self) -> dict[str, Any]:
         payload = {
             "note_path": str(self.note_path),
-            "resource": dict(self.resource),
-            "resources": [dict(item) for item in self.resources],
+            "resource": self.resource.to_payload(),
+            "resources": [item.to_payload() for item in self.resources],
         }
         if self.opened is not None:
             payload["opened"] = self.opened
@@ -1196,18 +1239,27 @@ class ResourceOperationResult(PayloadModel):
 class ResourceCommandResult(PayloadModel):
     note_kind: str
     path: Path
-    resource: Mapping[str, Any]
-    resources: tuple[Mapping[str, Any], ...]
+    resource: ResourceRecord
+    resources: tuple[ResourceRecord, ...]
     identity: Mapping[str, Any] = field(repr=False, default_factory=dict)
     opened: bool | None = None
+
+    def __post_init__(self) -> None:
+        if isinstance(self.resource, Mapping):
+            object.__setattr__(self, "resource", ResourceRecord.from_mapping(self.resource))
+        object.__setattr__(
+            self,
+            "resources",
+            tuple(ResourceRecord.from_mapping(item) if isinstance(item, Mapping) else item for item in self.resources),
+        )
 
     def to_payload(self) -> dict[str, Any]:
         payload = {
             "note_kind": self.note_kind,
             **dict(self.identity),
             "path": str(self.path),
-            "resource": dict(self.resource),
-            "resources": [dict(item) for item in self.resources],
+            "resource": self.resource.to_payload(),
+            "resources": [item.to_payload() for item in self.resources],
         }
         if self.opened is not None:
             payload["opened"] = self.opened
@@ -1218,16 +1270,20 @@ class ResourceCommandResult(PayloadModel):
 class ResourceOpenResult(PayloadModel):
     note_kind: str
     path: Path
-    resource: Mapping[str, Any]
+    resource: ResourceRecord
     opener: tuple[str, ...]
     identity: Mapping[str, Any] = field(repr=False, default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if isinstance(self.resource, Mapping):
+            object.__setattr__(self, "resource", ResourceRecord.from_mapping(self.resource))
 
     def to_payload(self) -> dict[str, Any]:
         return {
             "note_kind": self.note_kind,
             **dict(self.identity),
             "path": str(self.path),
-            "resource": dict(self.resource),
+            "resource": self.resource.to_payload(),
             "opener": list(self.opener),
         }
 
@@ -1414,40 +1470,6 @@ class ResourceListResult(PayloadModel):
             **dict(self.identity),
             "path": str(self.path),
             "resources": [item.to_payload() for item in self.resources],
-        }
-
-
-@dataclass(frozen=True, slots=True)
-class ResourceRecord(PayloadModel):
-    id: int
-    label: str
-    target: str
-    kind: str
-    status: str
-    line: int
-    raw: str
-
-    @classmethod
-    def from_mapping(cls, item: Mapping[str, Any]) -> "ResourceRecord":
-        return cls(
-            id=int(item.get("id") or 0),
-            label=str(item.get("label") or ""),
-            target=str(item.get("target") or ""),
-            kind=str(item.get("kind") or ""),
-            status=str(item.get("status") or ""),
-            line=int(item.get("line") or 0),
-            raw=str(item.get("raw") or ""),
-        )
-
-    def to_payload(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "label": self.label,
-            "target": self.target,
-            "kind": self.kind,
-            "status": self.status,
-            "line": self.line,
-            "raw": self.raw,
         }
 
 

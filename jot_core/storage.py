@@ -25,6 +25,7 @@ from .models import (
     NotePaths,
     ProgressMutationResult,
     ResolvedTask,
+    ResourceRecord,
     ResourceOperationResult,
 )
 from .nautical import chain_id_for_task
@@ -392,8 +393,8 @@ def attach_task_resource_storage(
     return ResourceOperationResult(
         note_path=result.note_path,
         opened=note.existed,
-        resource=result.resource,
-        resources=tuple(result.resources),
+        resource=ResourceRecord.from_mapping(result.resource),
+        resources=tuple(ResourceRecord.from_mapping(item) for item in result.resources),
     )
 
 
@@ -420,8 +421,8 @@ def attach_chain_resource_storage(
     return ResourceOperationResult(
         note_path=result.note_path,
         opened=note.existed,
-        resource=result.resource,
-        resources=tuple(result.resources),
+        resource=ResourceRecord.from_mapping(result.resource),
+        resources=tuple(ResourceRecord.from_mapping(item) for item in result.resources),
     )
 
 
@@ -446,8 +447,8 @@ def attach_project_resource_storage(
     return ResourceOperationResult(
         note_path=result.note_path,
         opened=note.existed,
-        resource=result.resource,
-        resources=tuple(result.resources),
+        resource=ResourceRecord.from_mapping(result.resource),
+        resources=tuple(ResourceRecord.from_mapping(item) for item in result.resources),
     )
 
 
@@ -472,8 +473,8 @@ def detach_task_resource_storage(
     )
     return ResourceOperationResult(
         note_path=result.note_path,
-        resource=result.resource,
-        resources=tuple(result.resources),
+        resource=ResourceRecord.from_mapping(result.resource),
+        resources=tuple(ResourceRecord.from_mapping(item) for item in result.resources),
     )
 
 
@@ -499,8 +500,8 @@ def detach_chain_resource_storage(
     )
     return ResourceOperationResult(
         note_path=result.note_path,
-        resource=result.resource,
-        resources=tuple(result.resources),
+        resource=ResourceRecord.from_mapping(result.resource),
+        resources=tuple(ResourceRecord.from_mapping(item) for item in result.resources),
     )
 
 
@@ -524,8 +525,8 @@ def detach_project_resource_storage(
     )
     return ResourceOperationResult(
         note_path=result.note_path,
-        resource=result.resource,
-        resources=tuple(result.resources),
+        resource=ResourceRecord.from_mapping(result.resource),
+        resources=tuple(ResourceRecord.from_mapping(item) for item in result.resources),
     )
 
 
