@@ -10,6 +10,7 @@ from typing import Any, cast
 from .frontmatter import atomic_write_text, exclusive_file_lock, read_document, write_document
 from .index import update_chain_note_index, update_task_note_index
 from .models import (
+    AppConfig,
     ResolvedTask,
     TimelogSessionRecord,
     TaskRef,
@@ -24,6 +25,7 @@ from .models import (
 from .nautical import chain_id_for_task
 from .notes import append_under_heading_once, ensure_chain_note, ensure_task_note
 from .ops import append_op, iso_now, read_ops
+from .taskwarrior import TaskwarriorClient
 from .timewarrior import start_timewarrior_for_task
 from .timelog_report import build_time_log_report
 
@@ -35,7 +37,14 @@ SECTION_END_RE = re.compile(r"^#{1,2}\s+")
 TIMEW_ATTEMPT_LEASE_SECONDS = 60
 
 
-def ingest_time_log(config, old: dict[str, Any], new: dict[str, Any], *, scope: str = "auto", stopped_at: str = "") -> dict[str, Any]:
+def ingest_time_log(
+    config: AppConfig,
+    old: dict[str, Any],
+    new: dict[str, Any],
+    *,
+    scope: str = "auto",
+    stopped_at: str = "",
+) -> dict[str, Any] | TimelogWriteResult:
     if not isinstance(old, dict) or not isinstance(new, dict):
         raise RuntimeError("timelog ingest expects old and new task JSON objects")
     if "start" not in old or "start" in new:
@@ -50,7 +59,7 @@ def ingest_time_log(config, old: dict[str, Any], new: dict[str, Any], *, scope: 
     return write_time_log(config, task, started=started, stopped=stopped, scope=scope)
 
 
-def start_time_session(config, task: ResolvedTask, *, started_at: str = "") -> TimelogSessionResult:
+def start_time_session(config: AppConfig, task: ResolvedTask, *, started_at: str = "") -> TimelogSessionResult:
     started = _parse_datetime(started_at) if started_at else datetime.now(timezone.utc)
     path = _session_store_path(config)
     existing = None
@@ -180,7 +189,7 @@ def _timewarrior_result_state(result: dict[str, Any]) -> str:
     return "skipped"
 
 
-def stop_time_session(config, task: ResolvedTask, *, stopped_at: str = "", scope: str = "auto") -> TimelogStopResult:
+def stop_time_session(config: AppConfig, task: ResolvedTask, *, stopped_at: str = "", scope: str = "auto") -> TimelogStopResult:
     stopped = _parse_datetime(stopped_at) if stopped_at else datetime.now(timezone.utc)
     path = _session_store_path(config)
     with exclusive_file_lock(path):
@@ -213,7 +222,7 @@ def stop_time_session(config, task: ResolvedTask, *, stopped_at: str = "", scope
     })
 
 
-def stop_all_time_sessions(config, taskwarrior, *, stopped_at: str = "", scope: str = "auto") -> TimelogStopAllResult:
+def stop_all_time_sessions(config: AppConfig, taskwarrior: TaskwarriorClient, *, stopped_at: str = "", scope: str = "auto") -> TimelogStopAllResult:
     stopped = _parse_datetime(stopped_at) if stopped_at else datetime.now(timezone.utc)
     sessions = list_time_sessions(config, now=stopped)
     results: list[TimelogStopResult] = []
@@ -236,7 +245,7 @@ def stop_all_time_sessions(config, taskwarrior, *, stopped_at: str = "", scope: 
     })
 
 
-def list_time_sessions(config, *, now: datetime | None = None) -> list[TimelogSession]:
+def list_time_sessions(config: AppConfig, *, now: datetime | None = None) -> list[TimelogSession]:
     current = now or datetime.now(timezone.utc)
     path = _session_store_path(config)
     with exclusive_file_lock(path):
@@ -253,7 +262,7 @@ def list_time_sessions(config, *, now: datetime | None = None) -> list[TimelogSe
     return [TimelogSession.from_mapping(item) for item in sorted_items]
 
 
-def cancel_time_session(config, task: ResolvedTask) -> TimelogSessionResult:
+def cancel_time_session(config: AppConfig, task: ResolvedTask) -> TimelogSessionResult:
     path = _session_store_path(config)
     with exclusive_file_lock(path):
         sessions = _read_sessions_unlocked(path)
@@ -279,7 +288,7 @@ def cancel_time_session(config, task: ResolvedTask) -> TimelogSessionResult:
 
 
 def write_time_log(
-    config,
+    config: AppConfig,
     task: ResolvedTask,
     *,
     started: datetime,
@@ -372,7 +381,7 @@ def write_time_log(
 
 
 def add_time_log(
-    config,
+    config: AppConfig,
     task: ResolvedTask,
     *,
     started_at: str,
@@ -385,7 +394,7 @@ def add_time_log(
 
 
 def amend_time_log(
-    config,
+    config: AppConfig,
     key: str,
     *,
     started_at: str = "",
@@ -448,7 +457,7 @@ def amend_time_log(
     }, operation="amend")
 
 
-def delete_time_log(config, key: str) -> TimelogEntryMutation:
+def delete_time_log(config: AppConfig, key: str) -> TimelogEntryMutation:
     location = _find_time_log_location(config, key)
     record = dict(location["record"])
     note_path = Path(str(location["path"]))
@@ -491,7 +500,7 @@ def delete_time_log(config, key: str) -> TimelogEntryMutation:
     }, operation="delete")
 
 
-def list_deleted_time_logs(config, *, include_internal: bool = False) -> list[dict[str, Any]]:
+def list_deleted_time_logs(config: AppConfig, *, include_internal: bool = False) -> list[dict[str, Any]]:
     restored = {
         str(item.get("archive_path") or "").strip()
         for item in read_ops(config)
@@ -541,7 +550,7 @@ def list_deleted_time_logs(config, *, include_internal: bool = False) -> list[di
     return items
 
 
-def restore_deleted_time_log(config, reference: str) -> TimelogEntryMutation:
+def restore_deleted_time_log(config: AppConfig, reference: str) -> TimelogEntryMutation:
     archive = _select_deleted_time_log(
         list_deleted_time_logs(config, include_internal=True),
         reference,
@@ -590,7 +599,7 @@ def restore_deleted_time_log(config, reference: str) -> TimelogEntryMutation:
 
 
 def report_time_logs(
-    config,
+    config: AppConfig,
     *,
     period: str = "all",
     project: str = "",
@@ -968,7 +977,7 @@ def _iso_z(value: datetime) -> str:
     return value.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
-def _session_store_path(config) -> Path:
+def _session_store_path(config: AppConfig) -> Path:
     return config.root_dir / "timelog-pending.json"
 
 
