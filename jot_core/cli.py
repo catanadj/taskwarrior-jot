@@ -13,6 +13,7 @@ from pathlib import Path
 from . import __version__
 from .app import build_app_context
 from .command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
+from .contracts import ResourceRequest
 from .config import ensure_app_dirs
 from .doctor import run_doctor, run_doctor_config_error
 from .editor import colorize_diff, note_diff, open_in_editor
@@ -1944,22 +1945,28 @@ def _run_resources(ctx, args) -> CommandResult:
 
 
 def _run_attach(ctx, args) -> CommandResult:
-    if args.note_kind == "task":
-        task = ctx.taskwarrior.resolve_task(args.note_ref)
+    request = ResourceRequest(
+        kind=args.note_kind,
+        reference=args.note_ref,
+        target=args.target,
+        label=args.label,
+    )
+    if request.kind == "task":
+        task = ctx.taskwarrior.resolve_task(request.reference)
         result = attach_task_resource_storage(ctx.config, task, target=args.target, label=args.label)
         identity = {"task_short_uuid": task.task_short_uuid}
-    elif args.note_kind == "chain":
-        task = ctx.taskwarrior.resolve_task(args.note_ref)
+    elif request.kind == "chain":
+        task = ctx.taskwarrior.resolve_task(request.reference)
         result = attach_chain_resource_storage(ctx.config, task, target=args.target, label=args.label)
         identity = {"task_short_uuid": task.task_short_uuid, "chain_id": chain_id_for_task(task.task) or None}
     else:
-        project_name = str(args.note_ref).strip()
+        project_name = request.reference
         result = attach_project_resource_storage(ctx.config, project_name, target=args.target, label=args.label)
         identity = {"project": project_name}
     return CommandResult(
         command="attach",
         data=ResourceCommandResult(
-            note_kind=args.note_kind,
+            note_kind=request.kind,
             path=result.note_path,
             opened=result.opened,
             resource=result.resource,
@@ -1990,14 +1997,20 @@ def _run_open_resource(ctx, args) -> CommandResult:
 
 def _run_detach_resource(ctx, args) -> CommandResult:
     note_path, identity = _existing_note_path_for_kind(ctx, args.note_kind, args.note_ref)
-    if args.note_kind == "task":
-        task = ctx.taskwarrior.resolve_task(args.note_ref)
+    request = ResourceRequest(
+        kind=args.note_kind,
+        reference=args.note_ref,
+        resource_id=args.resource_id,
+        note_path=str(note_path),
+    )
+    if request.kind == "task":
+        task = ctx.taskwarrior.resolve_task(request.reference)
         result = detach_task_resource_storage(ctx.config, task, note_path=note_path, resource_id=args.resource_id)
-    elif args.note_kind == "chain":
-        task = ctx.taskwarrior.resolve_task(args.note_ref)
+    elif request.kind == "chain":
+        task = ctx.taskwarrior.resolve_task(request.reference)
         result = detach_chain_resource_storage(ctx.config, task, note_path=note_path, resource_id=args.resource_id)
     else:
-        project_name = str(args.note_ref).strip()
+        project_name = request.reference
         result = detach_project_resource_storage(
             ctx.config,
             project_name,
@@ -2007,7 +2020,7 @@ def _run_detach_resource(ctx, args) -> CommandResult:
     return CommandResult(
         command="detach-resource",
         data=ResourceCommandResult(
-            note_kind=args.note_kind,
+            note_kind=request.kind,
             path=result.note_path,
             resource=result.resource,
             resources=result.resources,

@@ -28,7 +28,13 @@ from jot_core.cli import (
 )
 from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
-from jot_core.contracts import normalize_note_kind, normalize_progress_operation, normalize_task_note_kind
+from jot_core.contracts import (
+    ProgressRequest,
+    ResourceRequest,
+    normalize_note_kind,
+    normalize_progress_operation,
+    normalize_task_note_kind,
+)
 from jot_core.editor import colorize_diff, note_diff, open_in_editor
 from jot_core.frontmatter import (
     atomic_write_text,
@@ -1367,6 +1373,57 @@ class OperationContractTests(unittest.TestCase):
             normalize_task_note_kind("project")
         with self.assertRaisesRegex(RuntimeError, "unknown progress operation"):
             normalize_progress_operation("append")
+
+    def test_progress_request_validates_operation_fields(self) -> None:
+        request = ProgressRequest(
+            kind=" TASK ",
+            reference="42",
+            operation=" ADD ",
+            value="1.5",
+            track=" pages ",
+        )
+        self.assertEqual(request.kind, "task")
+        self.assertEqual(request.operation, "add")
+        self.assertEqual(request.reference, "42")
+        self.assertEqual(request.track, "pages")
+
+        with self.assertRaisesRegex(RuntimeError, "requires a value"):
+            ProgressRequest(kind="task", reference="42", operation="add")
+        with self.assertRaisesRegex(RuntimeError, "requires confirmation"):
+            ProgressRequest(kind="project", reference="reading", operation="clear")
+        with self.assertRaisesRegex(RuntimeError, "does not accept a value"):
+            ProgressRequest(
+                kind="task",
+                reference="42",
+                operation="clear",
+                value="1",
+                confirm_clear=True,
+            )
+
+    def test_resource_request_validates_attach_and_detach_shapes(self) -> None:
+        attach = ResourceRequest(
+            kind=" PROJECT ",
+            reference="reading",
+            target="~/book.pdf",
+            label="book",
+        )
+        self.assertEqual(attach.kind, "project")
+        self.assertEqual(attach.reference, "reading")
+        self.assertIsNone(attach.resource_id)
+
+        detach = ResourceRequest(
+            kind="task",
+            reference="42",
+            resource_id=3,
+            note_path="/tmp/task.md",
+        )
+        self.assertEqual(detach.resource_id, 3)
+        with self.assertRaisesRegex(RuntimeError, "requires a target"):
+            ResourceRequest(kind="task", reference="42")
+        with self.assertRaisesRegex(RuntimeError, "requires a note path"):
+            ResourceRequest(kind="task", reference="42", resource_id=3)
+        with self.assertRaisesRegex(RuntimeError, "cannot include a target"):
+            ResourceRequest(kind="task", reference="42", target="file", resource_id=3, note_path="/tmp/task.md")
 
 
 class ProgressValueTests(unittest.TestCase):

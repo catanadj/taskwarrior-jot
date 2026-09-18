@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
+from .contracts import ProgressRequest
 from .models import CommandResult, ProgressMutationCommandResult, ProgressShowItem, ProgressShowResult
 from .nautical import chain_id_for_task
 from .progress import (
@@ -84,6 +85,30 @@ def run_progress(ctx: Any, args: Any, resolve_note_path: NotePathResolver) -> Co
         amount = parse_progress_value(args.amount)
     elif operation == "status":
         status = args.value
+
+    request = ProgressRequest(
+        kind=note_kind,
+        reference=note_ref,
+        operation=operation,
+        value=(
+            args.measurement
+            if operation == "set"
+            else args.amount
+            if operation in {"add", "subtract"}
+            else args.value
+            if operation == "status"
+            else ""
+        ),
+        unit=unit,
+        status=status,
+        track=track or "default",
+        confirm_clear=bool(getattr(args, "yes", False)),
+    )
+    note_kind = request.kind
+    note_ref = request.reference
+    operation = request.operation
+    # Keep an omitted track as None so storage can infer a sole named track.
+    track = request.track if track is not None else None
 
     if note_kind in {"task", "chain"}:
         task = ctx.taskwarrior.resolve_task(note_ref)
