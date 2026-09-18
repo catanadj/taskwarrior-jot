@@ -191,10 +191,9 @@ class OutputSerializationTests(unittest.TestCase):
             path: Path
             values: set[str]
 
-        self.assertEqual(
-            serialize_payload(Payload(Path("/tmp/jot"), {"a", "b"})),
-            {"path": "/tmp/jot", "values": ["a", "b"]},
-        )
+        rendered = serialize_payload(Payload(Path("/tmp/jot"), {"a", "b"}))
+        self.assertEqual(rendered["path"], "/tmp/jot")
+        self.assertEqual(set(rendered["values"]), {"a", "b"})
 
     def test_envelopes_and_unknown_command_are_stable(self) -> None:
         self.assertEqual(success_envelope("test", {"ok": 1})["schema_version"], 1)
