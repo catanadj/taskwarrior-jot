@@ -43,6 +43,7 @@ from .models import (
     ResourceListResult,
     ResourceCommandResult,
     ResourceOpenResult,
+    ResourceRecord,
     SearchCommandResult,
     StatsResult,
     TimelogIngestResult,
@@ -1937,7 +1938,7 @@ def _run_resources(ctx, args) -> CommandResult:
         data=ResourceListResult(
             note_kind=args.note_kind,
             path=result.note_path,
-            resources=tuple(result.resources),
+            resources=tuple(ResourceRecord.from_mapping(item) for item in result.resources),
             identity=identity,
         ),
     )

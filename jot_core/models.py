@@ -1405,7 +1405,7 @@ class TaskSummaryCommandResult(PayloadModel):
 class ResourceListResult(PayloadModel):
     note_kind: str
     path: Path
-    resources: tuple[Mapping[str, Any], ...]
+    resources: tuple["ResourceRecord", ...]
     identity: Mapping[str, Any] = field(repr=False, default_factory=dict)
 
     def to_payload(self) -> dict[str, Any]:
@@ -1413,7 +1413,41 @@ class ResourceListResult(PayloadModel):
             "note_kind": self.note_kind,
             **dict(self.identity),
             "path": str(self.path),
-            "resources": [dict(item) for item in self.resources],
+            "resources": [item.to_payload() for item in self.resources],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceRecord(PayloadModel):
+    id: int
+    label: str
+    target: str
+    kind: str
+    status: str
+    line: int
+    raw: str
+
+    @classmethod
+    def from_mapping(cls, item: Mapping[str, Any]) -> "ResourceRecord":
+        return cls(
+            id=int(item.get("id") or 0),
+            label=str(item.get("label") or ""),
+            target=str(item.get("target") or ""),
+            kind=str(item.get("kind") or ""),
+            status=str(item.get("status") or ""),
+            line=int(item.get("line") or 0),
+            raw=str(item.get("raw") or ""),
+        )
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "label": self.label,
+            "target": self.target,
+            "kind": self.kind,
+            "status": self.status,
+            "line": self.line,
+            "raw": self.raw,
         }
 
 

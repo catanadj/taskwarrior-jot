@@ -67,6 +67,7 @@ from jot_core.models import (
     ResourceOperationResult,
     ResourceCommandResult,
     ResourceOpenResult,
+    ResourceRecord,
     NoteHeadingsResult,
     NoteSectionResult,
     NoteContentResult,
@@ -493,6 +494,23 @@ class TypedTaskModelTests(unittest.TestCase):
         self.assertEqual(group.name, "reading")
         self.assertEqual(group["minutes"], 45.0)
         self.assertEqual(group.to_payload()["entry_count"], 2)
+
+    def test_resource_records_are_structural_models_with_mapping_compatibility(self) -> None:
+        resource = ResourceRecord.from_mapping(
+            {
+                "id": "2",
+                "label": "design",
+                "target": "~/design.md",
+                "kind": "file",
+                "status": "exists",
+                "line": "8",
+                "raw": "[design](~/design.md)",
+            }
+        )
+
+        self.assertEqual(resource.target, "~/design.md")
+        self.assertEqual(resource["id"], 2)
+        self.assertEqual(resource.to_payload()["status"], "exists")
 
     def test_progress_command_models_preserve_single_and_multi_shapes(self) -> None:
         mutation = ProgressMutationCommandResult(
