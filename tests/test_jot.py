@@ -2135,7 +2135,7 @@ class CliIntegrationTests(JotCliTestCase):
         env["EDITOR"] = "true"
 
         result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py")],
+            [sys.executable, str(PROJECT_ROOT / "jot_core" / "data" / "hooks" / "on-modify_jot_timelog.py")],
             cwd=PROJECT_ROOT,
             env=env,
             input=json.dumps(old) + "\n" + json.dumps(new) + "\n",
@@ -2155,7 +2155,7 @@ class CliIntegrationTests(JotCliTestCase):
         env["NAUTICAL_DIAG"] = "1"
 
         result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py")],
+            [sys.executable, str(PROJECT_ROOT / "jot_core" / "data" / "hooks" / "on-modify_jot_timelog.py")],
             cwd=PROJECT_ROOT,
             env=env,
             input=json.dumps(old) + "\n" + json.dumps(new) + "\n",
@@ -2176,7 +2176,7 @@ class CliIntegrationTests(JotCliTestCase):
         env.pop("NAUTICAL_DIAG", None)
 
         result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py")],
+            [sys.executable, str(PROJECT_ROOT / "jot_core" / "data" / "hooks" / "on-modify_jot_timelog.py")],
             cwd=PROJECT_ROOT,
             env=env,
             input=json.dumps(old) + "\n" + json.dumps(new) + "\n",
@@ -2204,7 +2204,7 @@ class CliIntegrationTests(JotCliTestCase):
         env["NAUTICAL_DIAG"] = "1"
 
         result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py")],
+            [sys.executable, str(PROJECT_ROOT / "jot_core" / "data" / "hooks" / "on-modify_jot_timelog.py")],
             cwd=PROJECT_ROOT,
             env=env,
             input=json.dumps(old) + "\n" + json.dumps(new) + "\n",
@@ -2232,7 +2232,7 @@ class CliIntegrationTests(JotCliTestCase):
         env.update({"JOT_BIN": str(jot_bin), "NAUTICAL_DIAG": "1"})
 
         result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py")],
+            [sys.executable, str(PROJECT_ROOT / "jot_core" / "data" / "hooks" / "on-modify_jot_timelog.py")],
             cwd=PROJECT_ROOT,
             env=env,
             input="not json\n" + json.dumps(new) + "\n",
@@ -2261,7 +2261,7 @@ class CliIntegrationTests(JotCliTestCase):
         env.update({"JOT_BIN": str(jot_bin), "NAUTICAL_DIAG": "1"})
 
         result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py")],
+            [sys.executable, str(PROJECT_ROOT / "jot_core" / "data" / "hooks" / "on-modify_jot_timelog.py")],
             cwd=PROJECT_ROOT,
             env=env,
             input=json.dumps(old) + "\n" + json.dumps(new) + "\n",
@@ -5285,7 +5285,7 @@ class TaskwarriorEnvironmentTests(unittest.TestCase):
                 result = subprocess.run(
                     [
                         sys.executable,
-                        str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py"),
+                        str(PROJECT_ROOT / "jot_core" / "data" / "hooks" / "on-modify_jot_timelog.py"),
                         f"{prefix}{selected}",
                     ],
                     cwd=PROJECT_ROOT,
@@ -5325,7 +5325,7 @@ class TaskwarriorEnvironmentTests(unittest.TestCase):
         )
 
         result = subprocess.run(
-            [sys.executable, str(PROJECT_ROOT / "hooks" / "on-modify_jot_timelog.py"), "data:"],
+            [sys.executable, str(PROJECT_ROOT / "jot_core" / "data" / "hooks" / "on-modify_jot_timelog.py"), "data:"],
             cwd=PROJECT_ROOT,
             env=env,
             input=json.dumps(old) + "\n" + json.dumps(new) + "\n",

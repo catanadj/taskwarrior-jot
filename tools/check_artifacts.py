@@ -14,11 +14,11 @@ REQUIRED_SUFFIXES = (
     "jot_core/data/hooks/on-modify_jot_timelog.py",
 )
 REQUIRED_SOURCE_FILES = (
-    "config-jot.toml",
-    "templates/task-note.md",
-    "templates/chain-note.md",
-    "templates/project-note.md",
-    "hooks/on-modify_jot_timelog.py",
+    "jot_core/data/config-jot.toml",
+    "jot_core/data/templates/task-note.md",
+    "jot_core/data/templates/chain-note.md",
+    "jot_core/data/templates/project-note.md",
+    "jot_core/data/hooks/on-modify_jot_timelog.py",
 )
 
 

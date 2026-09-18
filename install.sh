@@ -9,6 +9,7 @@ INSTALL_TIMELOG_HOOK="ask"
 REPLACE_TIMELOG_HOOK="no"
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+DATA_DIR="$SCRIPT_DIR/jot_core/data"
 
 if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
   echo "error: jot requires Python 3.11 or newer" >&2
@@ -139,11 +140,11 @@ mkdir -p "$TEMPLATES_DIR"
 
 for required in \
   "$SCRIPT_DIR/jot" \
-  "$SCRIPT_DIR/config-jot.toml" \
-  "$SCRIPT_DIR/hooks/on-modify_jot_timelog.py" \
-  "$SCRIPT_DIR/templates/task-note.md" \
-  "$SCRIPT_DIR/templates/chain-note.md" \
-  "$SCRIPT_DIR/templates/project-note.md"; do
+  "$DATA_DIR/config-jot.toml" \
+  "$DATA_DIR/hooks/on-modify_jot_timelog.py" \
+  "$DATA_DIR/templates/task-note.md" \
+  "$DATA_DIR/templates/chain-note.md" \
+  "$DATA_DIR/templates/project-note.md"; do
   if [[ ! -f "$required" ]]; then
     echo "error: required installation file is missing: $required" >&2
     exit 1
@@ -162,11 +163,11 @@ tar -C "$SCRIPT_DIR" \
   --exclude='jot_tui/*.pyc' \
   --exclude='jot_tui/**/*.pyc' \
   -cf - jot_core jot_tui | tar -C "$STAGE_DIR" -xf -
-install -m 644 "$SCRIPT_DIR/config-jot.toml" "$STAGE_DIR/config-jot.toml"
+install -m 644 "$DATA_DIR/config-jot.toml" "$STAGE_DIR/config-jot.toml"
 mkdir -p "$STAGE_DIR/templates"
-cp -R "$SCRIPT_DIR/templates/." "$STAGE_DIR/templates/"
+cp -R "$DATA_DIR/templates/." "$STAGE_DIR/templates/"
 mkdir -p "$STAGE_DIR/hooks"
-install -m 755 "$SCRIPT_DIR/hooks/on-modify_jot_timelog.py" "$STAGE_DIR/hooks/on-modify_jot_timelog.py"
+install -m 755 "$DATA_DIR/hooks/on-modify_jot_timelog.py" "$STAGE_DIR/hooks/on-modify_jot_timelog.py"
 
 mkdir -p "$LIB_DIR"
 rm -rf "$LIB_DIR/jot_core" "$LIB_DIR/jot_tui" "$LIB_DIR/hooks" "$LIB_DIR/templates"
@@ -228,7 +229,7 @@ fi
 installed_templates=0
 kept_templates=0
 for name in task-note.md chain-note.md project-note.md; do
-  src="$SCRIPT_DIR/templates/$name"
+  src="$DATA_DIR/templates/$name"
   dst="$TEMPLATES_DIR/$name"
   if [[ ! -e "$dst" ]]; then
     install -m 644 "$src" "$dst"

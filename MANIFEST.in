@@ -1,3 +1,1 @@
-include config-jot.toml
-recursive-include templates *.md
-recursive-include hooks *.py
+recursive-include jot_core/data *.toml *.md *.py
