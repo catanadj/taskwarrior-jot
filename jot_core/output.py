@@ -230,7 +230,7 @@ def emit_result(result: CommandResult[Any], *, json_mode: bool = False) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
 
-def _emit_doctor(payload: dict[str, Any]) -> None:
+def _emit_doctor(payload: Mapping[str, Any]) -> None:
     repairs = payload.get("repairs") or []
     if repairs:
         _write_title("Repairs")
@@ -257,7 +257,7 @@ def _emit_doctor(payload: dict[str, Any]) -> None:
         sys.stdout.write(f"{status} {_style(name, color='label', bold=True)}: {detail}\n")
 
 
-def _emit_migrate(payload: dict[str, Any]) -> None:
+def _emit_migrate(payload: Mapping[str, Any]) -> None:
     mode = "Migration plan" if payload.get("dry_run") else "Migration"
     _write_title(mode, blank_after=True)
     _emit_field("schema", payload.get("schema_version"), indent=0)
@@ -280,7 +280,7 @@ def _emit_migrate(payload: dict[str, Any]) -> None:
             sys.stdout.write(f"  {item.get('path')}: {errors}\n")
 
 
-def _emit_paths(payload: dict[str, Any]) -> None:
+def _emit_paths(payload: Mapping[str, Any]) -> None:
     _write_title("Paths", blank_after=True)
     for key in (
         "config_path",
@@ -296,7 +296,7 @@ def _emit_paths(payload: dict[str, Any]) -> None:
         _emit_field(key, payload.get(key), indent=0)
 
 
-def _emit_rebuild_index(payload: dict[str, Any]) -> None:
+def _emit_rebuild_index(payload: Mapping[str, Any]) -> None:
     _write_title("Index rebuilt", blank_after=True)
     _emit_field("index", payload.get("index_path"), indent=0)
     _emit_field("updated", payload.get("updated"), indent=0)
@@ -307,7 +307,7 @@ def _emit_rebuild_index(payload: dict[str, Any]) -> None:
         _emit_field(key, counts.get(key), indent=2)
 
 
-def _emit_stats(payload: dict[str, Any]) -> None:
+def _emit_stats(payload: Mapping[str, Any]) -> None:
     notes = payload.get("notes") or {}
     ops = payload.get("ops") or {}
     index = payload.get("index") or {}
@@ -337,7 +337,7 @@ def _emit_stats(payload: dict[str, Any]) -> None:
         _emit_field(key, counts.get(key), indent=4)
 
 
-def _emit_project_list(payload: dict[str, Any]) -> None:
+def _emit_project_list(payload: Mapping[str, Any]) -> None:
     items = payload.get("projects") or []
     _write_title("Projects", blank_after=True)
     if not items:
@@ -353,7 +353,7 @@ def _emit_project_list(payload: dict[str, Any]) -> None:
         sys.stdout.write("\n")
 
 
-def _emit_notes(payload: dict[str, Any]) -> None:
+def _emit_notes(payload: Mapping[str, Any]) -> None:
     items = payload.get("notes") or []
     _write_title("Notes", blank_after=True)
     if not items:
@@ -385,7 +385,7 @@ def _emit_notes(payload: dict[str, Any]) -> None:
         sys.stdout.write("\n")
 
 
-def _emit_trash_list(payload: dict[str, Any]) -> None:
+def _emit_trash_list(payload: Mapping[str, Any]) -> None:
     items = payload.get("items") or []
     _write_title("Trash", blank_after=True)
     if not items:
@@ -404,14 +404,14 @@ def _emit_trash_list(payload: dict[str, Any]) -> None:
         sys.stdout.write("\n")
 
 
-def _emit_trash_restore(payload: dict[str, Any]) -> None:
+def _emit_trash_restore(payload: Mapping[str, Any]) -> None:
     _write_status("Restored note from trash")
     _emit_field("kind", payload.get("kind"), indent=0)
     _emit_field("to", payload.get("path"), indent=0)
     _emit_field("from", payload.get("trash_path"), indent=0)
 
 
-def _emit_cleanup(payload: dict[str, Any]) -> None:
+def _emit_cleanup(payload: Mapping[str, Any]) -> None:
     action = "Removed" if payload.get("applied") else "Would remove"
     _write_status(f"{action} {payload.get('count', 0)} old trash item(s)", color="warning")
     _emit_field("older than", f"{payload.get('older_than_days')} days", indent=0)
@@ -419,7 +419,7 @@ def _emit_cleanup(payload: dict[str, Any]) -> None:
         _emit_field("apply", "rerun with --yes", indent=0)
 
 
-def _emit_report_recent(payload: dict[str, Any]) -> None:
+def _emit_report_recent(payload: Mapping[str, Any]) -> None:
     items = payload.get("items") or []
     limit = payload.get("limit")
     kinds = payload.get("kinds") or []
@@ -443,7 +443,7 @@ def _emit_report_recent(payload: dict[str, Any]) -> None:
         sys.stdout.write("\n")
 
 
-def _emit_note_like(command: str, payload: dict[str, Any]) -> None:
+def _emit_note_like(command: str, payload: Mapping[str, Any]) -> None:
     action = "Opened" if payload.get("opened") else "Created"
     kind = {
         "note": "task note",
@@ -456,7 +456,7 @@ def _emit_note_like(command: str, payload: dict[str, Any]) -> None:
         _write_status(f"Completed task: {post_save_action.get('task_short_uuid')}")
 
 
-def _emit_append_like(command: str, payload: dict[str, Any]) -> None:
+def _emit_append_like(command: str, payload: Mapping[str, Any]) -> None:
     created = not payload.get("opened")
     kind = {
         "note-append": "task note",
@@ -467,7 +467,7 @@ def _emit_append_like(command: str, payload: dict[str, Any]) -> None:
     _write_status(f"{prefix} {kind}: {payload['path']}")
 
 
-def _emit_delete(command: str, payload: dict[str, Any]) -> None:
+def _emit_delete(command: str, payload: Mapping[str, Any]) -> None:
     kind = {
         "task-delete": "task note",
         "chain-delete": "chain note",
@@ -480,7 +480,7 @@ def _emit_delete(command: str, payload: dict[str, Any]) -> None:
     _emit_field("to", trash, indent=0)
 
 
-def _emit_project_show(payload: dict[str, Any]) -> None:
+def _emit_project_show(payload: Mapping[str, Any]) -> None:
     _write_title(f"Project {payload['project']}", blank_after=True)
     note = payload.get("note") or {}
     exists = bool(note.get("exists"))
@@ -503,7 +503,7 @@ def _emit_project_show(payload: dict[str, Any]) -> None:
         _emit_field("preview", preview, indent=2)
 
 
-def _emit_project_report(payload: dict[str, Any]) -> None:
+def _emit_project_report(payload: Mapping[str, Any]) -> None:
     _write_title(f"Project {payload.get('project')}", blank_after=True)
     note = payload.get("note") or {}
     _write_section_title("Project note:")
@@ -570,17 +570,17 @@ def _emit_project_report(payload: dict[str, Any]) -> None:
     )
 
 
-def _emit_cat(payload: dict[str, Any]) -> None:
+def _emit_cat(payload: Mapping[str, Any]) -> None:
     sys.stdout.write(str(payload.get("content") or ""))
 
 
-def _emit_add(payload: dict[str, Any]) -> None:
+def _emit_add(payload: Mapping[str, Any]) -> None:
     _write_status(
         f"Added event to task {payload['task_short_uuid']}: {payload['annotation']}"
     )
 
 
-def _emit_add_to(payload: dict[str, Any]) -> None:
+def _emit_add_to(payload: Mapping[str, Any]) -> None:
     kind = str(payload.get("note_kind") or "note")
     heading = str(payload.get("heading") or "")
     match = str(payload.get("heading_match") or "unknown")
@@ -597,7 +597,7 @@ def _emit_add_to(payload: dict[str, Any]) -> None:
     _emit_field("entry", entry, indent=0)
 
 
-def _emit_timelog_ingest(payload: dict[str, Any]) -> None:
+def _emit_timelog_ingest(payload: Mapping[str, Any]) -> None:
     if not payload.get("written"):
         _write_status(
             f"Time log skipped: {payload.get('reason') or 'no entry'}",
@@ -614,7 +614,7 @@ def _emit_timelog_ingest(payload: dict[str, Any]) -> None:
     _emit_field("duration", f"{payload.get('duration_minutes')} minutes", indent=0)
 
 
-def _emit_timelog_start(payload: dict[str, Any]) -> None:
+def _emit_timelog_start(payload: Mapping[str, Any]) -> None:
     if payload.get("already_started"):
         _write_status(
             f"Jot timelog session already pending for task {payload.get('task_short_uuid')}",
@@ -644,13 +644,13 @@ def _emit_timelog_start(payload: dict[str, Any]) -> None:
         _write_status("Timewarrior unchanged: no tags are configured")
 
 
-def _emit_timelog_stop(payload: dict[str, Any]) -> None:
+def _emit_timelog_stop(payload: Mapping[str, Any]) -> None:
     _emit_timelog_ingest(payload)
     if payload.get("session_cleared"):
         _write_status("Pending session cleared")
 
 
-def _emit_timelog_stop_all(payload: dict[str, Any]) -> None:
+def _emit_timelog_stop_all(payload: Mapping[str, Any]) -> None:
     _write_status(f"Stopped {payload.get('count', 0)} pending timelog sessions")
     errors = payload.get("errors") or []
     if errors:
@@ -671,7 +671,7 @@ def _emit_timelog_stop_all(payload: dict[str, Any]) -> None:
         )
 
 
-def _emit_timewarrior(payload: dict[str, Any]) -> None:
+def _emit_timewarrior(payload: Mapping[str, Any]) -> None:
     operation = str(payload.get("operation") or "show")
     if operation == "show":
         _write_title("Timewarrior tags", blank_after=True)
@@ -710,7 +710,7 @@ def _emit_timewarrior(payload: dict[str, Any]) -> None:
         _emit_field("path", payload.get("path"), indent=0)
 
 
-def _emit_timelog_pending(payload: dict[str, Any]) -> None:
+def _emit_timelog_pending(payload: Mapping[str, Any]) -> None:
     sessions = payload.get("sessions") or []
     _write_title("Pending timelog sessions", blank_after=True)
     if not sessions:
@@ -733,7 +733,7 @@ def _emit_timelog_pending(payload: dict[str, Any]) -> None:
             _emit_field("chain", chain_id, indent=2)
 
 
-def _emit_timelog_cancel(payload: dict[str, Any]) -> None:
+def _emit_timelog_cancel(payload: Mapping[str, Any]) -> None:
     _write_status(
         f"Cancelled Jot timelog session for task {payload.get('task_short_uuid')}",
         color="warning",
@@ -741,7 +741,7 @@ def _emit_timelog_cancel(payload: dict[str, Any]) -> None:
     _emit_field("started", payload.get("started"), indent=0)
 
 
-def _emit_timelog_add(payload: dict[str, Any]) -> None:
+def _emit_timelog_add(payload: Mapping[str, Any]) -> None:
     _write_status(
         f"Added time log {payload.get('timelog_key')} for task {payload.get('task_short_uuid')}"
     )
@@ -749,19 +749,19 @@ def _emit_timelog_add(payload: dict[str, Any]) -> None:
     _emit_field("path", payload.get("path"), indent=0)
 
 
-def _emit_timelog_amend(payload: dict[str, Any]) -> None:
+def _emit_timelog_amend(payload: Mapping[str, Any]) -> None:
     _write_status(f"Amended time log {payload.get('timelog_key')}")
     _emit_field("new key", payload.get("new_timelog_key"), indent=0)
     _emit_field("duration", f"{payload.get('duration_minutes')} minutes", indent=0)
     _emit_field("archive", payload.get("archive_path"), indent=0)
 
 
-def _emit_timelog_delete(payload: dict[str, Any]) -> None:
+def _emit_timelog_delete(payload: Mapping[str, Any]) -> None:
     _write_status(f"Deleted time log {payload.get('timelog_key')}", color="warning")
     _emit_field("archive", payload.get("archive_path"), indent=0)
 
 
-def _emit_timelog_trash(payload: dict[str, Any]) -> None:
+def _emit_timelog_trash(payload: Mapping[str, Any]) -> None:
     items = payload.get("items") or []
     if not items:
         _write_status("No deleted time logs available for restoration.", color="muted")
@@ -777,12 +777,12 @@ def _emit_timelog_trash(payload: dict[str, Any]) -> None:
         _emit_field("archived", item.get("archived_at"), indent=4)
 
 
-def _emit_timelog_restore(payload: dict[str, Any]) -> None:
+def _emit_timelog_restore(payload: Mapping[str, Any]) -> None:
     _write_status(f"Restored time log {payload.get('timelog_key')}")
     _emit_field("path", payload.get("path"), indent=0)
 
 
-def _emit_timelog_report(payload: dict[str, Any]) -> None:
+def _emit_timelog_report(payload: Mapping[str, Any]) -> None:
     period = str(payload.get("period") or "all")
     _write_title(f"Timelog report: {period}", blank_after=True)
     label = _style("Total", color="label", bold=True)
@@ -800,7 +800,7 @@ def _emit_timelog_report(payload: dict[str, Any]) -> None:
         _emit_time_log_details(payload.get("entries") or [])
 
 
-def _emit_timelog_report_csv(payload: dict[str, Any]) -> None:
+def _emit_timelog_report_csv(payload: Mapping[str, Any]) -> None:
     fields = (
         "key",
         "task_uuid",
@@ -867,7 +867,7 @@ def _emit_time_log_details(items: list[object]) -> None:
         )
 
 
-def _emit_headings(payload: dict[str, Any]) -> None:
+def _emit_headings(payload: Mapping[str, Any]) -> None:
     _write_title(f"Headings in {payload.get('note_kind')} note")
     _emit_field("path", payload.get("path"), indent=0)
     headings = payload.get("headings") or []
@@ -885,13 +885,13 @@ def _emit_headings(payload: dict[str, Any]) -> None:
         sys.stdout.write("\n")
 
 
-def _emit_section(payload: dict[str, Any]) -> None:
+def _emit_section(payload: Mapping[str, Any]) -> None:
     content = str(payload.get("content") or "").strip()
     if content:
         sys.stdout.write(content + "\n")
 
 
-def _emit_resources(payload: dict[str, Any]) -> None:
+def _emit_resources(payload: Mapping[str, Any]) -> None:
     kind = str(payload.get("note_kind") or "note")
     _write_title(f"Resources in {kind} note")
     _emit_field("path", payload.get("path"), indent=0)
@@ -922,7 +922,7 @@ def _emit_resources(payload: dict[str, Any]) -> None:
             )
 
 
-def _emit_attach(payload: dict[str, Any]) -> None:
+def _emit_attach(payload: Mapping[str, Any]) -> None:
     resource = payload.get("resource") or {}
     _write_status(f"Attached resource to {payload.get('note_kind')} note")
     _emit_field("path", payload.get("path"), indent=0)
@@ -931,7 +931,7 @@ def _emit_attach(payload: dict[str, Any]) -> None:
     _emit_field("target", resource.get("target"), indent=0)
 
 
-def _emit_open_resource(payload: dict[str, Any]) -> None:
+def _emit_open_resource(payload: Mapping[str, Any]) -> None:
     resource = payload.get("resource") or {}
     _write_status("Opened resource")
     _emit_field("target", resource.get("target"), indent=0)
@@ -940,7 +940,7 @@ def _emit_open_resource(payload: dict[str, Any]) -> None:
         _emit_field("opener", " ".join(str(part) for part in opener), indent=0)
 
 
-def _emit_detach_resource(payload: dict[str, Any]) -> None:
+def _emit_detach_resource(payload: Mapping[str, Any]) -> None:
     resource = payload.get("resource") or {}
     _write_status(
         f"Detached resource from {payload.get('note_kind')} note",
@@ -951,7 +951,7 @@ def _emit_detach_resource(payload: dict[str, Any]) -> None:
     _emit_field("target", resource.get("target"), indent=0)
 
 
-def _emit_progress(payload: dict[str, Any]) -> None:
+def _emit_progress(payload: Mapping[str, Any]) -> None:
     emit_progress(
         payload,
         write_title=_write_title,
@@ -1072,7 +1072,7 @@ def _resource_status_color(status: str) -> str:
     return "muted"
 
 
-def _emit_list(payload: dict[str, Any]) -> None:
+def _emit_list(payload: Mapping[str, Any]) -> None:
     _emit_show(payload)
     events = payload.get("events") or []
     sys.stdout.write("\n")
@@ -1086,7 +1086,7 @@ def _emit_list(payload: dict[str, Any]) -> None:
         sys.stdout.write(f"  {entry}  {description}\n")
 
 
-def _emit_show(payload: dict[str, Any]) -> None:
+def _emit_show(payload: Mapping[str, Any]) -> None:
     task = payload.get("task") or {}
     notes = payload.get("notes") or {}
     _write_title(f"Task {task.get('short_uuid')}")
@@ -1110,7 +1110,7 @@ def _emit_show(payload: dict[str, Any]) -> None:
             _emit_field(key, value, indent=2)
 
 
-def _emit_export(payload: dict[str, Any]) -> None:
+def _emit_export(payload: Mapping[str, Any]) -> None:
     _emit_show(payload)
     exported_at = payload.get("exported_at")
     if exported_at:
@@ -1128,7 +1128,7 @@ def _emit_export(payload: dict[str, Any]) -> None:
         sys.stdout.write(f"  {entry}  {description}\n")
 
 
-def _emit_search(payload: dict[str, Any]) -> None:
+def _emit_search(payload: Mapping[str, Any]) -> None:
     _write_inline_field("Query", payload.get("query"))
     kinds = payload.get("kinds") or []
     if kinds:
@@ -1171,7 +1171,7 @@ def warn(message: str) -> None:
     sys.stderr.write(f"{prefix} {message}\n")
 
 
-def _emit_note_ref(label: str, item: dict[str, Any]) -> None:
+def _emit_note_ref(label: str, item: Mapping[str, Any]) -> None:
     available = bool(item.get("available"))
     exists = bool(item.get("exists"))
     path = item.get("path")
@@ -1245,7 +1245,7 @@ def _field_value_color(label: str, value: str) -> str:
     return ""
 
 
-def _emit_context(payload: dict[str, Any]) -> None:
+def _emit_context(payload: Mapping[str, Any]) -> None:
     data = payload.get("data") if isinstance(payload, dict) else {}
     task = data.get("task") if isinstance(data, dict) else {}
     if not isinstance(task, dict):
@@ -1262,7 +1262,7 @@ def _emit_context(payload: dict[str, Any]) -> None:
         sys.stdout.write(f"Warning: {warning}\n")
 
 
-def _recent_identity(item: dict[str, Any]) -> str:
+def _recent_identity(item: Mapping[str, Any]) -> str:
     for key in ("task_short_uuid", "chain_id", "project"):
         value = str(item.get(key) or "").strip()
         if value:
@@ -1270,7 +1270,7 @@ def _recent_identity(item: dict[str, Any]) -> str:
     return ""
 
 
-def _recent_summary(item: dict[str, Any]) -> str:
+def _recent_summary(item: Mapping[str, Any]) -> str:
     kind = str(item.get("kind") or "")
     if kind == "event":
         return str(item.get("annotation") or "").strip()
