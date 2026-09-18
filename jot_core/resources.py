@@ -11,6 +11,7 @@ import subprocess
 
 MARKDOWN_LINK_RE = re.compile(r"^\[([^\]]+)\]\(([^)]+)\)$")
 SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+RESOURCE_OPEN_TIMEOUT_SECONDS = 30
 
 
 @dataclass(slots=True)
@@ -83,13 +84,27 @@ def open_resource_target(target: str) -> list[str]:
 
     opener = os.environ.get("JOT_OPENER", "").strip()
     if opener:
-        command = [*shlex.split(opener), normalized]
+        try:
+            opener_args = shlex.split(opener)
+        except ValueError as exc:
+            raise RuntimeError(f"invalid JOT_OPENER: {exc}") from exc
+        if not opener_args:
+            raise RuntimeError("invalid JOT_OPENER: command is empty")
+        command = [*opener_args, normalized]
     else:
         executable = _default_opener()
         command = [executable, normalized]
 
     try:
-        completed = subprocess.run(command, check=False)
+        completed = subprocess.run(
+            command,
+            check=False,
+            timeout=RESOURCE_OPEN_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"resource opener timed out after {RESOURCE_OPEN_TIMEOUT_SECONDS} seconds"
+        ) from exc
     except OSError as exc:
         raise RuntimeError(f"failed to open resource: {exc}") from exc
     if completed.returncode != 0:

@@ -45,6 +45,7 @@ from jot_core.frontmatter import (
     write_document,
 )
 from jot_core.index import load_or_rebuild_index, migrate_index_keys
+from jot_core.resources import open_resource_target
 from jot_core.models import (
     AppConfig,
     ActivityItem,
@@ -3983,6 +3984,45 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(text_listed.returncode, 0, text_listed.stderr)
         self.assertIn("[file] exists", text_listed.stdout)
         self.assertIn("[file] missing", text_listed.stdout)
+
+    def test_open_resource_rejects_malformed_custom_opener(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Fix billing discrepancy",
+            "project": "finance.audit",
+            "tags": ["ann"],
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        self.run_jot("attach", "task", "1", "https://example.com/invoice")
+
+        opened = self.run_jot_with_env(
+            "open-resource",
+            "task",
+            "1",
+            "1",
+            extra_env={"JOT_OPENER": "'unterminated"},
+        )
+        self.assertNotEqual(opened.returncode, 0)
+        self.assertIn("invalid JOT_OPENER", opened.stderr)
+
+    def test_open_resource_times_out_custom_opener(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Fix billing discrepancy",
+            "project": "finance.audit",
+            "tags": ["ann"],
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        self.run_jot("attach", "task", "1", "https://example.com/invoice")
+
+        with mock.patch(
+            "jot_core.resources.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(["opener"], 30),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "timed out"):
+                open_resource_target("https://example.com/invoice")
 
     def test_task_progress_tracks_state_history_and_clear(self) -> None:
         task = {
