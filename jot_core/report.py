@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Mapping
 
 from .frontmatter import read_document
 from .models import ActivityItem, AppConfig, ProjectRollup
@@ -26,7 +26,7 @@ def list_notes(
     *,
     kinds: set[str] | None = None,
     project: str | None = None,
-) -> list[ActivityItem]:
+) -> list[dict[str, Any]]:
     selected = set(kinds or {"task-note", "chain-note", "project-note"})
     project_filter = str(project or "").strip()
     items: list[dict[str, Any]] = []
@@ -169,7 +169,7 @@ def recent_activity(
     *,
     limit: int = 20,
     kinds: set[str] | None = None,
-) -> list[dict[str, Any]]:
+) -> list[ActivityItem]:
     if limit <= 0:
         raise RuntimeError("limit must be greater than zero")
     selected = set(kinds or ALLOWED_KINDS)
@@ -267,10 +267,10 @@ def _project_recent_activity(
     tasks: list[dict[str, Any]],
     *,
     limit: int,
-) -> list[dict[str, Any]]:
+) -> list[ActivityItem]:
     short_uuids = {str(item.get("short_uuid") or "") for item in tasks if item.get("short_uuid")}
     chain_ids = {str(item.get("chain_id") or "") for item in tasks if item.get("chain_id")}
-    items: list[dict[str, Any]] = []
+    items: list[ActivityItem] = []
     for item in recent_activity(config, limit=1000):
         kind = str(item.get("kind") or "")
         if kind == "project-note" and str(item.get("project") or "") == project:
@@ -286,7 +286,7 @@ def _project_recent_activity(
 
 
 def _event_matches_project(
-    item: dict[str, Any],
+    item: Mapping[str, Any],
     project: str,
     short_uuids: set[str],
     chain_ids: set[str],
