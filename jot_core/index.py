@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict, cast
 import warnings
 
 from .frontmatter import atomic_write_text, exclusive_file_lock, read_document
@@ -12,6 +12,35 @@ from .ops import iso_now, read_ops
 
 
 INDEX_VERSION = 1
+
+
+class TaskIndexEntry(TypedDict, total=False):
+    task_short_uuid: str
+    task_uuid: str | None
+    note_path: str | None
+    chain_id: str | None
+    last_note_at: str | None
+    last_event_at: str | None
+
+
+class ChainIndexEntry(TypedDict, total=False):
+    chain_id: str
+    note_path: str | None
+    last_note_at: str | None
+
+
+class ProjectIndexEntry(TypedDict, total=False):
+    project: str
+    note_path: str | None
+    last_note_at: str | None
+
+
+class IndexData(TypedDict):
+    version: int
+    updated: str
+    tasks: dict[str, TaskIndexEntry]
+    chains: dict[str, ChainIndexEntry]
+    projects: dict[str, ProjectIndexEntry]
 
 
 def canonical_task_uuid(task_uuid: str | None, short_uuid: str | None = None) -> str:
@@ -69,7 +98,7 @@ def index_path(config: AppConfig) -> Path:
     return config.root_dir / "index.json"
 
 
-def load_or_rebuild_index(config: AppConfig) -> dict[str, Any]:
+def load_or_rebuild_index(config: AppConfig) -> IndexData:
     path = index_path(config)
     with exclusive_file_lock(path):
         data, rebuilt = _load_or_rebuild_index_unlocked(config)
@@ -78,7 +107,7 @@ def load_or_rebuild_index(config: AppConfig) -> dict[str, Any]:
         return data
 
 
-def _load_or_rebuild_index_unlocked(config: AppConfig) -> tuple[dict[str, Any], bool]:
+def _load_or_rebuild_index_unlocked(config: AppConfig) -> tuple[IndexData, bool]:
     path = index_path(config)
     recovery_reason: str | None = None
     if path.exists():
@@ -86,7 +115,7 @@ def _load_or_rebuild_index_unlocked(config: AppConfig) -> tuple[dict[str, Any], 
             with path.open("r", encoding="utf-8") as handle:
                 data = json.load(handle)
             if _valid_index_shape(data):
-                return data, False
+                return cast(IndexData, data), False
             recovery_reason = "invalid index structure"
         except Exception as exc:
             recovery_reason = f"{type(exc).__name__}: {exc}"
@@ -150,19 +179,19 @@ def read_index_status(config: AppConfig) -> dict[str, Any]:
     }
 
 
-def save_index(config: AppConfig, data: dict[str, Any]) -> None:
+def save_index(config: AppConfig, data: IndexData) -> None:
     with exclusive_file_lock(index_path(config)):
         _save_index_unlocked(config, data)
 
 
-def _save_index_unlocked(config: AppConfig, data: dict[str, Any]) -> None:
+def _save_index_unlocked(config: AppConfig, data: IndexData) -> None:
     data["updated"] = iso_now()
     path = index_path(config)
     text = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     atomic_write_text(path, text)
 
 
-def rebuild_index(config: AppConfig) -> dict[str, Any]:
+def rebuild_index(config: AppConfig) -> IndexData:
     data = _empty_index()
     for note_path in sorted(config.tasks_dir.glob("*.md")):
         front_matter, _body = read_document(note_path)
@@ -284,7 +313,7 @@ def remove_project_note_index(config: AppConfig, project_name: str) -> None:
         _save_index_unlocked(config, data)
 
 
-def _empty_index() -> dict[str, Any]:
+def _empty_index() -> IndexData:
     return {
         "version": INDEX_VERSION,
         "updated": iso_now(),
