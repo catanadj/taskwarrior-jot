@@ -85,7 +85,7 @@ def style_text(
     return _style(text, color=role, bold=bold, stream=stream)
 
 
-def emit_result(result: CommandResult, *, json_mode: bool = False) -> None:
+def emit_result(result: CommandResult[Any], *, json_mode: bool = False) -> None:
     if json_mode:
         sys.stdout.write(json.dumps(serialize_payload(result.data), ensure_ascii=False, indent=2) + "\n")
         return

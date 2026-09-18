@@ -5,12 +5,13 @@ import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .frontmatter import atomic_write_text, exclusive_file_lock, read_document, write_document
 from .index import update_chain_note_index, update_task_note_index
 from .models import (
     ResolvedTask,
+    TimelogSessionRecord,
     TaskRef,
     TimelogEntryMutation,
     TimelogReport,
@@ -905,7 +906,7 @@ def _duration_text(minutes: float) -> str:
     return f"{hours:.2f}h"
 
 
-def _session_with_elapsed(session: dict[str, Any], now: datetime) -> dict[str, Any]:
+def _session_with_elapsed(session: TimelogSessionRecord, now: datetime) -> TimelogSessionRecord:
     item = dict(session)
     try:
         started = _parse_datetime(str(item.get("started") or ""))
@@ -914,7 +915,7 @@ def _session_with_elapsed(session: dict[str, Any], now: datetime) -> dict[str, A
     minutes = max(0.0, round((now - started).total_seconds() / 60, 2))
     item["elapsed_minutes"] = minutes
     item["elapsed"] = _duration_text(minutes)
-    return item
+    return cast(TimelogSessionRecord, item)
 
 
 def _time_range(started: datetime, stopped: datetime) -> str:
@@ -971,7 +972,7 @@ def _session_store_path(config) -> Path:
     return config.root_dir / "timelog-pending.json"
 
 
-def _read_sessions_unlocked(path: Path) -> dict[str, dict[str, Any]]:
+def _read_sessions_unlocked(path: Path) -> dict[str, TimelogSessionRecord]:
     if not path.exists():
         return {}
     try:
@@ -983,10 +984,14 @@ def _read_sessions_unlocked(path: Path) -> dict[str, dict[str, Any]]:
     sessions = data.get("sessions", data)
     if not isinstance(sessions, dict):
         raise RuntimeError(f"invalid timelog session store: {path}")
-    return {str(key): value for key, value in sessions.items() if isinstance(value, dict)}
+    return {
+        str(key): cast(TimelogSessionRecord, value)
+        for key, value in sessions.items()
+        if isinstance(value, dict)
+    }
 
 
-def _write_sessions_unlocked(path: Path, sessions: dict[str, dict[str, Any]]) -> None:
+def _write_sessions_unlocked(path: Path, sessions: dict[str, TimelogSessionRecord]) -> None:
     payload = {
         "version": 1,
         "sessions": sessions,

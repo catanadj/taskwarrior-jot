@@ -111,6 +111,24 @@ class TimelogSession(PayloadModel):
         return payload
 
 
+class TimelogSessionRecord(TypedDict, total=False):
+    """JSON-compatible pending-session fields, including legacy omissions."""
+
+    task_uuid: str
+    task_short_uuid: str
+    description: str
+    project: str
+    chain_id: str | None
+    started: str
+    elapsed_minutes: float
+    elapsed: str
+    timewarrior_attempted: bool
+    timewarrior_started: bool
+    timewarrior_state: str
+    timewarrior_attempted_at: str
+    timewarrior_error: str
+
+
 @dataclass(frozen=True, slots=True)
 class TimelogWriteResult(PayloadModel):
     written: bool
