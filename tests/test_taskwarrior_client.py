@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import subprocess
+from tempfile import TemporaryDirectory
 import unittest
 from unittest import mock
 
@@ -20,6 +22,38 @@ TASK = {
 
 
 class TaskwarriorClientTests(unittest.TestCase):
+    def test_export_contract_works_with_a_real_taskwarrior_executable(self) -> None:
+        with TemporaryDirectory(prefix="jot-taskwarrior-") as temporary:
+            root = Path(temporary)
+            script = root / "task"
+            calls = root / "calls.json"
+            script.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json\n"
+                "import pathlib\n"
+                "import sys\n"
+                f"pathlib.Path({str(calls)!r}).write_text(json.dumps(sys.argv[1:]))\n"
+                f"payload = {[TASK]!r}\n"
+                "print(json.dumps(payload))\n",
+                encoding="utf-8",
+            )
+            script.chmod(0o755)
+
+            resolved = TaskwarriorClient(task_bin=str(script)).resolve_task("42")
+
+            self.assertEqual(resolved.task_short_uuid, "2d6d7d7d")
+            self.assertEqual(
+                json.loads(calls.read_text(encoding="utf-8")),
+                [
+                    "rc.hooks=off",
+                    "rc.verbose=nothing",
+                    "rc.color=off",
+                    "rc.json.array=1",
+                    "42",
+                    "export",
+                ],
+            )
+
     def test_availability_and_version_use_configured_binary(self) -> None:
         client = TaskwarriorClient(task_bin="task-custom")
         with mock.patch("jot_core.taskwarrior.shutil.which", return_value="/bin/task"):
