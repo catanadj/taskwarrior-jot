@@ -85,9 +85,6 @@ from .resource_cli import (
 from .search import normalize_chain_id, normalize_kinds, normalize_project, search_all
 from .services import JotService
 from .storage import (
-    add_to_chain_heading_storage,
-    add_to_project_heading_storage,
-    add_to_task_heading_storage,
     delete_chain_note_storage,
     delete_project_note_storage,
     delete_task_note_storage,
@@ -2089,74 +2086,20 @@ def _run_project_delete(ctx, project_name: str) -> CommandResult:
 
 def _run_add_to(ctx, args) -> CommandResult:
     text = _text_from_optional(args.text)
+    service = JotService(config=ctx.config, taskwarrior=ctx.taskwarrior)
+    common = {
+        "heading": args.heading,
+        "text": text,
+        "create_heading": bool(args.create_heading),
+        "exact": bool(args.heading_exact),
+    }
     if args.note_kind == "task":
-        task = ctx.taskwarrior.resolve_task(args.note_ref)
-        result = add_to_task_heading_storage(
-            ctx.config,
-            task,
-            heading=args.heading,
-            text=text,
-            create_heading=bool(args.create_heading),
-            exact=bool(args.heading_exact),
-        )
-        return CommandResult(
-            command="add-to",
-            data=HeadingCommandResult(
-                note_kind="task",
-                path=result.note_path,
-                opened=result.opened,
-                heading=result.heading,
-                heading_match=result.heading_match,
-                timestamp=result.timestamp,
-                entry=result.entry,
-                identity={"task_short_uuid": task.task_short_uuid},
-            ),
-        )
-    if args.note_kind == "chain":
-        task = ctx.taskwarrior.resolve_task(args.note_ref)
-        result = add_to_chain_heading_storage(
-            ctx.config,
-            task,
-            heading=args.heading,
-            text=text,
-            create_heading=bool(args.create_heading),
-            exact=bool(args.heading_exact),
-        )
-        return CommandResult(
-            command="add-to",
-            data=HeadingCommandResult(
-                note_kind="chain",
-                path=result.note_path,
-                opened=result.opened,
-                heading=result.heading,
-                heading_match=result.heading_match,
-                timestamp=result.timestamp,
-                entry=result.entry,
-                identity={"task_short_uuid": task.task_short_uuid},
-            ),
-        )
-    project_name = str(args.note_ref).strip()
-    result = add_to_project_heading_storage(
-        ctx.config,
-        project_name,
-        heading=args.heading,
-        text=text,
-        create_heading=bool(args.create_heading),
-        exact=bool(args.heading_exact),
-    )
-    return CommandResult(
-        command="add-to",
-        data=HeadingCommandResult(
-            note_kind="project",
-            path=result.note_path,
-            opened=result.opened,
-            heading=result.heading,
-            heading_match=result.heading_match,
-            timestamp=result.timestamp,
-            entry=result.entry,
-            identity={"project": project_name},
-        ),
-    )
+        result = service.add_to_task_heading(args.note_ref, **common)
+    elif args.note_kind == "chain":
+        result = service.add_to_chain_heading(args.note_ref, **common)
+    else:
+        result = service.add_to_project_heading(str(args.note_ref).strip(), **common)
+    return CommandResult(command="add-to", data=result)
 
 
 def _run_timelog(ctx, args) -> CommandResult:

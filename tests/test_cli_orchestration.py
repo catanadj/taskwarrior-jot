@@ -11,7 +11,7 @@ from unittest import mock
 from jot_core import cli
 from jot_core.models import (
     CommandResult,
-    HeadingMutationResult,
+    HeadingCommandResult,
     NoteAppendStorageResult,
     NoteDeleteStorageResult,
     ResourceOperationResult,
@@ -211,9 +211,18 @@ class CliOrchestrationTests(unittest.TestCase):
         detach.assert_called_once()
 
     def test_note_heading_append_delete_and_progress_handlers_build_results(self) -> None:
-        mutation = HeadingMutationResult(Path("/tmp/task.md"), True, "Next steps", "fuzzy", "12:00", "Call vendor")
+        mutation = HeadingCommandResult(
+            note_kind="task",
+            path=Path("/tmp/task.md"),
+            opened=True,
+            heading="Next steps",
+            heading_match="fuzzy",
+            timestamp="12:00",
+            entry="Call vendor",
+            identity={"task_short_uuid": "2d6d7d7d"},
+        )
         args = SimpleNamespace(note_kind="task", note_ref="42", heading="Next", text="Call vendor", create_heading=False, heading_exact=False)
-        with mock.patch("jot_core.cli.add_to_task_heading_storage", return_value=mutation):
+        with mock.patch.object(cli.JotService, "add_to_task_heading", return_value=mutation):
             result = cli._run_add_to(self.ctx, args)
         self.assertEqual(result.data.heading_match, "fuzzy")
 
