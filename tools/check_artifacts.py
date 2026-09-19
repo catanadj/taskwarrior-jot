@@ -12,6 +12,10 @@ REQUIRED_SUFFIXES = (
     "jot_core/data/templates/chain-note.md",
     "jot_core/data/templates/project-note.md",
     "jot_core/data/hooks/on-modify_jot_timelog.py",
+    "jot_tui/__init__.py",
+    "jot_tui/modals/__init__.py",
+    "jot_tui/controllers/progress.py",
+    "jot_tui/panes/browse.py",
 )
 REQUIRED_SOURCE_FILES = (
     "jot_core/data/config-jot.toml",
@@ -19,6 +23,10 @@ REQUIRED_SOURCE_FILES = (
     "jot_core/data/templates/chain-note.md",
     "jot_core/data/templates/project-note.md",
     "jot_core/data/hooks/on-modify_jot_timelog.py",
+    "jot_tui/__init__.py",
+    "jot_tui/modals/__init__.py",
+    "jot_tui/controllers/progress.py",
+    "jot_tui/panes/browse.py",
 )
 
 

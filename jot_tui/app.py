@@ -474,7 +474,7 @@ def build_tui(
             if kind not in {"task", "chain"} or not task_ref:
                 return
             self.push_screen(
-                PaletteModal(
+                CommandPaletteModal(
                     [
                         PaletteEntry(
                             "complete-task",
@@ -1925,14 +1925,14 @@ def build_tui(
             if main_tab == "browse-tab":
                 browse_tab = self.query_one("#browse-browser-tabs", TabbedContent).active
                 if browse_tab == "project-browser-pane":
-                    project = self.state.current_project_name
-                    return [{"kind": "project", "project": project}] if project else []
-            task_ref = self.state.current_latest_task_ref if main_tab == "latest-tab" else self.state.current_task_ref
-            if not task_ref:
+                    current_project = self.state.current_project_name
+                    return [{"kind": "project", "project": current_project}] if current_project else []
+            active_task_ref = self.state.current_latest_task_ref if main_tab == "latest-tab" else self.state.current_task_ref
+            if not active_task_ref:
                 return []
-            targets: list[dict[str, Any]] = [{"kind": "task", "task_ref": task_ref}]
+            targets: list[dict[str, Any]] = [{"kind": "task", "task_ref": active_task_ref}]
             if self.state.current_task_has_chain:
-                targets.append({"kind": "chain", "task_ref": task_ref})
+                targets.append({"kind": "chain", "task_ref": active_task_ref})
             if self.state.current_task_project:
                 targets.append({"kind": "project", "project": self.state.current_task_project})
             return targets

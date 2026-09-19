@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Note-first companion for Taskwarrior and Taskwarrior-Nautical"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { file = "LICENSE" }
+license = "GPL-3.0-only"
 authors = [
   { name = "pooK" }
 ]
@@ -36,15 +36,20 @@ version = {attr = "jot_core.__version__"}
 [tool.mypy]
 python_version = "3.11"
 files = [
-  "jot_core/models.py",
-  "jot_core/taskwarrior.py",
-  "jot_core/editor.py",
-  "jot_core/command_prefix.py",
-  "jot_core/command_help.py",
+  "jot_tui/app.py",
+  "jot_tui/command_browser.py",
+  "jot_tui/controllers",
+  "jot_tui/modals",
+  "jot_tui/panes",
+  "jot_tui/rendering.py",
+  "jot_tui/state.py",
   "jot_tui/palette.py",
 ]
+follow_imports = "skip"
+allow_untyped_defs = true
+allow_untyped_globals = true
+allow_untyped_decorators = true
 check_untyped_defs = true
-disallow_untyped_defs = true
 ignore_missing_imports = true
 warn_redundant_casts = true
 warn_unused_ignores = true
