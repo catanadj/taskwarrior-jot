@@ -8,7 +8,9 @@ from jot_tui import launcher
 
 class TuiLauncherTests(unittest.TestCase):
     def test_main_routes_empty_tui_and_regular_commands(self) -> None:
-        with mock.patch("jot_tui.launcher._run_command_browser", return_value=3) as browser:
+        with mock.patch.object(launcher.sys.stdin, "isatty", return_value=True), mock.patch.object(
+            launcher.sys.stdout, "isatty", return_value=True
+        ), mock.patch("jot_tui.launcher._run_command_browser", return_value=3) as browser:
             self.assertEqual(launcher.main([]), 3)
         browser.assert_called_once_with()
 
@@ -21,6 +23,13 @@ class TuiLauncherTests(unittest.TestCase):
             with mock.patch("jot_tui.launcher.expand_command_prefixes", return_value=["show", "42"]):
                 self.assertEqual(launcher.main(["show", "42"]), 2)
         cli.assert_called_once_with(["show", "42"])
+
+    def test_main_uses_help_for_noninteractive_empty_invocation(self) -> None:
+        with mock.patch.object(launcher.sys.stdin, "isatty", return_value=False), mock.patch.object(
+            launcher.sys.stdout, "isatty", return_value=False
+        ), mock.patch("jot_tui.launcher.core_cli.main", return_value=0) as cli:
+            self.assertEqual(launcher.main([]), 0)
+        cli.assert_called_once_with([])
 
     def test_main_falls_back_to_cli_for_ambiguous_prefix(self) -> None:
         with mock.patch(

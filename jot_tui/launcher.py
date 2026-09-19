@@ -14,6 +14,10 @@ from jot_core import cli as core_cli
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
+        # Captured/stdin-driven invocations must remain non-interactive so
+        # scripts and test runners receive the regular help output.
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            return core_cli.main([])
         return _run_command_browser()
 
     try:
