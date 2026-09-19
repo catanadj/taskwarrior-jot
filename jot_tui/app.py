@@ -9,7 +9,13 @@ from typing import Any, Mapping
 from jot_core.services import JotService
 from jot_core.notes import preview_trash_path
 from jot_tui.palette import PaletteEntry, filter_palette_entries
-from jot_tui.modals import build_command_palette_modal
+from jot_tui.modals import (
+    build_command_palette_modal,
+    build_common_modals,
+    build_note_modals,
+    build_progress_modal,
+    build_time_modals,
+)
 from jot_tui.state import StateBacked, TuiState
 from jot_tui.controllers.progress import apply_progress
 from jot_tui.controllers.resources import attach_resource, detach_resource, open_resource
@@ -19,10 +25,6 @@ from jot_tui.panes.browse import compose_browse_pane
 from jot_tui.panes.latest import compose_latest_pane
 from jot_tui.panes.notes import compose_notes_pane
 from jot_tui.panes.search import compose_search_pane
-from jot_tui.note_modals import build_note_modals
-from jot_tui.time_modals import build_time_modals
-from jot_tui.progress_modal import build_progress_modal
-from jot_tui.common_modals import build_common_modals
 from jot_tui.rendering import (
     note_excerpt,
     pretty_label,

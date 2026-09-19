@@ -302,6 +302,15 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(callable(build_command_palette_modal))
 
+    async def test_modal_factories_are_grouped_with_legacy_imports_preserved(self) -> None:
+        from jot_tui.common_modals import build_common_modals as legacy_common
+        from jot_tui.modals import build_common_modals
+        from jot_tui.modals.notes import build_note_modals
+        from jot_tui.note_modals import build_note_modals as legacy_notes
+
+        self.assertIs(build_common_modals, legacy_common)
+        self.assertIs(build_note_modals, legacy_notes)
+
     async def test_real_service_loads_workspace_rows(self) -> None:
         with TemporaryDirectory(prefix="jot-tui-real-") as temporary:
             service = real_service_fixture(Path(temporary))
