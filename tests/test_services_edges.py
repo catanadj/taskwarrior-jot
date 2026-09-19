@@ -169,6 +169,16 @@ class ServiceEdgeTests(unittest.TestCase):
             self.assertEqual(self.service.timelog_report("month", details=False), "report")
         report.assert_called_once_with(self.config, period="month", details=False)
 
+    def test_timelog_trash_result_exposes_typed_archive_items(self) -> None:
+        with mock.patch(
+            "jot_core.services.list_deleted_time_logs",
+            return_value=[{"key": "old", "task_short_uuid": "2d6d7d7d", "minutes": 5}],
+        ):
+            result = self.service.timelog_trash_result()
+        self.assertEqual(result.items[0].key, "old")
+        self.assertEqual(result.items[0].minutes, 5)
+        self.assertEqual(result.to_payload()["items"][0]["key"], "old")
+
     def test_editor_completion_heading_delete_and_detach_wrappers_route(self) -> None:
         note = NotePaths(self.config.tasks_dir / "task.md", False)
         with mock.patch("jot_core.services.ensure_task_note", return_value=note), mock.patch.object(

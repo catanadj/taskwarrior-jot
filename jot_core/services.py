@@ -14,6 +14,7 @@ from .models import (
     ActivityItem,
     AppConfig,
     AgentContext,
+    DeletedTimelogItem,
     NoteSummary,
     NoteDeleteResult,
     HeadingCommandResult,
@@ -28,6 +29,7 @@ from .models import (
     TimelogReport,
     TimelogSession,
     TimelogSessionResult,
+    TimelogTrashResult,
     TimelogStopAllResult,
     TimelogStopResult,
     TimelogWriteResult,
@@ -275,6 +277,15 @@ class JotService:
 
     def timelog_trash(self) -> list[dict[str, Any]]:
         return list_deleted_time_logs(self.config)
+
+    def timelog_trash_result(self) -> TimelogTrashResult:
+        """Return deleted timelog entries through the typed application boundary."""
+        return TimelogTrashResult(
+            items=tuple(
+                DeletedTimelogItem.from_mapping(item)
+                for item in list_deleted_time_logs(self.config)
+            ),
+        )
 
     def timelog_restore(self, reference: str) -> TimelogEntryMutation:
         return restore_deleted_time_log(self.config, reference)
