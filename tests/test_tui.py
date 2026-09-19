@@ -341,7 +341,7 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue((service.config.root_dir / "timelog-pending.json").exists())
                 self.assertEqual(app.query_one("#time-sessions-table", DataTable).row_count, 1)
 
-                await app._apply_time_session_stop_async(app.time_session_rows[0])
+                await app._apply_time_session_stop_async(app.state.time_session_rows[0])
                 self.assertEqual(service.timelog_pending(), [])
                 self.assertEqual(app.query_one("#time-sessions-table", DataTable).row_count, 0)
                 self.assertEqual(app.query_one("#time-details-table", DataTable).row_count, 1)
@@ -377,7 +377,7 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
 
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
-            self.assertEqual(app.task_all_rows, [])
+            self.assertEqual(app.state.task_all_rows, [])
 
     async def test_filters_palette_and_add_to_heading_modal(self) -> None:
         service = FakeTuiService()
@@ -390,10 +390,10 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.query_one("#tasks-table", DataTable).row_count, 1)
 
             await pilot.click("#task-filter-notes")
-            self.assertTrue(app.task_filter_notes_only)
+            self.assertTrue(app.state.task_filter_notes_only)
             await pilot.click("#task-filter-clear")
-            self.assertEqual(app.task_filter_project, "")
-            self.assertFalse(app.task_filter_notes_only)
+            self.assertEqual(app.state.task_filter_project, "")
+            self.assertFalse(app.state.task_filter_notes_only)
 
             app.action_command_palette()
             await pilot.pause()
@@ -403,7 +403,7 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertEqual(len(app.query("#palette-input")), 0)
 
-            app.current_task_ref = "2d6d7d7d"
+            app.state.current_task_ref = "2d6d7d7d"
             app.action_add_to_selected_task()
             await pilot.pause()
             await pilot.click("#heading-input")
@@ -425,8 +425,8 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
 
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
-            app.current_task_ref = "2d6d7d7d"
-            app.current_task_project = "reading"
+            app.state.current_task_ref = "2d6d7d7d"
+            app.state.current_task_project = "reading"
             target = {"kind": "task", "task_ref": "2d6d7d7d", "path": "/tmp/task.md"}
             await app._apply_attach_resource_async(target, {"target": "https://example.test", "label": "Docs"})
             service.attach_resource.assert_called_once()
@@ -451,11 +451,11 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
 
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
-            app.current_task_ref = "2d6d7d7d"
+            app.state.current_task_ref = "2d6d7d7d"
             with mock.patch.object(app, "suspend", return_value=nullcontext()):
                 self.assertEqual(app._open_active_note_in_editor(), "/tmp/task.md")
             service.open_task_note_in_editor.assert_called_once_with("2d6d7d7d")
-            app.current_project_name = "reading"
+            app.state.current_project_name = "reading"
             await app._execute_palette_command_async("browse-projects")
             self.assertEqual(app.query_one("#browse-browser-tabs", TabbedContent).active, "project-browser-pane")
             await app._execute_palette_command_async("search")

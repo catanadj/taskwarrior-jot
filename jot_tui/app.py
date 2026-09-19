@@ -16,7 +16,7 @@ from jot_tui.modals import (
     build_progress_modal,
     build_time_modals,
 )
-from jot_tui.state import StateBacked, TuiState
+from jot_tui.state import TuiState
 from jot_tui.controllers.progress import apply_progress
 from jot_tui.controllers.resources import attach_resource, detach_resource, open_resource
 from jot_tui.controllers.timelog import add as add_time, amend as amend_time, cancel as cancel_time, delete as delete_time, restore as restore_time, start as start_time, stop as stop_time, stop_all as stop_all_time, trash as trash_time
@@ -223,7 +223,7 @@ def build_tui(
     ProgressModal = build_progress_modal(NEW_PROGRESS_TRACK, initial_progress_track, resolve_progress_track)
     ConfirmDeleteModal, ResourcePickerModal = build_common_modals()
 
-    class JotTUI(StateBacked, App[None]):
+    class JotTUI(App[None]):
         CSS = """
         Screen { layout: vertical; }
         #browse-top { height: 1fr; }
@@ -355,58 +355,58 @@ def build_tui(
             if row_index < 0:
                 return
             if table_id == "time-sessions-table":
-                if row_index >= len(self.time_session_rows):
+                if row_index >= len(self.state.time_session_rows):
                     return
-                task_ref = str(self.time_session_rows[row_index].get("task_short_uuid") or "").strip()
+                task_ref = str(self.state.time_session_rows[row_index].get("task_short_uuid") or "").strip()
                 if task_ref:
                     self._open_task_workspace(task_ref)
                 return
             if table_id == "time-details-table":
-                if row_index >= len(self.time_rows):
+                if row_index >= len(self.state.time_rows):
                     return
-                task_ref = str(self.time_rows[row_index].get("task_short_uuid") or "").strip()
+                task_ref = str(self.state.time_rows[row_index].get("task_short_uuid") or "").strip()
                 if task_ref:
                     self._open_task_workspace(task_ref)
                 return
             if table_id == "recent-table":
-                if row_index >= len(self.recent_rows):
+                if row_index >= len(self.state.recent_rows):
                     return
-                short_uuid = str(self.recent_rows[row_index].get("task_short_uuid") or "").strip()
+                short_uuid = str(self.state.recent_rows[row_index].get("task_short_uuid") or "").strip()
                 if short_uuid:
                     self._open_latest_workspace(short_uuid)
                 return
             if table_id == "tasks-table":
-                if row_index >= len(self.task_rows):
+                if row_index >= len(self.state.task_rows):
                     return
-                short_uuid = str(_read_row_field(self.task_rows[row_index], "short_uuid") or "").strip()
+                short_uuid = str(_read_row_field(self.state.task_rows[row_index], "short_uuid") or "").strip()
                 if short_uuid:
                     self._open_task_workspace(short_uuid)
                 return
             if table_id == "projects-table":
-                if row_index >= len(self.project_rows):
+                if row_index >= len(self.state.project_rows):
                     return
-                project_name = str(_read_row_field(self.project_rows[row_index], "project") or "").strip()
+                project_name = str(_read_row_field(self.state.project_rows[row_index], "project") or "").strip()
                 if project_name:
-                    self.current_project_name = project_name
-                if project_name and bool(_read_row_field(self.project_rows[row_index], "selectable")):
+                    self.state.current_project_name = project_name
+                if project_name and bool(_read_row_field(self.state.project_rows[row_index], "selectable")):
                     self._open_project_workspace(project_name)
                 return
             if table_id == "notes-table":
-                if row_index >= len(self.note_rows):
+                if row_index >= len(self.state.note_rows):
                     return
-                self._open_note_inventory_row(self.note_rows[row_index])
+                self._open_note_inventory_row(self.state.note_rows[row_index])
                 return
             if table_id == "search-events-table":
-                if row_index >= len(self.search_event_rows):
+                if row_index >= len(self.state.search_event_rows):
                     return
-                short_uuid = str(self.search_event_rows[row_index].get("task_short_uuid") or "").strip()
+                short_uuid = str(self.state.search_event_rows[row_index].get("task_short_uuid") or "").strip()
                 if short_uuid:
                     self._open_task_workspace(short_uuid)
                 return
             if table_id == "search-notes-table":
-                if row_index >= len(self.search_note_rows):
+                if row_index >= len(self.state.search_note_rows):
                     return
-                item = self.search_note_rows[row_index]
+                item = self.state.search_note_rows[row_index]
                 kind = str(item.get("kind") or "").strip()
                 if kind == "project-note":
                     project_name = str(item.get("project") or "").strip()
@@ -459,12 +459,12 @@ def build_tui(
             main_tab = self.query_one("#main-tabs", TabbedContent).active
             if main_tab == "notes-tab":
                 asyncio.create_task(self._refresh_notes_async())
-            elif main_tab == "latest-tab" and self.current_latest_task_ref:
-                asyncio.create_task(self._load_latest_task_async(self.current_latest_task_ref))
-            elif self.current_task_ref:
-                asyncio.create_task(self._load_task_async(self.current_task_ref))
-            elif self.current_project_name:
-                asyncio.create_task(self._load_project_async(self.current_project_name))
+            elif main_tab == "latest-tab" and self.state.current_latest_task_ref:
+                asyncio.create_task(self._load_latest_task_async(self.state.current_latest_task_ref))
+            elif self.state.current_task_ref:
+                asyncio.create_task(self._load_task_async(self.state.current_task_ref))
+            elif self.state.current_project_name:
+                asyncio.create_task(self._load_project_async(self.state.current_project_name))
 
         def _offer_post_save_actions(self, target: dict[str, Any] | None) -> None:
             if not self.svc.config.editor_post_save_actions or target is None:
@@ -578,7 +578,7 @@ def build_tui(
             if self.query_one("#main-tabs", TabbedContent).active == "time-tab":
                 self.action_time_add()
                 return
-            if not self.current_task_ref:
+            if not self.state.current_task_ref:
                 self.notify("Select a task row in Recent first", severity="warning")
                 return
             self.push_screen(
@@ -587,10 +587,10 @@ def build_tui(
             )
 
         def action_add_to_selected_chain(self) -> None:
-            if not self.current_task_ref:
+            if not self.state.current_task_ref:
                 self.notify("Select a task row in Recent first", severity="warning")
                 return
-            if not self.current_task_chain_path:
+            if not self.state.current_task_chain_path:
                 self.notify("Selected task has no chain note context", severity="warning")
                 return
             self.push_screen(
@@ -599,7 +599,7 @@ def build_tui(
             )
 
         def action_open_project_context(self) -> None:
-            project = self.current_project_name or self.current_task_project
+            project = self.state.current_project_name or self.state.current_task_project
             if not project:
                 self.notify("Select a project row or a task with a project", severity="warning")
                 return
@@ -607,7 +607,7 @@ def build_tui(
 
         def action_time_add(self) -> None:
             selected = self._selected_time_row()
-            initial_task = str((selected or {}).get("task_short_uuid") or self.current_task_ref or "")
+            initial_task = str((selected or {}).get("task_short_uuid") or self.state.current_task_ref or "")
             self.push_screen(
                 TimeEntryModal(mode="add", initial_task_ref=initial_task),
                 lambda payload: self._on_time_entry_payload("add", None, payload),
@@ -638,7 +638,7 @@ def build_tui(
 
         def action_time_session_start(self) -> None:
             selected = self._selected_time_row()
-            initial_task = str((selected or {}).get("task_short_uuid") or self.current_task_ref or "")
+            initial_task = str((selected or {}).get("task_short_uuid") or self.state.current_task_ref or "")
             self.push_screen(
                 TimeSessionStartModal(initial_task),
                 self._on_time_session_start_selected,
@@ -652,7 +652,7 @@ def build_tui(
             asyncio.create_task(self._apply_time_session_stop_async(session))
 
         def action_time_session_stop_all(self) -> None:
-            count = len(self.time_session_rows)
+            count = len(self.state.time_session_rows)
             if not count:
                 self.notify("No active timers to stop", severity="information")
                 return
@@ -766,7 +766,7 @@ def build_tui(
             if event.input.id != "search-input":
                 return
             query = event.value.strip()
-            self.current_search_query = query
+            self.state.current_search_query = query
             if not query:
                 self.query_one("#search-notes-table", DataTable).clear()
                 self.query_one("#search-events-table", DataTable).clear()
@@ -775,25 +775,25 @@ def build_tui(
 
         def on_input_changed(self, event: Input.Changed) -> None:
             if event.input.id == "notes-filter-kind":
-                self.note_filter_kind = event.value.strip()
+                self.state.note_filter_kind = event.value.strip()
                 asyncio.create_task(self._refresh_notes_async())
                 return
             if event.input.id == "notes-filter-project":
-                self.note_filter_project = event.value.strip()
+                self.state.note_filter_project = event.value.strip()
                 asyncio.create_task(self._refresh_notes_async())
                 return
             if event.input.id == "task-filter-project":
-                self.task_filter_project = event.value.strip()
+                self.state.task_filter_project = event.value.strip()
                 self._render_tasks_table()
                 return
             if event.input.id == "task-filter-tag":
-                self.task_filter_tag = event.value.strip()
+                self.state.task_filter_tag = event.value.strip()
                 self._render_tasks_table()
 
         def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
             if event.checkbox.id != "task-filter-notes":
                 return
-            self.task_filter_notes_only = bool(event.value)
+            self.state.task_filter_notes_only = bool(event.value)
             self._render_tasks_table()
 
         def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -825,17 +825,17 @@ def build_tui(
                 self.action_time_session_cancel()
                 return
             if event.button.id == "notes-filter-clear":
-                self.note_filter_kind = ""
-                self.note_filter_project = ""
+                self.state.note_filter_kind = ""
+                self.state.note_filter_project = ""
                 self.query_one("#notes-filter-kind", Input).value = ""
                 self.query_one("#notes-filter-project", Input).value = ""
                 asyncio.create_task(self._refresh_notes_async())
                 return
             if event.button.id != "task-filter-clear":
                 return
-            self.task_filter_project = ""
-            self.task_filter_tag = ""
-            self.task_filter_notes_only = False
+            self.state.task_filter_project = ""
+            self.state.task_filter_tag = ""
+            self.state.task_filter_notes_only = False
             self.query_one("#task-filter-project", Input).value = ""
             self.query_one("#task-filter-tag", Input).value = ""
             self.query_one("#task-filter-notes", Checkbox).value = False
@@ -847,31 +847,31 @@ def build_tui(
             period = str(event.value or "").strip()
             if period not in {"all", "today", "week", "month"}:
                 return
-            self.time_period = period
+            self.state.time_period = period
             asyncio.create_task(self._refresh_time_async())
 
         def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
             if event.data_table.id == "time-sessions-table":
                 row_index = event.cursor_row
-                if row_index < 0 or row_index >= len(self.time_session_rows):
+                if row_index < 0 or row_index >= len(self.state.time_session_rows):
                     return
-                task_ref = str(self.time_session_rows[row_index].get("task_short_uuid") or "").strip()
+                task_ref = str(self.state.time_session_rows[row_index].get("task_short_uuid") or "").strip()
                 if task_ref:
                     self._open_task_workspace(task_ref)
                 return
             if event.data_table.id == "time-details-table":
                 row_index = event.cursor_row
-                if row_index < 0 or row_index >= len(self.time_rows):
+                if row_index < 0 or row_index >= len(self.state.time_rows):
                     return
-                task_ref = str(self.time_rows[row_index].get("task_short_uuid") or "").strip()
+                task_ref = str(self.state.time_rows[row_index].get("task_short_uuid") or "").strip()
                 if task_ref:
                     self._open_task_workspace(task_ref)
                 return
             if event.data_table.id == "recent-table":
                 row_index = event.cursor_row
-                if row_index < 0 or row_index >= len(self.recent_rows):
+                if row_index < 0 or row_index >= len(self.state.recent_rows):
                     return
-                item = self.recent_rows[row_index]
+                item = self.state.recent_rows[row_index]
                 short_uuid = str(item.get("task_short_uuid") or "").strip()
                 if not short_uuid:
                     return
@@ -879,39 +879,39 @@ def build_tui(
                 return
             if event.data_table.id == "tasks-table":
                 row_index = event.cursor_row
-                if row_index < 0 or row_index >= len(self.task_rows):
+                if row_index < 0 or row_index >= len(self.state.task_rows):
                     return
-                short_uuid = str(_read_row_field(self.task_rows[row_index], "short_uuid") or "").strip()
+                short_uuid = str(_read_row_field(self.state.task_rows[row_index], "short_uuid") or "").strip()
                 if not short_uuid:
                     return
                 self._open_task_workspace(short_uuid)
                 return
             if event.data_table.id == "projects-table":
                 row_index = event.cursor_row
-                if row_index < 0 or row_index >= len(self.project_rows):
+                if row_index < 0 or row_index >= len(self.state.project_rows):
                     return
-                project_name = str(_read_row_field(self.project_rows[row_index], "project") or "").strip()
+                project_name = str(_read_row_field(self.state.project_rows[row_index], "project") or "").strip()
                 if not project_name:
                     return
-                self.current_project_name = project_name or None
-                if self.current_project_name and bool(_read_row_field(self.project_rows[row_index], "selectable")):
-                    self._open_project_workspace(self.current_project_name)
+                self.state.current_project_name = project_name or None
+                if self.state.current_project_name and bool(_read_row_field(self.state.project_rows[row_index], "selectable")):
+                    self._open_project_workspace(self.state.current_project_name)
             if event.data_table.id == "notes-table":
                 row_index = event.cursor_row
-                if row_index < 0 or row_index >= len(self.note_rows):
+                if row_index < 0 or row_index >= len(self.state.note_rows):
                     return
-                self._open_note_inventory_row(self.note_rows[row_index])
+                self._open_note_inventory_row(self.state.note_rows[row_index])
 
         async def _refresh_recent_async(self) -> None:
             table = self.query_one("#recent-table", DataTable)
             table.clear()
             try:
-                self.recent_rows = await asyncio.to_thread(self.svc.recent, 80)
+                self.state.recent_rows = await asyncio.to_thread(self.svc.recent, 80)
             except Exception as exc:
-                self.recent_rows = []
+                self.state.recent_rows = []
                 self.notify(f"Recent activity refresh failed: {exc}", severity="error")
                 return
-            for item in self.recent_rows:
+            for item in self.state.recent_rows:
                 ident = (
                     str(item.get("task_short_uuid") or "").strip()
                     or str(item.get("chain_id") or "").strip()
@@ -933,16 +933,16 @@ def build_tui(
             table = self.query_one("#notes-table", DataTable)
             table.clear()
             try:
-                self.note_rows = await asyncio.to_thread(
+                self.state.note_rows = await asyncio.to_thread(
                     self.svc.notes,
-                    kind=self.note_filter_kind,
-                    project=self.note_filter_project,
+                    kind=self.state.note_filter_kind,
+                    project=self.state.note_filter_project,
                 )
             except Exception as exc:
-                self.note_rows = []
+                self.state.note_rows = []
                 self.notify(f"Notes refresh failed: {exc}", severity="error")
                 return
-            for item in self.note_rows:
+            for item in self.state.note_rows:
                 table.add_row(
                     str(_read_row_field(item, "kind") or ""),
                     str(_read_row_field(item, "identifier", _read_row_field(item, "id")) or ""),
@@ -955,10 +955,10 @@ def build_tui(
 
         async def _refresh_tasks_async(self) -> None:
             try:
-                self.task_all_rows = await asyncio.to_thread(self.svc.tasks, 250)
+                self.state.task_all_rows = await asyncio.to_thread(self.svc.tasks, 250)
             except Exception as exc:
-                self.task_all_rows = []
-                self.task_rows = []
+                self.state.task_all_rows = []
+                self.state.task_rows = []
                 self._render_tasks_table()
                 self.notify(f"Tasks refresh failed: {exc}", severity="error")
                 return
@@ -968,12 +968,12 @@ def build_tui(
             table = self.query_one("#projects-table", DataTable)
             table.clear()
             try:
-                self.project_rows = await asyncio.to_thread(self.svc.project_tree_rows)
+                self.state.project_rows = await asyncio.to_thread(self.svc.project_tree_rows)
             except Exception as exc:
-                self.project_rows = []
+                self.state.project_rows = []
                 self.notify(f"Projects refresh failed: {exc}", severity="error")
                 return
-            for item in self.project_rows:
+            for item in self.state.project_rows:
                 table.add_row(
                     str(_read_row_field(item, "label") or _read_row_field(item, "project") or ""),
                     str(_read_row_field(item, "count") or ""),
@@ -985,16 +985,16 @@ def build_tui(
         def _selected_time_row(self) -> dict[str, Any] | None:
             table = self.query_one("#time-details-table", DataTable)
             row = table.cursor_row
-            if row < 0 or row >= len(self.time_rows):
+            if row < 0 or row >= len(self.state.time_rows):
                 return None
-            return self.time_rows[row]
+            return self.state.time_rows[row]
 
         def _selected_time_session(self) -> dict[str, Any] | None:
             table = self.query_one("#time-sessions-table", DataTable)
             row = table.cursor_row
-            if row < 0 or row >= len(self.time_session_rows):
+            if row < 0 or row >= len(self.state.time_session_rows):
                 return None
-            return self.time_session_rows[row]
+            return self.state.time_session_rows[row]
 
         async def _apply_time_session_start_async(self, task_ref: str) -> None:
             try:
@@ -1145,20 +1145,20 @@ def build_tui(
             try:
                 sessions = await asyncio.to_thread(self.svc.timelog_pending)
             except Exception as exc:
-                self.time_session_rows = []
+                self.state.time_session_rows = []
                 title.update("Active timers (unavailable)")
                 self.query_one("#time-session-stop", Button).disabled = True
                 self.query_one("#time-session-stop-all", Button).disabled = True
                 self.query_one("#time-session-cancel", Button).disabled = True
                 self.notify(f"Timer refresh failed: {exc}", severity="error")
                 return
-            self.time_session_rows = list(sessions)
-            has_sessions = bool(self.time_session_rows)
-            title.update(f"Active timers ({len(self.time_session_rows)})")
+            self.state.time_session_rows = list(sessions)
+            has_sessions = bool(self.state.time_session_rows)
+            title.update(f"Active timers ({len(self.state.time_session_rows)})")
             self.query_one("#time-session-stop", Button).disabled = not has_sessions
             self.query_one("#time-session-stop-all", Button).disabled = not has_sessions
             self.query_one("#time-session-cancel", Button).disabled = not has_sessions
-            for item in self.time_session_rows:
+            for item in self.state.time_session_rows:
                 table.add_row(
                     str(item.get("elapsed") or ""),
                     str(item.get("task_short_uuid") or ""),
@@ -1182,17 +1182,17 @@ def build_tui(
             try:
                 report = await asyncio.to_thread(
                     self.svc.timelog_report,
-                    self.time_period,
+                    self.state.time_period,
                     details=True,
                 )
             except Exception as exc:
-                self.time_rows = []
+                self.state.time_rows = []
                 summary.update(f"Time report failed: {exc}")
                 self.notify(f"Time refresh failed: {exc}", severity="error")
                 return
-            self.time_rows = list(report.get("entries") or [])
+            self.state.time_rows = list(report.get("entries") or [])
             summary.update(
-                f"{str(report.get('period') or self.time_period).capitalize()}: "
+                f"{str(report.get('period') or self.state.time_period).capitalize()}: "
                 f"{report.get('total') or '0m'} across {report.get('entry_count', 0)} intervals"
             )
             for item in report.get("by_day") or []:
@@ -1213,7 +1213,7 @@ def build_tui(
                     str(item.get("duration") or ""),
                     str(item.get("entry_count") or 0),
                 )
-            for item in self.time_rows:
+            for item in self.state.time_rows:
                 tables["details"].add_row(
                     str(item.get("key") or ""),
                     str(item.get("day") or ""),
@@ -1229,10 +1229,10 @@ def build_tui(
         def _render_tasks_table(self) -> None:
             table = self.query_one("#tasks-table", DataTable)
             table.clear()
-            self.task_rows = [
-                item for item in self.task_all_rows if self._task_matches_filters(item)
+            self.state.task_rows = [
+                item for item in self.state.task_all_rows if self._task_matches_filters(item)
             ]
-            for item in self.task_rows:
+            for item in self.state.task_rows:
                 notes = []
                 if _read_row_field(item, "has_task_note"):
                     notes.append("task")
@@ -1250,17 +1250,17 @@ def build_tui(
                 )
 
         def _task_matches_filters(self, item: dict[str, Any]) -> bool:
-            project_filter = self.task_filter_project.strip().lower()
+            project_filter = self.state.task_filter_project.strip().lower()
             if project_filter:
                 project = str(_read_row_field(item, "project") or "").strip().lower()
                 if project_filter not in project:
                     return False
-            tag_filter = self.task_filter_tag.strip().lower()
+            tag_filter = self.state.task_filter_tag.strip().lower()
             if tag_filter:
                 tags = [str(tag).strip().lower() for tag in _read_row_field(item, "tags") or []]
                 if not any(tag_filter in tag for tag in tags):
                     return False
-            if self.task_filter_notes_only and not bool(_read_row_field(item, "has_notes")):
+            if self.state.task_filter_notes_only and not bool(_read_row_field(item, "has_notes")):
                 return False
             return True
 
@@ -1272,19 +1272,19 @@ def build_tui(
             try:
                 data = await asyncio.to_thread(self.svc.search, query)
             except Exception as exc:
-                self.search_note_rows = []
-                self.search_event_rows = []
+                self.state.search_note_rows = []
+                self.state.search_event_rows = []
                 self.notify(f"Search failed: {exc}", severity="error")
                 return
-            self.search_note_rows = list(data.get("notes", []))
-            self.search_event_rows = list(data.get("events", []))
-            for item in self.search_note_rows:
+            self.state.search_note_rows = list(data.get("notes", []))
+            self.state.search_event_rows = list(data.get("events", []))
+            for item in self.state.search_note_rows:
                 notes_table.add_row(
                     str(item.get("kind") or ""),
                     str(item.get("path") or ""),
                     str(item.get("match") or ""),
                 )
-            for item in self.search_event_rows:
+            for item in self.state.search_event_rows:
                 events_table.add_row(
                     str(item.get("task_short_uuid") or ""),
                     str(item.get("annotation") or ""),
@@ -1296,26 +1296,26 @@ def build_tui(
             if main_tab == "browse-tab":
                 browse_tab = self.query_one("#browse-browser-tabs", TabbedContent).active
                 if browse_tab == "task-browser-pane":
-                    if self.current_task_ref:
+                    if self.state.current_task_ref:
                         await self._refresh_tasks_async()
-                        await self._load_task_async(self.current_task_ref)
+                        await self._load_task_async(self.state.current_task_ref)
                     return
                 if browse_tab == "project-browser-pane":
                     await self._refresh_projects_async()
-                    if self.current_project_name:
-                        await self._load_project_async(self.current_project_name)
+                    if self.state.current_project_name:
+                        await self._load_project_async(self.state.current_project_name)
                     return
             if main_tab == "latest-tab":
-                if self.current_latest_task_ref:
+                if self.state.current_latest_task_ref:
                     await self._refresh_recent_async()
-                    await self._load_latest_task_async(self.current_latest_task_ref)
+                    await self._load_latest_task_async(self.state.current_latest_task_ref)
                 return
             if main_tab == "notes-tab":
                 await self._refresh_notes_async()
                 return
             if main_tab == "search-tab":
-                if self.current_search_query:
-                    await self._run_search_async(self.current_search_query)
+                if self.state.current_search_query:
+                    await self._run_search_async(self.state.current_search_query)
                 return
             if main_tab == "time-tab":
                 await self._refresh_time_async()
@@ -1328,15 +1328,15 @@ def build_tui(
             if command_id == "browse-tasks":
                 self.query_one("#main-tabs", TabbedContent).active = "browse-tab"
                 self.query_one("#browse-browser-tabs", TabbedContent).active = "task-browser-pane"
-                if self.current_task_ref:
-                    await self._load_task_async(self.current_task_ref)
+                if self.state.current_task_ref:
+                    await self._load_task_async(self.state.current_task_ref)
                 self._update_action_hints()
                 return
             if command_id == "browse-projects":
                 self.query_one("#main-tabs", TabbedContent).active = "browse-tab"
                 self.query_one("#browse-browser-tabs", TabbedContent).active = "project-browser-pane"
-                if self.current_project_name:
-                    await self._load_project_async(self.current_project_name)
+                if self.state.current_project_name:
+                    await self._load_project_async(self.state.current_project_name)
                 self._update_action_hints()
                 return
             if command_id == "browse-notes":
@@ -1375,8 +1375,8 @@ def build_tui(
                 return
             if command_id == "latest-edits":
                 self.query_one("#main-tabs", TabbedContent).active = "latest-tab"
-                if self.current_latest_task_ref:
-                    await self._load_latest_task_async(self.current_latest_task_ref)
+                if self.state.current_latest_task_ref:
+                    await self._load_latest_task_async(self.state.current_latest_task_ref)
                 self._update_action_hints()
                 return
             if command_id == "search":
@@ -1453,12 +1453,12 @@ def build_tui(
             task_note_data = notes.get("task") or {}
             chain_note_data = notes.get("chain") or {}
             project_note_data = notes.get("project") or {}
-            self.current_task_chain_path = str(chain_note_data.get("path") or "").strip()
-            self.current_task_has_chain = bool((data.get("nautical") or {}).get("chain_id"))
-            self.current_task_project = str(task.get("project") or "").strip()
+            self.state.current_task_chain_path = str(chain_note_data.get("path") or "").strip()
+            self.state.current_task_has_chain = bool((data.get("nautical") or {}).get("chain_id"))
+            self.state.current_task_project = str(task.get("project") or "").strip()
             workspace_notes = [task_note_data, chain_note_data, project_note_data]
-            self.current_context_has_resources = self._workspace_has_resources(workspace_notes)
-            self.current_context_has_progress = self._workspace_has_progress(workspace_notes)
+            self.state.current_context_has_resources = self._workspace_has_resources(workspace_notes)
+            self.state.current_context_has_progress = self._workspace_has_progress(workspace_notes)
             lines.append("")
             events = data.get("events") or []
             lines.append(f"Events: {len(events)} total")
@@ -1473,10 +1473,10 @@ def build_tui(
                     tui_next_actions(
                         scope="task",
                         has_note=bool(task_note_data.get("path")),
-                        has_resources=self.current_context_has_resources,
-                        has_progress=self.current_context_has_progress,
-                        has_chain=self.current_task_has_chain,
-                        has_project=bool(self.current_task_project),
+                        has_resources=self.state.current_context_has_resources,
+                        has_progress=self.state.current_context_has_progress,
+                        has_chain=self.state.current_task_has_chain,
+                        has_project=bool(self.state.current_task_project),
                     )
                 )
             )
@@ -1539,13 +1539,13 @@ def build_tui(
             task_note_data = notes.get("task") or {}
             chain_note_data = notes.get("chain") or {}
             project_note_data = notes.get("project") or {}
-            self.current_latest_task_ref = task_ref
-            self.current_task_chain_path = str(chain_note_data.get("path") or "").strip()
-            self.current_task_has_chain = bool((data.get("nautical") or {}).get("chain_id"))
-            self.current_task_project = str(task.get("project") or "").strip()
+            self.state.current_latest_task_ref = task_ref
+            self.state.current_task_chain_path = str(chain_note_data.get("path") or "").strip()
+            self.state.current_task_has_chain = bool((data.get("nautical") or {}).get("chain_id"))
+            self.state.current_task_project = str(task.get("project") or "").strip()
             workspace_notes = [task_note_data, chain_note_data, project_note_data]
-            self.current_context_has_resources = self._workspace_has_resources(workspace_notes)
-            self.current_context_has_progress = self._workspace_has_progress(workspace_notes)
+            self.state.current_context_has_resources = self._workspace_has_resources(workspace_notes)
+            self.state.current_context_has_progress = self._workspace_has_progress(workspace_notes)
             lines.append("")
             events = data.get("events") or []
             lines.append(f"Events: {len(events)} total")
@@ -1560,10 +1560,10 @@ def build_tui(
                     tui_next_actions(
                         scope="task",
                         has_note=bool(task_note_data.get("path")),
-                        has_resources=self.current_context_has_resources,
-                        has_progress=self.current_context_has_progress,
-                        has_chain=self.current_task_has_chain,
-                        has_project=bool(self.current_task_project),
+                        has_resources=self.state.current_context_has_resources,
+                        has_progress=self.state.current_context_has_progress,
+                        has_chain=self.state.current_task_has_chain,
+                        has_project=bool(self.state.current_task_project),
                     )
                 )
             )
@@ -1601,8 +1601,8 @@ def build_tui(
             data = await asyncio.to_thread(self.svc.project_workspace, project_name)
             note = data.get("note") or {}
             body = str(note.get("body") or "").strip()
-            self.current_context_has_resources = self._workspace_has_resources([note])
-            self.current_context_has_progress = self._workspace_has_progress([note])
+            self.state.current_context_has_resources = self._workspace_has_resources([note])
+            self.state.current_context_has_progress = self._workspace_has_progress([note])
             summary.update(
                 "\n".join(
                     [
@@ -1616,8 +1616,8 @@ def build_tui(
                             tui_next_actions(
                                 scope="project",
                                 has_note=bool(note.get("path")),
-                                has_resources=self.current_context_has_resources,
-                                has_progress=self.current_context_has_progress,
+                                has_resources=self.state.current_context_has_resources,
+                                has_progress=self.state.current_context_has_progress,
                             )
                         ),
                     ]
@@ -1632,31 +1632,31 @@ def build_tui(
         async def _apply_add_to_async(self, kind: str, payload: dict[str, Any]) -> None:
             try:
                 if kind == "task":
-                    if not self.current_task_ref:
+                    if not self.state.current_task_ref:
                         self.notify("Select a task row in Recent first", severity="warning")
                         return
                     result = await asyncio.to_thread(
                         self.svc.add_to_task_heading,
-                        self.current_task_ref,
+                        self.state.current_task_ref,
                         heading=str(payload.get("heading") or ""),
                         text=str(payload.get("entry") or ""),
                         create_heading=bool(payload.get("create_heading")),
                         exact=False,
                     )
                 elif kind == "chain":
-                    if not self.current_task_ref:
+                    if not self.state.current_task_ref:
                         self.notify("Select a task row in Recent first", severity="warning")
                         return
                     result = await asyncio.to_thread(
                         self.svc.add_to_chain_heading,
-                        self.current_task_ref,
+                        self.state.current_task_ref,
                         heading=str(payload.get("heading") or ""),
                         text=str(payload.get("entry") or ""),
                         create_heading=bool(payload.get("create_heading")),
                         exact=False,
                     )
                 else:
-                    project = self.current_project_name or self.current_task_project
+                    project = self.state.current_project_name or self.state.current_task_project
                     if not project:
                         self.notify("Select a project row or a task with a project", severity="warning")
                         return
@@ -1680,10 +1680,10 @@ def build_tui(
             await self._refresh_projects_async()
             await self._refresh_notes_async()
             main_tab = self.query_one("#main-tabs", TabbedContent).active
-            if main_tab == "latest-tab" and self.current_latest_task_ref:
-                await self._load_latest_task_async(self.current_latest_task_ref)
-            elif self.current_task_ref:
-                await self._load_task_async(self.current_task_ref)
+            if main_tab == "latest-tab" and self.state.current_latest_task_ref:
+                await self._load_latest_task_async(self.state.current_latest_task_ref)
+            elif self.state.current_task_ref:
+                await self._load_task_async(self.state.current_task_ref)
 
         async def _choose_resource_async(self, target: dict[str, Any], *, mode: str) -> None:
             resources = await asyncio.to_thread(self.svc.note_resources, str(target.get("path") or ""))
@@ -1746,14 +1746,14 @@ def build_tui(
             await self._refresh_projects_async()
             await self._refresh_notes_async()
             main_tab = self.query_one("#main-tabs", TabbedContent).active
-            if main_tab == "latest-tab" and self.current_latest_task_ref:
-                await self._load_latest_task_async(self.current_latest_task_ref)
+            if main_tab == "latest-tab" and self.state.current_latest_task_ref:
+                await self._load_latest_task_async(self.state.current_latest_task_ref)
             elif main_tab == "notes-tab":
                 return
-            elif self.current_project_name and self.query_one("#browse-browser-tabs", TabbedContent).active == "project-browser-pane":
-                await self._load_project_async(self.current_project_name)
-            elif self.current_task_ref:
-                await self._load_task_async(self.current_task_ref)
+            elif self.state.current_project_name and self.query_one("#browse-browser-tabs", TabbedContent).active == "project-browser-pane":
+                await self._load_project_async(self.state.current_project_name)
+            elif self.state.current_task_ref:
+                await self._load_task_async(self.state.current_task_ref)
 
         async def _apply_progress_async(self, target: dict[str, Any], payload: dict[str, Any]) -> None:
             try:
@@ -1787,7 +1787,7 @@ def build_tui(
                 return
             hints = ["Actions: m menu", "ctrl+p palette", "/ search", "r refresh", "u update", "q quit"]
             active_note = self._active_note_target()
-            task_context = self.current_task_ref or self.current_latest_task_ref
+            task_context = self.state.current_task_ref or self.state.current_latest_task_ref
             if active_note:
                 hints.append("d delete-note")
                 hints.extend(["f attach-resource", "o open-resource", "x detach-resource"])
@@ -1797,17 +1797,17 @@ def build_tui(
                 hints.append("g progress")
             else:
                 hints.append("select task/project for progress")
-            if self.current_task_ref:
+            if self.state.current_task_ref:
                 hints.extend(["e edit-task", "a add-task"])
-            elif self.current_latest_task_ref:
+            elif self.state.current_latest_task_ref:
                 hints.extend(["e edit-note", "a add-task"])
             else:
                 hints.append("select task to edit/add")
-            if task_context and self.current_task_chain_path:
+            if task_context and self.state.current_task_chain_path:
                 hints.append("c add-chain")
-            elif task_context and self.current_task_has_chain:
+            elif task_context and self.state.current_task_has_chain:
                 hints.append("open chain tab then c add-chain")
-            if self.current_project_name or self.current_task_project:
+            if self.state.current_project_name or self.state.current_task_project:
                 hints.append("p open-project")
             else:
                 hints.append("select project for project actions")
@@ -1821,7 +1821,7 @@ def build_tui(
                 PaletteEntry("time-report", "Time report", "Open time totals, rollups, and individual intervals"),
                 PaletteEntry("time-session-start", "Start task timer", "Start a pending timer for a task"),
                 PaletteEntry("time-session-stop", "Stop selected timer", "Stop the selected timer and record its interval", bool(self._selected_time_session())),
-                PaletteEntry("time-session-stop-all", "Stop all timers", "Stop every active timer and record their intervals", bool(self.time_session_rows)),
+                PaletteEntry("time-session-stop-all", "Stop all timers", "Stop every active timer and record their intervals", bool(self.state.time_session_rows)),
                 PaletteEntry("time-session-cancel", "Cancel selected timer", "Discard the selected timer without recording it", bool(self._selected_time_session())),
                 PaletteEntry("time-add", "Add time interval", "Record a completed interval manually"),
                 PaletteEntry("time-amend", "Amend selected interval", "Correct the selected interval and archive its original", bool(self._selected_time_row())),
@@ -1838,9 +1838,9 @@ def build_tui(
                 PaletteEntry("open-resource", "Open note resource", "Show resources on the active note and open the selected one", bool(self._active_note_target())),
                 PaletteEntry("detach-resource", "Detach note resource", "Show resources on the active note and remove the selected one", bool(self._active_note_target())),
                 PaletteEntry("update-progress", "Update progress", "Open the progress dialog for task, chain, or project scope", bool(self._progress_targets())),
-                PaletteEntry("add-task", "Add to task heading", "Prompt for heading and text, then add a timestamped task entry", bool(self.current_task_ref)),
-                PaletteEntry("add-chain", "Add to chain heading", "Prompt for heading and text, then add a timestamped chain entry", bool(self.current_task_ref and self.current_task_chain_path)),
-                PaletteEntry("open-project", "Open project workspace", "Open the selected or current project note", bool(self.current_project_name or self.current_task_project)),
+                PaletteEntry("add-task", "Add to task heading", "Prompt for heading and text, then add a timestamped task entry", bool(self.state.current_task_ref)),
+                PaletteEntry("add-chain", "Add to chain heading", "Prompt for heading and text, then add a timestamped chain entry", bool(self.state.current_task_ref and self.state.current_task_chain_path)),
+                PaletteEntry("open-project", "Open project workspace", "Open the selected or current project note", bool(self.state.current_project_name or self.state.current_task_project)),
             ]
             return entries
 
@@ -1851,7 +1851,7 @@ def build_tui(
                 return [
                     PaletteEntry("time-session-start", "Start task timer", "Start a pending timer for a task"),
                     PaletteEntry("time-session-stop", "Stop selected timer", "Stop and record the selected timer", selected_session),
-                    PaletteEntry("time-session-stop-all", "Stop all timers", "Stop and record every active timer", bool(self.time_session_rows)),
+                    PaletteEntry("time-session-stop-all", "Stop all timers", "Stop and record every active timer", bool(self.state.time_session_rows)),
                     PaletteEntry("time-session-cancel", "Cancel selected timer", "Discard the selected timer without recording it", selected_session),
                     PaletteEntry("time-add", "Add time interval", "Record a completed interval manually"),
                     PaletteEntry("time-amend", "Amend selected interval", "Correct the selected interval", selected_interval),
@@ -1860,16 +1860,16 @@ def build_tui(
                 ]
             target = self._active_note_target()
             progress_targets = self._progress_targets()
-            task_ref = self.current_task_ref or self.current_latest_task_ref
-            project = self.current_project_name or self.current_task_project
+            task_ref = self.state.current_task_ref or self.state.current_latest_task_ref
+            project = self.state.current_project_name or self.state.current_task_project
             main_tab = self.query_one("#main-tabs", TabbedContent).active
             note_row = self._selected_note_row() if main_tab == "notes-tab" else None
             if target is None and not progress_targets and not task_ref and not project:
                 return []
 
             scope = str((target or {}).get("kind") or ("project" if project and not task_ref else "task"))
-            has_resources = self.current_context_has_resources
-            has_progress = self.current_context_has_progress
+            has_resources = self.state.current_context_has_resources
+            has_progress = self.state.current_context_has_progress
             if note_row:
                 has_resources = int(note_row.get("resources") or 0) > 0
                 has_progress = bool(str(note_row.get("progress") or "").strip())
@@ -1879,7 +1879,7 @@ def build_tui(
                 has_note=target is not None,
                 has_resources=has_resources,
                 has_progress=has_progress,
-                has_chain=bool(task_ref and self.current_task_has_chain),
+                has_chain=bool(task_ref and self.state.current_task_has_chain),
                 has_project=bool(project),
             )
             valid: set[str] = set()
@@ -1891,7 +1891,7 @@ def build_tui(
                 valid.add("update-progress")
             if task_ref and main_tab != "notes-tab":
                 valid.add("add-task")
-                if self.current_task_chain_path:
+                if self.state.current_task_chain_path:
                     valid.add("add-chain")
             if project and main_tab != "notes-tab":
                 valid.add("open-project")
@@ -1925,16 +1925,16 @@ def build_tui(
             if main_tab == "browse-tab":
                 browse_tab = self.query_one("#browse-browser-tabs", TabbedContent).active
                 if browse_tab == "project-browser-pane":
-                    project = self.current_project_name
+                    project = self.state.current_project_name
                     return [{"kind": "project", "project": project}] if project else []
-            task_ref = self.current_latest_task_ref if main_tab == "latest-tab" else self.current_task_ref
+            task_ref = self.state.current_latest_task_ref if main_tab == "latest-tab" else self.state.current_task_ref
             if not task_ref:
                 return []
             targets: list[dict[str, Any]] = [{"kind": "task", "task_ref": task_ref}]
-            if self.current_task_has_chain:
+            if self.state.current_task_has_chain:
                 targets.append({"kind": "chain", "task_ref": task_ref})
-            if self.current_task_project:
-                targets.append({"kind": "project", "project": self.current_task_project})
+            if self.state.current_task_project:
+                targets.append({"kind": "project", "project": self.state.current_task_project})
             return targets
 
         def _active_note_target(self) -> dict[str, Any] | None:
@@ -1944,20 +1944,20 @@ def build_tui(
             if main_tab == "browse-tab":
                 browse_tab = self.query_one("#browse-browser-tabs", TabbedContent).active
                 if browse_tab == "task-browser-pane":
-                    if not self.current_task_ref:
+                    if not self.state.current_task_ref:
                         return None
                     active = self.query_one("#task-workspace-tabs", TabbedContent).active
                     if active == "chain-note-pane":
-                        note_path = self.svc.chain_note_path_for_task_ref(self.current_task_ref)
+                        note_path = self.svc.chain_note_path_for_task_ref(self.state.current_task_ref)
                         return {
                             "kind": "chain",
                             "label": "chain note",
-                            "task_ref": self.current_task_ref,
+                            "task_ref": self.state.current_task_ref,
                             "path": note_path,
                             "trash_path": str(preview_trash_path(self.svc.config, Path(note_path))),
                         }
                     if active == "project-note-pane":
-                        project = self.current_task_project or self.current_project_name
+                        project = self.state.current_task_project or self.state.current_project_name
                         if not project:
                             return None
                         note_path = self.svc.project_note_path_for_name(project)
@@ -1968,16 +1968,16 @@ def build_tui(
                             "path": note_path,
                             "trash_path": str(preview_trash_path(self.svc.config, Path(note_path))),
                         }
-                    note_path = self.svc.task_note_path_for_task_ref(self.current_task_ref)
+                    note_path = self.svc.task_note_path_for_task_ref(self.state.current_task_ref)
                     return {
                         "kind": "task",
                         "label": "task note",
-                        "task_ref": self.current_task_ref,
+                        "task_ref": self.state.current_task_ref,
                         "path": note_path,
                         "trash_path": str(preview_trash_path(self.svc.config, Path(note_path))),
                     }
                 if browse_tab == "project-browser-pane":
-                    project = self.current_project_name or self.current_task_project
+                    project = self.state.current_project_name or self.state.current_task_project
                     if not project:
                         return None
                     note_path = self.svc.project_note_path_for_name(project)
@@ -1989,20 +1989,20 @@ def build_tui(
                         "trash_path": str(preview_trash_path(self.svc.config, Path(note_path))),
                     }
             if main_tab == "latest-tab":
-                if not self.current_latest_task_ref:
+                if not self.state.current_latest_task_ref:
                     return None
                 active = self.query_one("#latest-workspace-tabs", TabbedContent).active
                 if active == "latest-chain-note-pane":
-                    note_path = self.svc.chain_note_path_for_task_ref(self.current_latest_task_ref)
+                    note_path = self.svc.chain_note_path_for_task_ref(self.state.current_latest_task_ref)
                     return {
                         "kind": "chain",
                         "label": "chain note",
-                        "task_ref": self.current_latest_task_ref,
+                        "task_ref": self.state.current_latest_task_ref,
                         "path": note_path,
                         "trash_path": str(preview_trash_path(self.svc.config, Path(note_path))),
                     }
                 if active == "latest-project-note-pane":
-                    project = self.current_task_project
+                    project = self.state.current_task_project
                     if not project:
                         return None
                     note_path = self.svc.project_note_path_for_name(project)
@@ -2013,11 +2013,11 @@ def build_tui(
                         "path": note_path,
                         "trash_path": str(preview_trash_path(self.svc.config, Path(note_path))),
                     }
-                note_path = self.svc.task_note_path_for_task_ref(self.current_latest_task_ref)
+                note_path = self.svc.task_note_path_for_task_ref(self.state.current_latest_task_ref)
                 return {
                     "kind": "task",
                     "label": "task note",
-                    "task_ref": self.current_latest_task_ref,
+                    "task_ref": self.state.current_latest_task_ref,
                     "path": note_path,
                     "trash_path": str(preview_trash_path(self.svc.config, Path(note_path))),
                 }
@@ -2029,9 +2029,9 @@ def build_tui(
             except Exception:
                 return None
             row = table.cursor_row
-            if row < 0 or row >= len(self.note_rows):
+            if row < 0 or row >= len(self.state.note_rows):
                 return None
-            return self.note_rows[row]
+            return self.state.note_rows[row]
 
         def _active_note_target_from_note_row(self) -> dict[str, Any] | None:
             item = self._selected_note_row()
@@ -2096,31 +2096,31 @@ def build_tui(
             await self._refresh_tasks_async()
             await self._refresh_projects_async()
             main_tab = self.query_one("#main-tabs", TabbedContent).active
-            if main_tab == "latest-tab" and self.current_latest_task_ref:
-                await self._load_latest_task_async(self.current_latest_task_ref)
-            elif self.current_task_ref:
-                await self._load_task_async(self.current_task_ref)
-            elif self.current_project_name:
-                await self._load_project_async(self.current_project_name)
+            if main_tab == "latest-tab" and self.state.current_latest_task_ref:
+                await self._load_latest_task_async(self.state.current_latest_task_ref)
+            elif self.state.current_task_ref:
+                await self._load_task_async(self.state.current_task_ref)
+            elif self.state.current_project_name:
+                await self._load_project_async(self.state.current_project_name)
 
         def _open_task_workspace(self, task_ref: str) -> None:
-            self.current_task_ref = task_ref
-            self.current_project_name = None
+            self.state.current_task_ref = task_ref
+            self.state.current_project_name = None
             self.query_one("#main-tabs", TabbedContent).active = "browse-tab"
             self.query_one("#browse-browser-tabs", TabbedContent).active = "task-browser-pane"
             asyncio.create_task(self._load_task_async(task_ref))
             self._update_action_hints()
 
         def _open_latest_workspace(self, task_ref: str) -> None:
-            self.current_latest_task_ref = task_ref
-            self.current_task_ref = task_ref
-            self.current_project_name = None
+            self.state.current_latest_task_ref = task_ref
+            self.state.current_task_ref = task_ref
+            self.state.current_project_name = None
             self.query_one("#main-tabs", TabbedContent).active = "latest-tab"
             asyncio.create_task(self._load_latest_task_async(task_ref))
             self._update_action_hints()
 
         def _open_project_workspace(self, project_name: str) -> None:
-            self.current_project_name = project_name
+            self.state.current_project_name = project_name
             self.query_one("#main-tabs", TabbedContent).active = "browse-tab"
             self.query_one("#browse-browser-tabs", TabbedContent).active = "project-browser-pane"
             asyncio.create_task(self._load_project_async(project_name))
@@ -2168,37 +2168,37 @@ def build_tui(
             if main_tab == "browse-tab":
                 browse_tab = self.query_one("#browse-browser-tabs", TabbedContent).active
                 if browse_tab == "task-browser-pane":
-                    if not self.current_task_ref:
+                    if not self.state.current_task_ref:
                         raise RuntimeError("select a task first")
                     active = self.query_one("#task-workspace-tabs", TabbedContent).active
                     with self.suspend():
                         if active == "chain-note-pane":
-                            return self.svc.open_chain_note_in_editor(self.current_task_ref)
+                            return self.svc.open_chain_note_in_editor(self.state.current_task_ref)
                         if active == "project-note-pane":
-                            project = self.current_task_project or self.current_project_name
+                            project = self.state.current_task_project or self.state.current_project_name
                             if not project:
                                 raise RuntimeError("selected task has no project note context")
                             return self.svc.open_project_note_in_editor(project)
-                        return self.svc.open_task_note_in_editor(self.current_task_ref)
+                        return self.svc.open_task_note_in_editor(self.state.current_task_ref)
                 if browse_tab == "project-browser-pane":
-                    project = self.current_project_name
+                    project = self.state.current_project_name
                     if not project:
                         raise RuntimeError("select a project first")
                     with self.suspend():
                         return self.svc.open_project_note_in_editor(project)
             if main_tab == "latest-tab":
-                if not self.current_latest_task_ref:
+                if not self.state.current_latest_task_ref:
                     raise RuntimeError("select a recent task first")
                 active = self.query_one("#latest-workspace-tabs", TabbedContent).active
                 with self.suspend():
                     if active == "latest-chain-note-pane":
-                        return self.svc.open_chain_note_in_editor(self.current_latest_task_ref)
+                        return self.svc.open_chain_note_in_editor(self.state.current_latest_task_ref)
                     if active == "latest-project-note-pane":
-                        project = self.current_task_project
+                        project = self.state.current_task_project
                         if not project:
                             raise RuntimeError("selected recent task has no project note context")
                         return self.svc.open_project_note_in_editor(project)
-                    return self.svc.open_task_note_in_editor(self.current_latest_task_ref)
+                    return self.svc.open_task_note_in_editor(self.state.current_latest_task_ref)
             raise RuntimeError("no openable workspace is active")
 
         def _focus_best_task_workspace_tab(
