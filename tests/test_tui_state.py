@@ -5,6 +5,7 @@ import unittest
 from jot_tui.state import TuiState
 from jot_tui.controllers.progress import apply_progress
 from jot_tui.controllers.resources import attach_resource, detach_resource
+from jot_tui.controllers.timelog import add as add_time, stop as stop_time
 
 
 class TuiStateTests(unittest.TestCase):
@@ -49,6 +50,21 @@ class TuiStateTests(unittest.TestCase):
         self.assertEqual(args, ("project",))
         self.assertEqual(kwargs["project_name"], "study")
         self.assertEqual(kwargs["resource_id"], 3)
+
+    def test_timelog_controller_translates_session_and_entry_payloads(self) -> None:
+        class Service:
+            def timelog_stop(self, *args, **kwargs):
+                return args, kwargs
+
+            def timelog_add(self, *args, **kwargs):
+                return args, kwargs
+
+        args, kwargs = stop_time(Service(), {"task_uuid": "full", "task_short_uuid": "short"})
+        self.assertEqual(args, ("full",))
+        self.assertEqual(kwargs, {})
+        args, kwargs = add_time(Service(), {"task_ref": "42", "started_at": "a", "stopped_at": "b", "scope": "task"})
+        self.assertEqual(args, ("42",))
+        self.assertEqual(kwargs["scope"], "task")
 
 
 if __name__ == "__main__":

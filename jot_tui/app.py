@@ -13,6 +13,7 @@ from jot_tui.modals import build_command_palette_modal
 from jot_tui.state import StateBacked, TuiState
 from jot_tui.controllers.progress import apply_progress
 from jot_tui.controllers.resources import attach_resource, detach_resource, open_resource
+from jot_tui.controllers.timelog import add as add_time, amend as amend_time, cancel as cancel_time, delete as delete_time, restore as restore_time, start as start_time, stop as stop_time, stop_all as stop_all_time, trash as trash_time
 from jot_tui.rendering import (
     note_excerpt,
     pretty_label,
@@ -1870,7 +1871,7 @@ def build_tui(
 
         async def _apply_time_session_start_async(self, task_ref: str) -> None:
             try:
-                result = await asyncio.to_thread(self.svc.timelog_start, task_ref)
+                result = await asyncio.to_thread(start_time, self.svc, task_ref)
             except Exception as exc:
                 self.notify(f"Timer start failed: {exc}", severity="error")
                 return
@@ -1900,7 +1901,7 @@ def build_tui(
         async def _apply_time_session_stop_async(self, session: dict[str, Any]) -> None:
             task_ref = str(session.get("task_uuid") or session.get("task_short_uuid") or "")
             try:
-                result = await asyncio.to_thread(self.svc.timelog_stop, task_ref)
+                result = await asyncio.to_thread(stop_time, self.svc, session)
             except Exception as exc:
                 self.notify(f"Timer stop failed: {exc}", severity="error")
                 await self._refresh_time_sessions_async()
@@ -1917,7 +1918,7 @@ def build_tui(
 
         async def _apply_time_session_stop_all_async(self) -> None:
             try:
-                result = await asyncio.to_thread(self.svc.timelog_stop_all)
+                result = await asyncio.to_thread(stop_all_time, self.svc)
             except Exception as exc:
                 self.notify(f"Stop all timers failed: {exc}", severity="error")
                 await self._refresh_time_sessions_async()
@@ -1936,7 +1937,7 @@ def build_tui(
         async def _apply_time_session_cancel_async(self, session: dict[str, Any]) -> None:
             task_ref = str(session.get("task_uuid") or session.get("task_short_uuid") or "")
             try:
-                result = await asyncio.to_thread(self.svc.timelog_cancel, task_ref)
+                result = await asyncio.to_thread(cancel_time, self.svc, session)
             except Exception as exc:
                 self.notify(f"Timer cancel failed: {exc}", severity="error")
                 await self._refresh_time_sessions_async()
@@ -1955,13 +1956,7 @@ def build_tui(
         ) -> None:
             try:
                 if mode == "add":
-                    result = await asyncio.to_thread(
-                        self.svc.timelog_add,
-                        payload["task_ref"],
-                        started_at=payload["started_at"],
-                        stopped_at=payload["stopped_at"],
-                        scope=payload["scope"],
-                    )
+                    result = await asyncio.to_thread(add_time, self.svc, payload)
                     if not result.get("written", True):
                         self.notify("That interval already exists", severity="warning")
                         return
@@ -1969,12 +1964,7 @@ def build_tui(
                 else:
                     if item is None:
                         raise RuntimeError("selected interval is no longer available")
-                    result = await asyncio.to_thread(
-                        self.svc.timelog_amend,
-                        str(item.get("key") or ""),
-                        started_at=payload["started_at"],
-                        stopped_at=payload["stopped_at"],
-                    )
+                    result = await asyncio.to_thread(amend_time, self.svc, str(item.get("key") or ""), payload)
                     message = f"Amended interval {result.get('new_timelog_key')}"
             except Exception as exc:
                 self.notify(f"Time {mode} failed: {exc}", severity="error")
@@ -1984,10 +1974,7 @@ def build_tui(
 
         async def _apply_time_delete_async(self, item: dict[str, Any]) -> None:
             try:
-                result = await asyncio.to_thread(
-                    self.svc.timelog_delete,
-                    str(item.get("key") or ""),
-                )
+                result = await asyncio.to_thread(delete_time, self.svc, str(item.get("key") or ""))
             except Exception as exc:
                 self.notify(f"Time delete failed: {exc}", severity="error")
                 return
@@ -1996,7 +1983,7 @@ def build_tui(
 
         async def _open_time_trash_async(self) -> None:
             try:
-                items = await asyncio.to_thread(self.svc.timelog_trash)
+                items = await asyncio.to_thread(trash_time, self.svc)
             except Exception as exc:
                 self.notify(f"Time trash failed: {exc}", severity="error")
                 return
@@ -2010,10 +1997,7 @@ def build_tui(
 
         async def _apply_time_restore_async(self, item: dict[str, Any]) -> None:
             try:
-                result = await asyncio.to_thread(
-                    self.svc.timelog_restore,
-                    f"#{item.get('id')}",
-                )
+                result = await asyncio.to_thread(restore_time, self.svc, item)
             except Exception as exc:
                 self.notify(f"Time restore failed: {exc}", severity="error")
                 return
