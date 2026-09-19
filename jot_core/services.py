@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 import hashlib
 import json
 from pathlib import Path
@@ -17,6 +18,8 @@ from .models import (
     NoteDeleteResult,
     ProjectTreeRow,
     ProjectWorkspace,
+    ProgressMutationResult,
+    ResourceRecord,
     ResourceOperationResult,
     SearchResults,
     TaskSummary,
@@ -613,11 +616,11 @@ class JotService:
     def open_resource(self, target: str) -> list[str]:
         return open_resource_target(target)
 
-    def note_resources(self, note_path: str) -> list[dict[str, Any]]:
+    def note_resources(self, note_path: str) -> list[ResourceRecord]:
         path = Path(note_path)
         if not path.exists():
             return []
-        return list_note_resources(path).resources
+        return [ResourceRecord.from_mapping(item) for item in list_note_resources(path).resources]
 
     def progress_track_names(
         self,
@@ -655,7 +658,7 @@ class JotService:
         status: str | None = None,
         track: str = "default",
         confirm_clear: bool = False,
-    ) -> dict[str, Any]:
+    ) -> ProgressMutationResult:
         normalized_operation = normalize_progress_operation(operation)
         if normalized_operation == "set":
             return self.set_progress(
@@ -703,7 +706,7 @@ class JotService:
         unit: str | None = None,
         status: str | None = None,
         track: str = "default",
-    ) -> dict[str, Any]:
+    ) -> ProgressMutationResult:
         current, target = parse_progress_pair(value)
         return self._mutate_progress_target(
             kind,
@@ -726,7 +729,7 @@ class JotService:
         task_ref: str = "",
         project_name: str = "",
         track: str = "default",
-    ) -> dict[str, Any]:
+    ) -> ProgressMutationResult:
         normalized_direction = normalize_progress_operation(direction)
         if normalized_direction not in {"add", "subtract"}:
             raise RuntimeError("progress adjustment direction must be add or subtract")
@@ -747,7 +750,7 @@ class JotService:
         task_ref: str = "",
         project_name: str = "",
         track: str = "default",
-    ) -> dict[str, Any]:
+    ) -> ProgressMutationResult:
         return self._mutate_progress_target(
             kind,
             operation="status",
@@ -764,7 +767,7 @@ class JotService:
         task_ref: str = "",
         project_name: str = "",
         track: str = "default",
-    ) -> dict[str, Any]:
+    ) -> ProgressMutationResult:
         return self._mutate_progress_target(
             kind,
             operation="clear",
@@ -780,13 +783,13 @@ class JotService:
         operation: str,
         task_ref: str = "",
         project_name: str = "",
-        current=None,
-        target=None,
-        amount=None,
+        current: Decimal | None = None,
+        target: Decimal | None = None,
+        amount: Decimal | None = None,
         unit: str | None = None,
         status: str | None = None,
         track: str = "default",
-    ) -> dict[str, Any]:
+    ) -> ProgressMutationResult:
         normalized_kind = normalize_note_kind(kind, context="progress target")
         normalized_operation = normalize_progress_operation(operation)
         if normalized_kind in {"task", "chain"}:

@@ -81,7 +81,9 @@ class ServiceEdgeTests(unittest.TestCase):
 
         note = self.config.tasks_dir / "2d6d7d7d--read-book.md"
         write_document(note, {}, "## Resources\n\n- [Docs](https://example.test)\n")
-        self.assertEqual(self.service.note_resources(str(note))[0]["target"], "https://example.test")
+        resources = self.service.note_resources(str(note))
+        self.assertIsInstance(resources[0], ResourceRecord)
+        self.assertEqual(resources[0]["target"], "https://example.test")
 
     def test_resource_routing_supports_task_chain_project_and_rejects_unknown_kind(self) -> None:
         resource = ResourceRecord(1, "docs", "https://example.test", "url", "exists", 1, "")
