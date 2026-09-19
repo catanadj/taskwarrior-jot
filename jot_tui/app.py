@@ -19,6 +19,7 @@ from jot_tui.panes.browse import compose_browse_pane
 from jot_tui.panes.latest import compose_latest_pane
 from jot_tui.panes.notes import compose_notes_pane
 from jot_tui.panes.search import compose_search_pane
+from jot_tui.note_modals import build_note_modals
 from jot_tui.rendering import (
     note_excerpt,
     pretty_label,
@@ -966,6 +967,7 @@ def build_tui(
 
     # Keep the palette workflow independent from the main application state.
     CommandPaletteModal = build_command_palette_modal()
+    AddToHeadingModal, AttachResourceModal = build_note_modals()
 
     class JotTUI(StateBacked, App[None]):
         CSS = """
