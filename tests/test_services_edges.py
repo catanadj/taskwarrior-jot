@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from jot_core.frontmatter import write_document
-from jot_core.models import AppConfig, ResourceOperationResult, ResourceRecord, ResolvedTask, TaskRef
+from jot_core.models import AppConfig, NotePaths, ResourceOperationResult, ResourceRecord, ResolvedTask, TaskRef
 from jot_core.services import JotService
 
 
@@ -116,6 +116,71 @@ class ServiceEdgeTests(unittest.TestCase):
                 self.service.update_progress("task", task_ref="42", operation="clear", confirm_clear=True)["operation"],
                 "clear",
             )
+
+    def test_timelog_wrappers_delegate_each_lifecycle_operation(self) -> None:
+        cases = (
+            ("start_time_session", "timelog_start", ("42",), {"started_at": "now"}),
+            ("stop_time_session", "timelog_stop", ("42",), {"stopped_at": "now", "scope": "task"}),
+            ("cancel_time_session", "timelog_cancel", ("42",), {}),
+            ("add_time_log", "timelog_add", ("42",), {"started_at": "start", "stopped_at": "stop", "scope": "auto"}),
+            ("amend_time_log", "timelog_amend", ("key",), {"started_at": "start", "stopped_at": "stop"}),
+            ("delete_time_log", "timelog_delete", ("key",), {}),
+            ("restore_deleted_time_log", "timelog_restore", ("key",), {}),
+        )
+        for function_name, method_name, args, kwargs in cases:
+            with self.subTest(method=method_name), mock.patch(
+                f"jot_core.services.{function_name}", return_value=method_name
+            ) as operation:
+                result = getattr(self.service, method_name)(*args, **kwargs)
+            self.assertEqual(result, method_name)
+            self.assertTrue(operation.called)
+
+        with mock.patch("jot_core.services.list_time_sessions", return_value=["pending"]):
+            self.assertEqual(self.service.timelog_pending(), ["pending"])
+        with mock.patch("jot_core.services.list_deleted_time_logs", return_value=[{"key": "old"}]):
+            self.assertEqual(self.service.timelog_trash(), [{"key": "old"}])
+        with mock.patch("jot_core.services.report_time_logs", return_value="report") as report:
+            self.assertEqual(self.service.timelog_report("month", details=False), "report")
+        report.assert_called_once_with(self.config, period="month", details=False)
+
+    def test_editor_completion_heading_delete_and_detach_wrappers_route(self) -> None:
+        note = NotePaths(self.config.tasks_dir / "task.md", False)
+        with mock.patch("jot_core.services.ensure_task_note", return_value=note), mock.patch.object(
+            JotService, "_open_note_in_editor"
+        ), mock.patch("jot_core.services.finalize_task_note_edit") as finalize:
+            self.assertEqual(self.service.open_task_note_in_editor("42"), str(note.note_path))
+        finalize.assert_called_once()
+
+        chain_note = NotePaths(self.config.chains_dir / "chain.md", False)
+        with mock.patch("jot_core.services.ensure_chain_note", return_value=chain_note), mock.patch.object(
+            JotService, "_open_note_in_editor"
+        ), mock.patch("jot_core.services.finalize_chain_note_edit"):
+            self.assertEqual(self.service.open_chain_note_in_editor("42"), str(chain_note.note_path))
+
+        project_note = NotePaths(self.config.projects_dir / "study.md", False)
+        with mock.patch("jot_core.services.ensure_project_note", return_value=project_note), mock.patch.object(
+            JotService, "_open_note_in_editor"
+        ), mock.patch("jot_core.services.finalize_project_note_edit"):
+            self.assertEqual(self.service.open_project_note_in_editor("study"), str(project_note.note_path))
+
+        self.service.complete_task("42")
+        self.taskwarrior.complete_task.assert_called_once_with(self.task.task_uuid)
+        self.assertEqual(self.service.task_ref_for_chain_id("chain-1"), "2d6d7d7d")
+
+        resource = ResourceRecord(1, "docs", "https://example.test", "url", "exists", 1, "")
+        operation = ResourceOperationResult(Path("/tmp/note.md"), resource, (resource,))
+        with mock.patch("jot_core.services.detach_chain_resource_storage", return_value=operation):
+            self.service.detach_resource("chain", task_ref="42", note_path="/tmp/note.md", resource_id=1)
+        with mock.patch("jot_core.services.detach_project_resource_storage", return_value=operation):
+            self.service.detach_resource("project", project_name="study", note_path="/tmp/note.md", resource_id=1)
+
+        progress_path = self.config.tasks_dir / "progress.md"
+        progress_path.write_text("", encoding="utf-8")
+        with mock.patch("jot_core.services.find_task_note", return_value=progress_path), mock.patch(
+            "jot_core.services.read_note_progress", return_value=SimpleNamespace(tracks=({"track": "pages"},))
+        ):
+            self.assertEqual(self.service.progress_track_names("task", task_ref="42"), ["pages"])
+        self.assertEqual(self.service.progress_track_names("project", project_name="missing"), [])
 
 
 if __name__ == "__main__":
