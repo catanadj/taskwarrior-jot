@@ -21,6 +21,7 @@ from jot_tui.panes.notes import compose_notes_pane
 from jot_tui.panes.search import compose_search_pane
 from jot_tui.note_modals import build_note_modals
 from jot_tui.time_modals import build_time_modals
+from jot_tui.progress_modal import build_progress_modal
 from jot_tui.rendering import (
     note_excerpt,
     pretty_label,
@@ -970,6 +971,7 @@ def build_tui(
     CommandPaletteModal = build_command_palette_modal()
     AddToHeadingModal, AttachResourceModal = build_note_modals()
     TimeSessionStartModal, ConfirmTimeSessionModal, TimeEntryModal, ConfirmTimeDeleteModal, TimeTrashModal = build_time_modals(tui_time_input_value, tui_default_time_range)
+    ProgressModal = build_progress_modal(NEW_PROGRESS_TRACK, initial_progress_track, resolve_progress_track)
 
     class JotTUI(StateBacked, App[None]):
         CSS = """
