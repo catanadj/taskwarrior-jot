@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
 from .models import CommandResult
+from . import output_notes
 from .output_serialization import error_envelope, serialize_payload, success_envelope
 from .progress_output import emit_progress
 
@@ -29,6 +30,19 @@ def style_text(
     stream: Any = None,
 ) -> str:
     return _style(text, color=role, bold=bold, stream=stream)
+
+
+def _note_output_primitives() -> output_notes.NoteOutputPrimitives:
+    return output_notes.NoteOutputPrimitives(
+        style=_style,
+        write_title=_write_title,
+        write_section_title=_write_section_title,
+        write_status=_write_status,
+        emit_field=_emit_field,
+        resource_status_color=_resource_status_color,
+        recent_identity=_recent_identity,
+        recent_summary=_recent_summary,
+    )
 
 
 def emit_result(result: CommandResult[Any], *, json_mode: bool = False) -> None:
@@ -54,10 +68,10 @@ def emit_result(result: CommandResult[Any], *, json_mode: bool = False) -> None:
         _emit_stats(payload)
         return
     if command == "project-list":
-        _emit_project_list(payload)
+        output_notes.emit_project_list(payload, p=_note_output_primitives())
         return
     if command == "notes":
-        _emit_notes(payload)
+        output_notes.emit_notes(payload, p=_note_output_primitives())
         return
     if command == "trash-list":
         _emit_trash_list(payload)
@@ -72,19 +86,19 @@ def emit_result(result: CommandResult[Any], *, json_mode: bool = False) -> None:
         _emit_report_recent(payload)
         return
     if command in {"note", "chain", "project"}:
-        _emit_note_like(command, payload)
+        output_notes.emit_note_like(command, payload, p=_note_output_primitives())
         return
     if command in {"task-delete", "chain-delete", "project-delete"}:
-        _emit_delete(command, payload)
+        output_notes.emit_delete(command, payload, p=_note_output_primitives())
         return
     if command == "project-show":
-        _emit_project_show(payload)
+        output_notes.emit_project_show(payload, p=_note_output_primitives())
         return
     if command == "project-report":
-        _emit_project_report(payload)
+        output_notes.emit_project_report(payload, p=_note_output_primitives())
         return
     if command in {"project-cat", "task-cat", "chain-cat", "cat"}:
-        _emit_cat(payload)
+        output_notes.emit_cat(payload)
         return
     if command == "add":
         _emit_add(payload)
@@ -138,22 +152,22 @@ def emit_result(result: CommandResult[Any], *, json_mode: bool = False) -> None:
         _emit_context(payload)
         return
     if command == "headings":
-        _emit_headings(payload)
+        output_notes.emit_headings(payload, p=_note_output_primitives())
         return
     if command == "section":
-        _emit_section(payload)
+        output_notes.emit_section(payload)
         return
     if command == "resources":
-        _emit_resources(payload)
+        output_notes.emit_resources(payload, p=_note_output_primitives())
         return
     if command == "attach":
-        _emit_attach(payload)
+        output_notes.emit_attach(payload, p=_note_output_primitives())
         return
     if command == "open-resource":
-        _emit_open_resource(payload)
+        output_notes.emit_open_resource(payload, p=_note_output_primitives())
         return
     if command == "detach-resource":
-        _emit_detach_resource(payload)
+        output_notes.emit_detach_resource(payload, p=_note_output_primitives())
         return
     if command == "progress":
         _emit_progress(payload)

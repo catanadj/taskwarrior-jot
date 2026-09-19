@@ -73,6 +73,11 @@ class OutputEmitterTests(unittest.TestCase):
         self.assertIn("task abcd1234", trash)
         self.assertIn("trash", trash)
 
+    def test_project_list_rendering_uses_note_output_module(self) -> None:
+        with mock.patch("jot_core.output_notes.emit_project_list", return_value=None) as render:
+            emit_result(CommandResult(command="project-list", data={"projects": []}))
+        render.assert_called_once()
+
     def test_note_mutation_resource_and_search_emitters(self) -> None:
         self.assertIn(
             "Created task note: /tmp/task.md",
