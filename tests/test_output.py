@@ -165,6 +165,11 @@ class OutputEmitterTests(unittest.TestCase):
         )
         self.assertEqual(next(csv.DictReader(io.StringIO(csv_output)))['key'], "k1")
 
+    def test_timelog_rendering_uses_timelog_output_module(self) -> None:
+        with mock.patch("jot_core.output_timelog.emit_timelog", return_value=None) as render:
+            emit_result(CommandResult(command="timelog-start", data={}))
+        render.assert_called_once()
+
     def test_progress_timewarrior_and_context_emitters(self) -> None:
         progress = self.emit(
             "progress",

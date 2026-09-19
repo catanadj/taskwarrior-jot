@@ -12,6 +12,7 @@ from .models import CommandResult
 from . import output_notes
 from .output_serialization import error_envelope, serialize_payload, success_envelope
 from .progress_output import emit_progress
+from . import output_timelog
 
 
 _COLOR_MODE = "auto"
@@ -105,6 +106,9 @@ def emit_result(result: CommandResult[Any], *, json_mode: bool = False) -> None:
         return
     if command == "add-to":
         _emit_add_to(payload)
+        return
+    if command.startswith("timelog-"):
+        output_timelog.emit_timelog(command, payload, p=_note_output_primitives())
         return
     if command == "timelog-ingest":
         _emit_timelog_ingest(payload)
