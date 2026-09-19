@@ -15,6 +15,10 @@ from jot_tui.controllers.progress import apply_progress
 from jot_tui.controllers.resources import attach_resource, detach_resource, open_resource
 from jot_tui.controllers.timelog import add as add_time, amend as amend_time, cancel as cancel_time, delete as delete_time, restore as restore_time, start as start_time, stop as stop_time, stop_all as stop_all_time, trash as trash_time
 from jot_tui.panes.timelog import compose_time_pane
+from jot_tui.panes.browse import compose_browse_pane
+from jot_tui.panes.latest import compose_latest_pane
+from jot_tui.panes.notes import compose_notes_pane
+from jot_tui.panes.search import compose_search_pane
 from jot_tui.rendering import (
     note_excerpt,
     pretty_label,
@@ -1038,103 +1042,15 @@ def build_tui(
             yield Header(show_clock=True)
             with TabbedContent(initial="browse-tab", id="main-tabs"):
                 with TabPane("Browse", id="browse-tab"):
-                    with Horizontal(id="browse-top"):
-                        with TabbedContent(initial="task-browser-pane", id="browse-browser-tabs"):
-                            with TabPane("Tasks", id="task-browser-pane"):
-                                with Horizontal():
-                                    with Vertical(id="browse-tasks"):
-                                        yield Static("Tasks", classes="title")
-                                        with Horizontal(id="task-filter-bar"):
-                                            yield Input(placeholder="Project filter", id="task-filter-project")
-                                            yield Input(placeholder="Tag filter", id="task-filter-tag")
-                                            yield Checkbox("Notes only", id="task-filter-notes")
-                                            yield Button("Clear", id="task-filter-clear")
-                                        tasks = DataTable(id="tasks-table", cursor_type="row")
-                                        tasks.add_columns("id", "description", "project", "progress", "tags", "notes")
-                                        yield tasks
-                                    with Vertical(id="task-workspace"):
-                                        yield Static("Task Workspace", classes="title")
-                                        with TabbedContent(initial="task-summary-pane", id="task-workspace-tabs"):
-                                            with TabPane("Summary", id="task-summary-pane"):
-                                                yield Static("Select a task row to load details.", id="task-summary")
-                                            with TabPane("Task Note", id="task-note-pane"):
-                                                yield Static("No task note loaded.", id="task-note-preview")
-                                            with TabPane("Chain Note", id="chain-note-pane"):
-                                                yield Static("No chain note loaded.", id="chain-note-preview")
-                                            with TabPane("Project Note", id="project-note-pane"):
-                                                yield Static("No project note loaded.", id="project-note-preview")
-                                            with TabPane("Events", id="task-events-pane"):
-                                                yield Static("No events loaded.", id="task-events-preview")
-                                            with TabPane("Resources", id="task-resources-pane"):
-                                                yield Static("No resources loaded.", id="task-resources-preview")
-                                            with TabPane("Progress", id="task-progress-pane"):
-                                                yield Static("No progress loaded.", id="task-progress-preview")
-                            with TabPane("Projects", id="project-browser-pane"):
-                                with Horizontal():
-                                    with Vertical(id="browse-projects"):
-                                        projects = DataTable(id="projects-table", cursor_type="row")
-                                        projects.add_columns("project tree", "tasks", "progress", "note", "updated")
-                                        yield Static("Projects", classes="title")
-                                        yield projects
-                                    with Vertical(id="project-workspace"):
-                                        yield Static("Project Workspace", classes="title")
-                                        with TabbedContent(initial="project-summary-pane", id="project-workspace-tabs"):
-                                            with TabPane("Summary", id="project-summary-pane"):
-                                                yield Static("Select a project row to load details.", id="project-summary")
-                                            with TabPane("Project Note", id="project-note-body-pane"):
-                                                yield Static("No project note loaded.", id="project-note-body")
-                                            with TabPane("Resources", id="project-resources-pane"):
-                                                yield Static("No resources loaded.", id="project-resources-preview")
-                                            with TabPane("Progress", id="project-progress-pane"):
-                                                yield Static("No progress loaded.", id="project-progress-preview")
+                    yield from compose_browse_pane()
                 with TabPane("Time", id="time-tab"):
                     yield from compose_time_pane()
                 with TabPane("Notes", id="notes-tab"):
-                    with Vertical(id="notes-pane"):
-                        yield Static("Notes", classes="title")
-                        with Horizontal(id="notes-filter-bar"):
-                            yield Input(placeholder="Kind filter: task, chain, project", id="notes-filter-kind")
-                            yield Input(placeholder="Project filter", id="notes-filter-project")
-                            yield Button("Clear", id="notes-filter-clear")
-                        notes = DataTable(id="notes-table", cursor_type="row")
-                        notes.add_columns("kind", "id", "title", "project", "progress", "resources", "updated")
-                        yield notes
+                    yield from compose_notes_pane()
                 with TabPane("Search", id="search-tab"):
-                    with Vertical():
-                        with Horizontal(id="search-bar"):
-                            yield Input(placeholder="Search notes/events and press Enter", id="search-input")
-                        with Horizontal():
-                            with Vertical():
-                                notes = DataTable(id="search-notes-table", cursor_type="row")
-                                notes.add_columns("kind", "path", "match")
-                                yield Static("Search Notes", classes="title")
-                                yield notes
-                            with Vertical():
-                                events = DataTable(id="search-events-table", cursor_type="row")
-                                events.add_columns("task", "annotation", "ts")
-                                yield Static("Search Events", classes="title")
-                                yield events
+                    yield from compose_search_pane()
                 with TabPane("Latest Edits", id="latest-tab"):
-                    with Vertical(id="latest-pane"):
-                        recent = DataTable(id="recent-table", cursor_type="row")
-                        recent.add_columns("ts", "kind", "id", "summary")
-                        yield Static("Recent Activity", classes="title")
-                        yield recent
-                        with TabbedContent(initial="latest-summary-pane", id="latest-workspace-tabs"):
-                            with TabPane("Summary", id="latest-summary-pane"):
-                                yield Static("Select a recent row to load details.", id="latest-summary")
-                            with TabPane("Task Note", id="latest-task-note-pane"):
-                                yield Static("No task note loaded.", id="latest-task-note-preview")
-                            with TabPane("Chain Note", id="latest-chain-note-pane"):
-                                yield Static("No chain note loaded.", id="latest-chain-note-preview")
-                            with TabPane("Project Note", id="latest-project-note-pane"):
-                                yield Static("No project note loaded.", id="latest-project-note-preview")
-                            with TabPane("Events", id="latest-events-pane"):
-                                yield Static("No events loaded.", id="latest-events-preview")
-                            with TabPane("Resources", id="latest-resources-pane"):
-                                yield Static("No resources loaded.", id="latest-resources-preview")
-                            with TabPane("Progress", id="latest-progress-pane"):
-                                yield Static("No progress loaded.", id="latest-progress-preview")
+                    yield from compose_latest_pane()
             yield Static("Actions: / search | r refresh | q quit", id="context-hints")
             yield Footer()
 
