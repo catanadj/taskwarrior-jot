@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import OrderedDict
+from contextlib import nullcontext
 from tempfile import TemporaryDirectory
 import unittest
 from pathlib import Path
@@ -120,6 +121,12 @@ class FakeTuiService:
                 "project": {},
             },
             "events": [],
+        }
+
+    def project_workspace(self, project_name: str) -> dict[str, Any]:
+        return {
+            "project": project_name,
+            "note": {"path": f"/tmp/{project_name}.md", "body": "Project notes", "resources": [], "progress": None},
         }
 
     def task_note_path_for_task_ref(self, task_ref: str) -> str:
@@ -392,6 +399,55 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
             await pilot.click("#add-btn")
             await pilot.pause()
             self.assertEqual(len(app.query("#heading-input")), 0)
+
+    async def test_resource_progress_delete_and_open_actions_call_service(self) -> None:
+        service = FakeTuiService()
+        service.attach_resource = mock.Mock(return_value={"resource": {"label": "Docs", "target": "https://example.test"}})
+        service.detach_resource = mock.Mock(return_value={"resource": {"label": "Docs", "target": "https://example.test"}})
+        service.open_resource = mock.Mock(return_value=["xdg-open", "https://example.test"])
+        service.update_progress = mock.Mock(return_value={"track": "pages", "progress": {"current": "2", "target": "4", "unit": "pages"}})
+        service.delete_task_note = mock.Mock(return_value={"trash_path": "/tmp/.jot_trash/task.md"})
+        app = build_tui(service, session_refresh_seconds=None)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.current_task_ref = "2d6d7d7d"
+            app.current_task_project = "reading"
+            target = {"kind": "task", "task_ref": "2d6d7d7d", "path": "/tmp/task.md"}
+            await app._apply_attach_resource_async(target, {"target": "https://example.test", "label": "Docs"})
+            service.attach_resource.assert_called_once()
+            with mock.patch.object(app, "suspend", return_value=nullcontext()):
+                await app._apply_open_resource_async({"target": "https://example.test"})
+            service.open_resource.assert_called_once_with("https://example.test")
+            await app._apply_detach_resource_async(target, {"id": 1, "target": "https://example.test", "label": "Docs"})
+            service.detach_resource.assert_called_once()
+            await app._apply_progress_async(
+                {"kind": "task", "task_ref": "2d6d7d7d"},
+                {"operation": "set", "value": "2/4", "track": "pages", "unit": "pages"},
+            )
+            service.update_progress.assert_called_once()
+            await app._apply_delete_async(target)
+            service.delete_task_note.assert_called_once_with("2d6d7d7d")
+
+    async def test_workspace_editor_and_palette_navigation_cover_project_paths(self) -> None:
+        service = FakeTuiService()
+        service.open_task_note_in_editor = mock.Mock(return_value="/tmp/task.md")
+        service.open_project_note_in_editor = mock.Mock(return_value="/tmp/reading.md")
+        app = build_tui(service, session_refresh_seconds=None)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            app.current_task_ref = "2d6d7d7d"
+            with mock.patch.object(app, "suspend", return_value=nullcontext()):
+                self.assertEqual(app._open_active_note_in_editor(), "/tmp/task.md")
+            service.open_task_note_in_editor.assert_called_once_with("2d6d7d7d")
+            app.current_project_name = "reading"
+            await app._execute_palette_command_async("browse-projects")
+            self.assertEqual(app.query_one("#browse-browser-tabs", TabbedContent).active, "project-browser-pane")
+            await app._execute_palette_command_async("search")
+            self.assertEqual(app.query_one("#main-tabs", TabbedContent).active, "search-tab")
+            await app._execute_palette_command_async("latest-edits")
+            self.assertEqual(app.query_one("#main-tabs", TabbedContent).active, "latest-tab")
 
     async def test_timer_can_be_started_and_stopped_from_time_workspace(self) -> None:
         service = FakeTuiService()
