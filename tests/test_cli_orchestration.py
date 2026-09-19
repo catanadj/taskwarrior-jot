@@ -9,7 +9,16 @@ from types import SimpleNamespace
 from unittest import mock
 
 from jot_core import cli
-from jot_core.models import CommandResult
+from jot_core.models import (
+    CommandResult,
+    HeadingMutationResult,
+    NoteAppendStorageResult,
+    NoteDeleteStorageResult,
+    ResourceOperationResult,
+    ResourceRecord,
+    ResolvedTask,
+    TaskRef,
+)
 
 
 class FakeEnvironment:
@@ -40,6 +49,16 @@ class CliOrchestrationTests(unittest.TestCase):
             config=config,
             taskwarrior=SimpleNamespace(environment=lambda: FakeEnvironment()),
         )
+        self.task = ResolvedTask(
+            ref=TaskRef(raw="42"),
+            task_uuid="2d6d7d7d-1111-2222-3333-444444444444",
+            task_short_uuid="2d6d7d7d",
+            description="Read book",
+            project="study",
+            tags=["focus"],
+            task={"uuid": "2d6d7d7d-1111-2222-3333-444444444444", "chainID": "chain-1"},
+        )
+        self.ctx.taskwarrior.resolve_task = lambda _ref: self.task
 
     def tearDown(self) -> None:
         for path in sorted(self.root.rglob("*"), reverse=True):
@@ -165,6 +184,54 @@ class CliOrchestrationTests(unittest.TestCase):
         self.assertEqual(result.data.query, "book")
         self.assertEqual(result.data.project, "study")
         self.assertEqual(result.data.chain_id, "chain-1")
+
+    def test_resource_handlers_cover_attach_open_and_detach(self) -> None:
+        resource = ResourceRecord(1, "docs", "https://example.test", "url", "exists", 1, "")
+        operation = ResourceOperationResult(Path("/tmp/task.md"), resource, (resource,), opened=True)
+        args = SimpleNamespace(note_kind="task", note_ref="42", target="https://example.test", label="docs")
+        with mock.patch("jot_core.cli.attach_task_resource_storage", return_value=operation) as attach:
+            result = cli._run_attach(self.ctx, args)
+        self.assertEqual(result.data.note_kind, "task")
+        attach.assert_called_once()
+
+        args = SimpleNamespace(note_kind="task", note_ref="42", resource_id=1)
+        with mock.patch("jot_core.cli._existing_note_path_for_kind", return_value=(Path("/tmp/task.md"), {"task_short_uuid": "2d6d7d7d"})), mock.patch(
+            "jot_core.cli.list_note_resources", return_value=SimpleNamespace(resources=[resource.to_payload()])
+        ), mock.patch("jot_core.cli.open_resource_target", return_value=["xdg-open", "https://example.test"]):
+            result = cli._run_open_resource(self.ctx, args)
+        self.assertEqual(result.data.resource.target, "https://example.test")
+        self.assertEqual(result.data.opener, ("xdg-open", "https://example.test"))
+
+        args = SimpleNamespace(note_kind="project", note_ref="study", note_path="/tmp/project.md", resource_id=1)
+        with mock.patch("jot_core.cli._existing_note_path_for_kind", return_value=(Path("/tmp/project.md"), {"project": "study"})), mock.patch(
+            "jot_core.cli.detach_project_resource_storage", return_value=operation
+        ) as detach:
+            result = cli._run_detach_resource(self.ctx, args)
+        self.assertEqual(result.command, "detach-resource")
+        detach.assert_called_once()
+
+    def test_note_heading_append_delete_and_progress_handlers_build_results(self) -> None:
+        mutation = HeadingMutationResult(Path("/tmp/task.md"), True, "Next steps", "fuzzy", "12:00", "Call vendor")
+        args = SimpleNamespace(note_kind="task", note_ref="42", heading="Next", text="Call vendor", create_heading=False, heading_exact=False)
+        with mock.patch("jot_core.cli.add_to_task_heading_storage", return_value=mutation):
+            result = cli._run_add_to(self.ctx, args)
+        self.assertEqual(result.data.heading_match, "fuzzy")
+
+        append = NoteAppendStorageResult(Path("/tmp/task.md"), True, "text")
+        with mock.patch("jot_core.cli.append_task_note_storage", return_value=append):
+            result = cli._run_note_append(self.ctx, "42", "text")
+        self.assertEqual(result.data.identity["task_short_uuid"], "2d6d7d7d")
+
+        deleted = NoteDeleteStorageResult(Path("/tmp/task.md"), Path("/tmp/trash/task.md"), True)
+        with mock.patch("jot_core.cli.delete_task_note_storage", return_value=deleted):
+            result = cli._run_task_delete(self.ctx, "42")
+        self.assertEqual(result.data.trash_path, Path("/tmp/trash/task.md"))
+
+        args = SimpleNamespace(note_kind="task", note_ref="42", operation="add", value="2", unit=None, status=None, track="sets", confirm_clear=False)
+        expected = CommandResult("progress", {"ok": True})
+        with mock.patch("jot_core.cli._run_progress_command", return_value=expected) as progress:
+            self.assertIs(cli._run_progress(self.ctx, args), expected)
+        progress.assert_called_once()
 
 
 if __name__ == "__main__":
