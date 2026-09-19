@@ -297,6 +297,11 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         asyncio.get_running_loop().set_debug(False)
 
+    async def test_command_palette_modal_has_a_separate_factory(self) -> None:
+        from jot_tui.modals import build_command_palette_modal
+
+        self.assertTrue(callable(build_command_palette_modal))
+
     async def test_real_service_loads_workspace_rows(self) -> None:
         with TemporaryDirectory(prefix="jot-tui-real-") as temporary:
             service = real_service_fixture(Path(temporary))

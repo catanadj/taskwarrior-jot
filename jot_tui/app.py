@@ -9,6 +9,7 @@ from typing import Any, Mapping
 from jot_core.services import JotService
 from jot_core.notes import preview_trash_path
 from jot_tui.palette import PaletteEntry, filter_palette_entries
+from jot_tui.modals import build_command_palette_modal
 from jot_tui.rendering import (
     note_excerpt,
     pretty_label,
@@ -953,6 +954,9 @@ def build_tui(
                 self.dismiss(None)
                 return
             self.dismiss(asdict(self.filtered_entries[row]))
+
+    # Keep the palette workflow independent from the main application state.
+    CommandPaletteModal = build_command_palette_modal()
 
     class JotTUI(App[None]):
         CSS = """
