@@ -12,7 +12,7 @@ from jot_core import cli
 from jot_core.models import (
     CommandResult,
     HeadingCommandResult,
-    NoteAppendStorageResult,
+    NoteAppendCommandResult,
     NoteDeleteStorageResult,
     ResourceOperationResult,
     ResourceRecord,
@@ -226,8 +226,12 @@ class CliOrchestrationTests(unittest.TestCase):
             result = cli._run_add_to(self.ctx, args)
         self.assertEqual(result.data.heading_match, "fuzzy")
 
-        append = NoteAppendStorageResult(Path("/tmp/task.md"), True, "text")
-        with mock.patch("jot_core.cli.append_task_note_storage", return_value=append):
+        append = NoteAppendCommandResult(
+            path=Path("/tmp/task.md"),
+            opened=True,
+            identity={"task_short_uuid": "2d6d7d7d"},
+        )
+        with mock.patch.object(cli.JotService, "append_task_note", return_value=append):
             result = cli._run_note_append(self.ctx, "42", "text")
         self.assertEqual(result.data.identity["task_short_uuid"], "2d6d7d7d")
 

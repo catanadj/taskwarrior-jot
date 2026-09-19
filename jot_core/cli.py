@@ -25,7 +25,6 @@ from .models import (
     CommandResult,
     EventAddResult,
     HeadingCommandResult,
-    NoteAppendCommandResult,
     NoteDeleteCommandResult,
     NoteContentResult,
     NoteHeadingsResult,
@@ -88,9 +87,6 @@ from .storage import (
     delete_chain_note_storage,
     delete_project_note_storage,
     delete_task_note_storage,
-    append_chain_note_storage,
-    append_project_note_storage,
-    append_task_note_storage,
     append_task_note_idempotent,
     finalize_chain_note_edit,
     finalize_project_note_edit,
@@ -2035,41 +2031,18 @@ def _run_list(ctx, task_ref: str) -> CommandResult:
 
 
 def _run_note_append(ctx, task_ref: str, text: str) -> CommandResult:
-    task = ctx.taskwarrior.resolve_task(task_ref)
-    result = append_task_note_storage(ctx.config, task, text)
-    return CommandResult(
-        command="note-append",
-        data=NoteAppendCommandResult(
-            path=result.note_path,
-            opened=result.existed,
-            identity={"task_short_uuid": task.task_short_uuid},
-        ),
-    )
+    service = JotService(config=ctx.config, taskwarrior=ctx.taskwarrior)
+    return CommandResult(command="note-append", data=service.append_task_note(task_ref, text))
 
 
 def _run_chain_append(ctx, task_ref: str, text: str) -> CommandResult:
-    task = ctx.taskwarrior.resolve_task(task_ref)
-    result = append_chain_note_storage(ctx.config, task, text)
-    return CommandResult(
-        command="chain-append",
-        data=NoteAppendCommandResult(
-            path=result.note_path,
-            opened=result.existed,
-            identity={"task_short_uuid": task.task_short_uuid},
-        ),
-    )
+    service = JotService(config=ctx.config, taskwarrior=ctx.taskwarrior)
+    return CommandResult(command="chain-append", data=service.append_chain_note(task_ref, text))
 
 
 def _run_project_append(ctx, project_name: str, text: str) -> CommandResult:
-    result = append_project_note_storage(ctx.config, project_name, text)
-    return CommandResult(
-        command="project-append",
-        data=NoteAppendCommandResult(
-            path=result.note_path,
-            opened=result.existed,
-            identity={"project": project_name},
-        ),
-    )
+    service = JotService(config=ctx.config, taskwarrior=ctx.taskwarrior)
+    return CommandResult(command="project-append", data=service.append_project_note(project_name, text))
 
 
 def _run_project_delete(ctx, project_name: str) -> CommandResult:

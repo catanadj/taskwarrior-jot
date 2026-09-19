@@ -11,6 +11,8 @@ from jot_core.models import (
     AppConfig,
     HeadingCommandResult,
     HeadingMutationResult,
+    NoteAppendCommandResult,
+    NoteAppendStorageResult,
     NotePaths,
     ResourceOperationResult,
     ResourceRecord,
@@ -122,6 +124,17 @@ class ServiceEdgeTests(unittest.TestCase):
         with mock.patch("jot_core.services.add_to_project_heading_storage", return_value=mutation):
             project_result = self.service.add_to_project_heading("study", heading="notes", text="entry")
         self.assertIsInstance(project_result, HeadingCommandResult)
+        self.assertEqual(project_result["project"], "study")
+
+    def test_note_append_service_methods_return_typed_command_results(self) -> None:
+        storage = NoteAppendStorageResult(Path("/tmp/note.md"), True, "entry")
+        with mock.patch("jot_core.services.append_task_note_storage", return_value=storage):
+            task_result = self.service.append_task_note("42", "entry")
+        self.assertIsInstance(task_result, NoteAppendCommandResult)
+        self.assertEqual(task_result["task_short_uuid"], "2d6d7d7d")
+
+        with mock.patch("jot_core.services.append_project_note_storage", return_value=storage):
+            project_result = self.service.append_project_note("study", "entry")
         self.assertEqual(project_result["project"], "study")
 
     def test_progress_update_routes_operations_and_requires_clear_confirmation(self) -> None:

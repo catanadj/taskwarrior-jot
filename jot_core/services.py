@@ -16,6 +16,7 @@ from .models import (
     AgentContext,
     DeletedTimelogItem,
     NoteSummary,
+    NoteAppendCommandResult,
     NoteDeleteResult,
     HeadingCommandResult,
     ProjectTreeRow,
@@ -75,6 +76,9 @@ from .storage import (
     finalize_project_note_edit,
     finalize_task_note_edit,
     add_to_task_heading_storage,
+    append_chain_note_storage,
+    append_project_note_storage,
+    append_task_note_storage,
     mutate_project_progress_storage,
     mutate_task_progress_storage,
 )
@@ -602,6 +606,32 @@ class JotService:
 
     def delete_project_note(self, project_name: str) -> NoteDeleteResult:
         return delete_project_note_storage(self.config, project_name)
+
+    def append_task_note(self, task_ref: str, text: str) -> NoteAppendCommandResult:
+        task = self.taskwarrior.resolve_task(task_ref)
+        result = append_task_note_storage(self.config, task, text)
+        return NoteAppendCommandResult(
+            path=result.note_path,
+            opened=result.existed,
+            identity={"task_short_uuid": task.task_short_uuid},
+        )
+
+    def append_chain_note(self, task_ref: str, text: str) -> NoteAppendCommandResult:
+        task = self.taskwarrior.resolve_task(task_ref)
+        result = append_chain_note_storage(self.config, task, text)
+        return NoteAppendCommandResult(
+            path=result.note_path,
+            opened=result.existed,
+            identity={"task_short_uuid": task.task_short_uuid},
+        )
+
+    def append_project_note(self, project_name: str, text: str) -> NoteAppendCommandResult:
+        result = append_project_note_storage(self.config, project_name, text)
+        return NoteAppendCommandResult(
+            path=result.note_path,
+            opened=result.existed,
+            identity={"project": project_name},
+        )
 
     def attach_resource(
         self,
