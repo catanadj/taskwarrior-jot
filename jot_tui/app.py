@@ -10,6 +10,7 @@ from jot_core.services import JotService
 from jot_core.notes import preview_trash_path
 from jot_tui.palette import PaletteEntry, filter_palette_entries
 from jot_tui.modals import build_command_palette_modal
+from jot_tui.state import StateBacked, TuiState
 from jot_tui.rendering import (
     note_excerpt,
     pretty_label,
@@ -958,7 +959,7 @@ def build_tui(
     # Keep the palette workflow independent from the main application state.
     CommandPaletteModal = build_command_palette_modal()
 
-    class JotTUI(App[None]):
+    class JotTUI(StateBacked, App[None]):
         CSS = """
         Screen { layout: vertical; }
         #browse-top { height: 1fr; }
@@ -1025,32 +1026,9 @@ def build_tui(
 
         def __init__(self, svc: JotService) -> None:
             super().__init__()
+            self.state = TuiState()
             self.svc = svc
             self.session_refresh_seconds = session_refresh_seconds
-            self.recent_rows: list[dict[str, Any]] = []
-            self.task_all_rows: list[dict[str, Any]] = []
-            self.task_rows: list[dict[str, Any]] = []
-            self.project_rows: list[dict[str, Any]] = []
-            self.note_rows: list[dict[str, Any]] = []
-            self.search_note_rows: list[dict[str, Any]] = []
-            self.search_event_rows: list[dict[str, Any]] = []
-            self.time_session_rows: list[dict[str, Any]] = []
-            self.time_rows: list[dict[str, Any]] = []
-            self.time_period: str = "week"
-            self.current_search_query: str = ""
-            self.note_filter_kind: str = ""
-            self.note_filter_project: str = ""
-            self.task_filter_project: str = ""
-            self.task_filter_tag: str = ""
-            self.task_filter_notes_only: bool = False
-            self.current_latest_task_ref: str | None = None
-            self.current_task_ref: str | None = None
-            self.current_task_chain_path: str = ""
-            self.current_task_has_chain: bool = False
-            self.current_task_project: str = ""
-            self.current_project_name: str | None = None
-            self.current_context_has_resources: bool = False
-            self.current_context_has_progress: bool = False
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=True)
