@@ -59,32 +59,58 @@ def reconcile_integrity(
     *,
     apply: bool,
 ) -> IntegrityReconcileResult:
-    report = scan_integrity(config, taskwarrior)
-    result: dict[str, Any] = {"dry_run": not apply, "report": report, "backup_path": None, "repaired": 0}
+    result: dict[str, Any] = {"dry_run": not apply, "report": None, "backup_path": None, "repaired": 0}
     if not apply:
+        result["report"] = scan_integrity(config, taskwarrior)
         return IntegrityReconcileResult.from_mapping(result)
-    backup_path = _backup_path(config)
-    backup_path.mkdir(parents=True, exist_ok=True)
-    index = index_path(config)
-    if index.exists():
-        shutil.copy2(index, backup_path / index.name)
-    for finding in report.findings:
-        if finding.kind != "stale-metadata":
-            continue
-        path = Path(finding.path)
-        if not path.exists():
-            continue
-        metadata, body = read_document(path)
-        metadata.update(finding.expected or {})
-        backup_note = backup_path / "notes" / path.name
-        backup_note.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, backup_note)
-        with exclusive_file_lock(path):
-            write_document(path, metadata, body)
-        result["repaired"] += 1
-    save_index(config, rebuild_index(config))
-    result["backup_path"] = str(backup_path) if backup_path.exists() else None
-    return IntegrityReconcileResult.from_mapping(result)
+
+    with exclusive_file_lock(config.root_dir / ".jot-integrity.lock"):
+        report = scan_integrity(config, taskwarrior)
+        result["report"] = report
+        backup_path = _backup_path(config)
+        backup_path.mkdir(parents=True, exist_ok=True)
+        index = index_path(config)
+        index_backup = backup_path / index.name
+        had_index = index.exists()
+        if had_index:
+            shutil.copy2(index, index_backup)
+
+        repairable = [
+            Path(finding.path)
+            for finding in report.findings
+            if finding.kind == "stale-metadata" and Path(finding.path).exists()
+        ]
+        note_backups: dict[Path, Path] = {}
+        for path in repairable:
+            backup_note = backup_path / "notes" / path.name
+            backup_note.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, backup_note)
+            note_backups[path] = backup_note
+
+        try:
+            for finding in report.findings:
+                if finding.kind != "stale-metadata":
+                    continue
+                path = Path(finding.path)
+                if path not in note_backups:
+                    continue
+                metadata, body = read_document(path)
+                metadata.update(finding.expected or {})
+                with exclusive_file_lock(path):
+                    write_document(path, metadata, body)
+                result["repaired"] += 1
+            save_index(config, rebuild_index(config))
+        except Exception:
+            for path, backup_note in note_backups.items():
+                shutil.copy2(backup_note, path)
+            if had_index:
+                shutil.copy2(index_backup, index)
+            else:
+                index.unlink(missing_ok=True)
+            raise
+
+        result["backup_path"] = str(backup_path) if backup_path.exists() else None
+        return IntegrityReconcileResult.from_mapping(result)
 
 
 def _counts(findings: list[dict[str, Any]]) -> dict[str, int]:
