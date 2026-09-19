@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from jot_core.frontmatter import write_document
+from jot_core.contracts import ProgressRequest, ResourceRequest
 from jot_core.models import (
     AppConfig,
     HeadingCommandResult,
@@ -163,6 +164,20 @@ class ServiceEdgeTests(unittest.TestCase):
                 self.service.update_progress("task", task_ref="42", operation="clear", confirm_clear=True)["operation"],
                 "clear",
             )
+
+    def test_typed_requests_route_only_valid_resource_and_progress_operations(self) -> None:
+        resource = ResourceRecord(1, "docs", "https://example.test", "url", "exists", 1, "")
+        operation = ResourceOperationResult(Path("/tmp/note.md"), resource, (resource,), opened=True)
+        request = ResourceRequest(kind="task", reference="42", target="https://example.test", label="docs")
+        with mock.patch.object(JotService, "attach_resource", return_value=operation) as attach:
+            result = self.service.apply_resource_request(request)
+        self.assertEqual(result.resource.target, "https://example.test")
+        attach.assert_called_once_with("task", task_ref="42", target="https://example.test", label="docs")
+
+        progress_request = ProgressRequest(kind="task", reference="42", operation="set", value="1/2")
+        with mock.patch.object(JotService, "set_progress", return_value={"operation": "set"}) as setter:
+            self.assertEqual(self.service.apply_progress_request(progress_request)["operation"], "set")
+        setter.assert_called_once_with("task", "1/2", task_ref="42", project_name="", unit=None, status=None, track="default")
 
     def test_timelog_wrappers_delegate_each_lifecycle_operation(self) -> None:
         cases = (

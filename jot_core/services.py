@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .editor import open_in_editor
-from .contracts import normalize_note_kind, normalize_progress_operation
+from .contracts import ProgressRequest, ResourceRequest, normalize_note_kind, normalize_progress_operation
 from .frontmatter import read_document
 from .models import (
     ActivityItem,
@@ -653,6 +653,24 @@ class JotService:
             return attach_project_resource_storage(self.config, project_name, target=target, label=label)
         raise RuntimeError(f"unknown resource target kind: {kind}")
 
+    def apply_resource_request(self, request: ResourceRequest) -> ResourceOperationResult:
+        """Apply a validated attach or detach request at the service boundary."""
+        if request.resource_id is None:
+            if request.kind == "project":
+                return self.attach_resource(
+                    "project", project_name=request.reference, target=request.target, label=request.label
+                )
+            return self.attach_resource(
+                request.kind, task_ref=request.reference, target=request.target, label=request.label
+            )
+        if request.kind == "project":
+            return self.detach_resource(
+                "project", project_name=request.reference, note_path=request.note_path, resource_id=request.resource_id
+            )
+        return self.detach_resource(
+            request.kind, task_ref=request.reference, note_path=request.note_path, resource_id=request.resource_id
+        )
+
     def detach_resource(
         self,
         kind: str,
@@ -761,6 +779,36 @@ class JotService:
             project_name=project_name,
             track=track,
         )
+
+    def apply_progress_request(self, request: ProgressRequest) -> ProgressMutationResult:
+        """Apply a validated progress request through the explicit operation methods."""
+        common = {
+            "task_ref": request.reference if request.kind in {"task", "chain"} else "",
+            "project_name": request.reference if request.kind == "project" else "",
+            "track": request.track,
+        }
+        if request.operation == "set":
+            return self.set_progress(
+                request.kind,
+                request.value,
+                unit=request.unit,
+                status=request.status,
+                **common,
+            )
+        if request.operation in {"add", "subtract"}:
+            return self.adjust_progress(
+                request.kind,
+                request.value,
+                direction=request.operation,
+                **common,
+            )
+        if request.operation == "status":
+            return self.set_progress_status(
+                request.kind,
+                request.status or request.value,
+                **common,
+            )
+        return self.clear_progress(request.kind, **common)
 
     def set_progress(
         self,
