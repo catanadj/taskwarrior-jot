@@ -89,10 +89,17 @@ class CliOrchestrationTests(unittest.TestCase):
         self.assertEqual(result.command, "chain-cat")
         run_chain.assert_called_once_with(self.ctx, "42")
 
+    def test_task_cat_uses_extracted_note_command_family(self) -> None:
+        expected = CommandResult("task-cat", {"path": "/tmp/task.md"})
+        with mock.patch("jot_core.note_cli.run_task_cat", return_value=expected) as run_task_cat:
+            result = cli._run_task_cat(self.ctx, "42")
+        self.assertIs(result, expected)
+        run_task_cat.assert_called_once_with(self.ctx, "42")
+
     def test_note_and_recent_builders_normalize_filters(self) -> None:
         note = {"kind": "task-note", "id": "abcd1234", "title": "Read", "path": "/tmp/read.md"}
         args = SimpleNamespace(kinds=["task", "project"], project="study")
-        with mock.patch("jot_core.cli.list_notes", return_value=[note]) as list_notes:
+        with mock.patch("jot_core.note_cli.list_notes", return_value=[note]) as list_notes:
             result = cli._run_notes(self.ctx, args)
         self.assertEqual(result.command, "notes")
         self.assertEqual(result.data.project, "study")
@@ -100,7 +107,7 @@ class CliOrchestrationTests(unittest.TestCase):
         list_notes.assert_called_once()
 
         args = SimpleNamespace(limit=3, kinds=["event"])
-        with mock.patch("jot_core.cli.recent_activity", return_value=[]):
+        with mock.patch("jot_core.note_cli.recent_activity", return_value=[]):
             result = cli._run_recent(self.ctx, args)
         self.assertEqual(result.data.limit, 3)
         self.assertEqual(result.data.kinds, ("event",))
