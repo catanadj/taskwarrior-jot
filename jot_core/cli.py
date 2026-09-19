@@ -82,6 +82,7 @@ from .resource_cli import (
     run_open_resource as _run_open_resource_command,
     run_resources as _run_resources_command,
 )
+from . import timelog_cli as _timelog_cli
 from .search import normalize_chain_id, normalize_kinds, normalize_project, search_all
 from .services import JotService
 from .storage import (
@@ -1965,7 +1966,7 @@ def _run_add_to(ctx, args) -> CommandResult:
     return CommandResult(command="add-to", data=result)
 
 
-def _run_timelog(ctx, args) -> CommandResult:
+def _run_timelog_legacy(ctx, args) -> CommandResult:
     if args.timelog_command == "start":
         task = ctx.taskwarrior.resolve_task(args.task_ref)
         payload = start_time_session(ctx.config, task, started_at=args.at)
@@ -2086,6 +2087,10 @@ def _run_timelog(ctx, args) -> CommandResult:
             )
         ),
     )
+
+
+def _run_timelog(ctx, args) -> CommandResult:
+    return _timelog_cli.run_timelog(ctx, args)
 
 
 def _run_timewarrior(ctx, args) -> CommandResult:

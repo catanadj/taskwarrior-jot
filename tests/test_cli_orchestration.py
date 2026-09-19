@@ -154,6 +154,13 @@ class CliOrchestrationTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "two JSON lines"):
             with mock.patch("sys.stdin", io.StringIO("{}\n")):
                 cli._run_timelog(self.ctx, SimpleNamespace(timelog_command="ingest", scope="auto", stopped_at=""))
+
+    def test_timelog_command_family_is_extracted(self) -> None:
+        expected = CommandResult("timelog-pending", {"sessions": ()})
+        with mock.patch("jot_core.timelog_cli.run_timelog", return_value=expected) as run_timelog:
+            result = cli._run_timelog(self.ctx, SimpleNamespace(timelog_command="pending"))
+        self.assertIs(result, expected)
+        run_timelog.assert_called_once_with(self.ctx, mock.ANY)
         with self.assertRaisesRegex(RuntimeError, "invalid hook JSON"):
             with mock.patch("sys.stdin", io.StringIO("bad\n{}\n")):
                 cli._run_timelog(self.ctx, SimpleNamespace(timelog_command="ingest", scope="auto", stopped_at=""))
