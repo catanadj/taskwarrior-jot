@@ -17,9 +17,9 @@ from jot_core.services import JotService
 from jot_core.taskwarrior import TaskwarriorClient
 
 try:
-    from textual.widgets import Button, DataTable, Static, TabbedContent
+    from textual.widgets import Button, DataTable, Input, Static, TabbedContent
 except ImportError:  # pragma: no cover - exercised in dependency-free CLI environments
-    Button = DataTable = Static = TabbedContent = None  # type: ignore[assignment,misc]
+    Button = DataTable = Input = Static = TabbedContent = None  # type: ignore[assignment,misc]
 
 
 async def _call_inline(function: Any, *args: Any, **kwargs: Any) -> Any:
@@ -33,6 +33,15 @@ class FakeTuiService:
         self.cancelled: list[str] = []
         self.config = SimpleNamespace(root_dir=Path("/tmp"), trash_dir=Path("/tmp/.jot_trash"))
         self.fail_tasks = False
+
+    def add_to_task_heading(self, task_ref: str, **kwargs: Any) -> dict[str, Any]:
+        return {
+            "task_short_uuid": task_ref,
+            "path": "/tmp/2d6d7d7d--read-book.md",
+            "heading": kwargs["heading"],
+            "heading_match": "exact",
+            "entry": kwargs["text"],
+        }
 
     def recent(self, limit: int = 50) -> list[dict[str, Any]]:
         return [
@@ -348,6 +357,41 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
         async with app.run_test(size=(120, 40)) as pilot:
             await pilot.pause()
             self.assertEqual(app.task_all_rows, [])
+
+    async def test_filters_palette_and_add_to_heading_modal(self) -> None:
+        service = FakeTuiService()
+        app = build_tui(service, session_refresh_seconds=None)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.click("#task-filter-project")
+            await pilot.press(*"reading")
+            self.assertEqual(app.query_one("#tasks-table", DataTable).row_count, 1)
+
+            await pilot.click("#task-filter-notes")
+            self.assertTrue(app.task_filter_notes_only)
+            await pilot.click("#task-filter-clear")
+            self.assertEqual(app.task_filter_project, "")
+            self.assertFalse(app.task_filter_notes_only)
+
+            app.action_command_palette()
+            await pilot.pause()
+            await pilot.click("#palette-input")
+            await pilot.press(*"refresh")
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertEqual(len(app.query("#palette-input")), 0)
+
+            app.current_task_ref = "2d6d7d7d"
+            app.action_add_to_selected_task()
+            await pilot.pause()
+            await pilot.click("#heading-input")
+            await pilot.press(*"Next steps")
+            await pilot.click("#entry-input")
+            await pilot.press(*"Call vendor")
+            await pilot.click("#add-btn")
+            await pilot.pause()
+            self.assertEqual(len(app.query("#heading-input")), 0)
 
     async def test_timer_can_be_started_and_stopped_from_time_workspace(self) -> None:
         service = FakeTuiService()

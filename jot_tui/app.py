@@ -903,8 +903,9 @@ def build_tui(
                     yield Button("Open", id="open-btn", variant="primary")
 
         def on_mount(self) -> None:
-            self._render()
             self.query_one("#palette-input", Input).focus()
+            # Textual may dispatch modal mount before all composed children are mounted.
+            self.call_after_refresh(self._render_table)
 
         def action_cancel(self) -> None:
             self.dismiss(None)
@@ -919,7 +920,7 @@ def build_tui(
             if event.input.id != "palette-input":
                 return
             self.filtered_entries = filter_palette_entries(self.entries, event.value)
-            self._render()
+            self._render_table()
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
             if event.input.id != "palette-input":
@@ -931,8 +932,11 @@ def build_tui(
                 return
             self._open_row(event.cursor_row)
 
-        def _render(self) -> None:
-            table = self.query_one("#palette-table", DataTable)
+        def _render_table(self) -> None:
+            tables = self.query("#palette-table")
+            if not tables:
+                return
+            table = tables.first(DataTable)
             table.clear()
             for entry in self.filtered_entries[:20]:
                 table.add_row(entry.id, entry.label, entry.detail)
