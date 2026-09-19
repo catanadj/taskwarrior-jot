@@ -2920,7 +2920,7 @@ class CliIntegrationTests(JotCliTestCase):
     def test_version_flag(self) -> None:
         result = self.run_jot("--version")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.strip(), "jot 0.8.0")
+        self.assertEqual(result.stdout.strip(), "jot 0.9.0")
 
     def test_unique_command_prefix_runs_command(self) -> None:
         result = self.run_jot("sta")
