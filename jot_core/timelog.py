@@ -28,6 +28,7 @@ from .ops import append_op, iso_now, read_ops
 from .taskwarrior import TaskwarriorClient
 from .timewarrior import start_timewarrior_for_task
 from .timelog_report import build_time_log_report
+from . import timelog_store
 
 
 TIME_LOG_HEADING = "Time log"
@@ -61,10 +62,10 @@ def ingest_time_log(
 
 def start_time_session(config: AppConfig, task: ResolvedTask, *, started_at: str = "") -> TimelogSessionResult:
     started = _parse_datetime(started_at) if started_at else datetime.now(timezone.utc)
-    path = _session_store_path(config)
+    path = timelog_store.session_store_path(config)
     existing = None
     with exclusive_file_lock(path):
-        sessions = _read_sessions_unlocked(path)
+        sessions = timelog_store.read_sessions(path)
         existing = sessions.get(task.task_uuid)
         if isinstance(existing, dict):
             result = {
@@ -87,7 +88,7 @@ def start_time_session(config: AppConfig, task: ResolvedTask, *, started_at: str
                 "timewarrior_started": False,
                 "timewarrior_state": "pending",
             }
-            _write_sessions_unlocked(path, sessions)
+            timelog_store.write_sessions(path, sessions)
             result = {
                 "task_uuid": task.task_uuid,
                 "task_short_uuid": task.task_short_uuid,
@@ -121,19 +122,19 @@ def start_time_session(config: AppConfig, task: ResolvedTask, *, started_at: str
         )
 
     with exclusive_file_lock(path):
-        sessions = _read_sessions_unlocked(path)
+        sessions = timelog_store.read_sessions(path)
         current = sessions.get(task.task_uuid)
         if isinstance(current, dict) and current.get("started") == result.get("started"):
             current["timewarrior_state"] = "attempting"
             current["timewarrior_attempted_at"] = _iso_z(datetime.now(timezone.utc))
-            _write_sessions_unlocked(path, sessions)
+            timelog_store.write_sessions(path, sessions)
 
     result["timewarrior"] = start_timewarrior_for_task(config, task)
     if retry_timewarrior:
         result["timewarrior_retry"] = True
 
     with exclusive_file_lock(path):
-        sessions = _read_sessions_unlocked(path)
+        sessions = timelog_store.read_sessions(path)
         current = sessions.get(task.task_uuid)
         if isinstance(current, dict) and current.get("started") == result.get("started"):
             timewarrior = result["timewarrior"]
@@ -145,7 +146,7 @@ def start_time_session(config: AppConfig, task: ResolvedTask, *, started_at: str
                 current["timewarrior_error"] = str(timewarrior["error"])
             else:
                 current.pop("timewarrior_error", None)
-            _write_sessions_unlocked(path, sessions)
+            timelog_store.write_sessions(path, sessions)
     return TimelogSessionResult.from_mapping(result, operation="start")
 
 
@@ -191,9 +192,9 @@ def _timewarrior_result_state(result: dict[str, Any]) -> str:
 
 def stop_time_session(config: AppConfig, task: ResolvedTask, *, stopped_at: str = "", scope: str = "auto") -> TimelogStopResult:
     stopped = _parse_datetime(stopped_at) if stopped_at else datetime.now(timezone.utc)
-    path = _session_store_path(config)
+    path = timelog_store.session_store_path(config)
     with exclusive_file_lock(path):
-        sessions = _read_sessions_unlocked(path)
+        sessions = timelog_store.read_sessions(path)
         session = sessions.get(task.task_uuid)
         if not isinstance(session, dict):
             raise RuntimeError(f"no pending timelog session for {task.task_short_uuid}")
@@ -202,7 +203,7 @@ def stop_time_session(config: AppConfig, task: ResolvedTask, *, stopped_at: str 
             raise RuntimeError("stop time is before start time")
         result = write_time_log(config, task, started=started, stopped=stopped, scope=scope)
         sessions.pop(task.task_uuid, None)
-        _write_sessions_unlocked(path, sessions)
+        timelog_store.write_sessions(path, sessions)
     append_op(
         config,
         "timelog_session_stop",
@@ -247,9 +248,9 @@ def stop_all_time_sessions(config: AppConfig, taskwarrior: TaskwarriorClient, *,
 
 def list_time_sessions(config: AppConfig, *, now: datetime | None = None) -> list[TimelogSession]:
     current = now or datetime.now(timezone.utc)
-    path = _session_store_path(config)
+    path = timelog_store.session_store_path(config)
     with exclusive_file_lock(path):
-        sessions = _read_sessions_unlocked(path)
+        sessions = timelog_store.read_sessions(path)
     enriched = []
     for item in sessions.values():
         if not isinstance(item, dict):
@@ -263,13 +264,13 @@ def list_time_sessions(config: AppConfig, *, now: datetime | None = None) -> lis
 
 
 def cancel_time_session(config: AppConfig, task: ResolvedTask) -> TimelogSessionResult:
-    path = _session_store_path(config)
+    path = timelog_store.session_store_path(config)
     with exclusive_file_lock(path):
-        sessions = _read_sessions_unlocked(path)
+        sessions = timelog_store.read_sessions(path)
         session = sessions.pop(task.task_uuid, None)
         if not isinstance(session, dict):
             raise RuntimeError(f"no pending timelog session for {task.task_short_uuid}")
-        _write_sessions_unlocked(path, sessions)
+        timelog_store.write_sessions(path, sessions)
     append_op(
         config,
         "timelog_session_cancel",

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest import mock
 
 from jot_core.config import ensure_app_dirs
 from jot_core.frontmatter import read_document
@@ -131,6 +132,15 @@ class TimelogCoreTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "not found"):
                 restore_deleted_time_log(config, written.timelog_key[:6])
             self.assertEqual(report_time_logs(config, period="all").total_minutes, 15)
+
+    def test_session_lifecycle_delegates_to_timelog_store(self) -> None:
+        with TemporaryDirectory(prefix="jot-timelog-") as temporary:
+            config = self._config(Path(temporary))
+            ensure_app_dirs(config)
+            task = self._task()
+            with mock.patch("jot_core.timelog_store.read_sessions", wraps=lambda path: {}) as read_sessions:
+                start_time_session(config, task, started_at="2026-09-19T10:00:00Z")
+            self.assertGreaterEqual(read_sessions.call_count, 1)
 
 
 if __name__ == "__main__":
