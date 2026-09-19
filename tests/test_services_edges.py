@@ -7,7 +7,16 @@ from types import SimpleNamespace
 from unittest import mock
 
 from jot_core.frontmatter import write_document
-from jot_core.models import AppConfig, NotePaths, ResourceOperationResult, ResourceRecord, ResolvedTask, TaskRef
+from jot_core.models import (
+    AppConfig,
+    HeadingCommandResult,
+    HeadingMutationResult,
+    NotePaths,
+    ResourceOperationResult,
+    ResourceRecord,
+    ResolvedTask,
+    TaskRef,
+)
 from jot_core.services import JotService
 
 
@@ -99,6 +108,21 @@ class ServiceEdgeTests(unittest.TestCase):
             self.assertEqual(self.service.attach_resource("project", project_name="study", target="x").opened, True)
         with self.assertRaisesRegex(RuntimeError, "unknown resource target kind"):
             self.service.attach_resource("bad", target="x", project_name="study")
+
+    def test_heading_mutations_return_typed_command_results(self) -> None:
+        mutation = HeadingMutationResult(
+            Path("/tmp/note.md"), True, "Notes", "fuzzy", "2026-09-19T10:00:00Z", "entry"
+        )
+        with mock.patch("jot_core.services.add_to_task_heading_storage", return_value=mutation):
+            task_result = self.service.add_to_task_heading("42", heading="notes", text="entry")
+        self.assertIsInstance(task_result, HeadingCommandResult)
+        self.assertEqual(task_result["task_short_uuid"], "2d6d7d7d")
+        self.assertEqual(task_result["heading_match"], "fuzzy")
+
+        with mock.patch("jot_core.services.add_to_project_heading_storage", return_value=mutation):
+            project_result = self.service.add_to_project_heading("study", heading="notes", text="entry")
+        self.assertIsInstance(project_result, HeadingCommandResult)
+        self.assertEqual(project_result["project"], "study")
 
     def test_progress_update_routes_operations_and_requires_clear_confirmation(self) -> None:
         with mock.patch.object(JotService, "set_progress", return_value={"operation": "set"}) as setter:

@@ -16,6 +16,7 @@ from .models import (
     AgentContext,
     NoteSummary,
     NoteDeleteResult,
+    HeadingCommandResult,
     ProjectTreeRow,
     ProjectWorkspace,
     ProgressMutationResult,
@@ -499,7 +500,7 @@ class JotService:
         text: str,
         create_heading: bool = False,
         exact: bool = False,
-    ) -> dict[str, Any]:
+    ) -> HeadingCommandResult:
         task = self.taskwarrior.resolve_task(task_ref)
         result = add_to_task_heading_storage(
             self.config,
@@ -509,10 +510,16 @@ class JotService:
             create_heading=create_heading,
             exact=exact,
         )
-        return {
-            "task_short_uuid": task.task_short_uuid,
-            **result,
-        }
+        return HeadingCommandResult(
+            note_kind="task",
+            path=result.note_path,
+            opened=result.opened,
+            heading=result.heading,
+            heading_match=result.heading_match,
+            timestamp=result.timestamp,
+            entry=result.entry,
+            identity={"task_short_uuid": task.task_short_uuid},
+        )
 
     def add_to_chain_heading(
         self,
@@ -522,7 +529,7 @@ class JotService:
         text: str,
         create_heading: bool = False,
         exact: bool = False,
-    ) -> dict[str, Any]:
+    ) -> HeadingCommandResult:
         task = self.taskwarrior.resolve_task(task_ref)
         result = add_to_chain_heading_storage(
             self.config,
@@ -532,10 +539,19 @@ class JotService:
             create_heading=create_heading,
             exact=exact,
         )
-        return {
-            "task_short_uuid": task.task_short_uuid,
-            **result,
-        }
+        return HeadingCommandResult(
+            note_kind="chain",
+            path=result.note_path,
+            opened=result.opened,
+            heading=result.heading,
+            heading_match=result.heading_match,
+            timestamp=result.timestamp,
+            entry=result.entry,
+            identity={
+                "task_short_uuid": task.task_short_uuid,
+                "chain_id": str(task.task.get("chainID") or "").strip() or None,
+            },
+        )
 
     def add_to_project_heading(
         self,
@@ -545,7 +561,7 @@ class JotService:
         text: str,
         create_heading: bool = False,
         exact: bool = False,
-    ) -> dict[str, Any]:
+    ) -> HeadingCommandResult:
         result = add_to_project_heading_storage(
             self.config,
             project_name,
@@ -554,7 +570,16 @@ class JotService:
             create_heading=create_heading,
             exact=exact,
         )
-        return result
+        return HeadingCommandResult(
+            note_kind="project",
+            path=result.note_path,
+            opened=result.opened,
+            heading=result.heading,
+            heading_match=result.heading_match,
+            timestamp=result.timestamp,
+            entry=result.entry,
+            identity={"project": project_name},
+        )
 
     def delete_task_note(self, task_ref: str) -> NoteDeleteResult:
         task = self.taskwarrior.resolve_task(task_ref)
