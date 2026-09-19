@@ -11,6 +11,8 @@ from jot_core.notes import preview_trash_path
 from jot_tui.palette import PaletteEntry, filter_palette_entries
 from jot_tui.modals import build_command_palette_modal
 from jot_tui.state import StateBacked, TuiState
+from jot_tui.controllers.progress import apply_progress
+from jot_tui.controllers.resources import attach_resource, detach_resource, open_resource
 from jot_tui.rendering import (
     note_excerpt,
     pretty_label,
@@ -2587,12 +2589,10 @@ def build_tui(
         async def _apply_attach_resource_async(self, target: dict[str, Any], payload: dict[str, str]) -> None:
             try:
                 result = await asyncio.to_thread(
-                    self.svc.attach_resource,
-                    str(target.get("kind") or ""),
-                    task_ref=str(target.get("task_ref") or ""),
-                    project_name=str(target.get("project") or ""),
-                    target=str(payload.get("target") or ""),
-                    label=str(payload.get("label") or "") or None,
+                    attach_resource,
+                    self.svc,
+                    target,
+                    payload,
                 )
             except Exception as exc:
                 self.notify(f"Attach failed: {exc}", severity="error")
@@ -2608,7 +2608,7 @@ def build_tui(
                 return
             try:
                 with self.suspend():
-                    await asyncio.to_thread(self.svc.open_resource, target)
+                    await asyncio.to_thread(open_resource, self.svc, target)
             except Exception as exc:
                 self.notify(f"Open resource failed: {exc}", severity="error")
                 return
@@ -2617,12 +2617,10 @@ def build_tui(
         async def _apply_detach_resource_async(self, target: dict[str, Any], resource: dict[str, Any]) -> None:
             try:
                 result = await asyncio.to_thread(
-                    self.svc.detach_resource,
-                    str(target.get("kind") or ""),
-                    task_ref=str(target.get("task_ref") or ""),
-                    project_name=str(target.get("project") or ""),
-                    note_path=str(target.get("path") or ""),
-                    resource_id=int(resource.get("id") or 0),
+                    detach_resource,
+                    self.svc,
+                    target,
+                    resource,
                 )
             except Exception as exc:
                 self.notify(f"Detach failed: {exc}", severity="error")
@@ -2649,16 +2647,10 @@ def build_tui(
         async def _apply_progress_async(self, target: dict[str, Any], payload: dict[str, Any]) -> None:
             try:
                 result = await asyncio.to_thread(
-                    self.svc.update_progress,
-                    str(target.get("kind") or ""),
-                    task_ref=str(target.get("task_ref") or ""),
-                    project_name=str(target.get("project") or ""),
-                    operation=str(payload.get("operation") or ""),
-                    value=str(payload.get("value") or ""),
-                    unit=str(payload.get("unit") or "") or None,
-                    status=str(payload.get("status") or "") or None,
-                    track=str(payload.get("track") or "default"),
-                    confirm_clear=bool(payload.get("confirm_clear")),
+                    apply_progress,
+                    self.svc,
+                    target,
+                    payload,
                 )
             except Exception as exc:
                 self.notify(f"Progress update failed: {exc}", severity="error")
