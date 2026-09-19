@@ -23,7 +23,9 @@ dev = ["textual>=0.47", "rich>=13.3.3", "mypy>=1.11", "build>=1.2"]
 jot = "jot_tui.launcher:main"
 
 [tool.setuptools]
-packages = ["jot_core", "jot_tui"]
+
+[tool.setuptools.packages.find]
+include = ["jot_core*", "jot_tui*"]
 
 [tool.setuptools.package-data]
 jot_core = ["data/config-jot.toml", "data/templates/*.md", "data/hooks/*.py"]
