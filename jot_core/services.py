@@ -663,7 +663,7 @@ class JotService:
         resource_id: int,
     ) -> ResourceOperationResult:
         kind = normalize_note_kind(kind, context="resource target")
-        path = Path(note_path)
+        path = _validated_resource_note_path(self.config, kind, note_path)
         if kind == "task":
             task = self.taskwarrior.resolve_task(task_ref)
             return detach_task_resource_storage(self.config, task, note_path=path, resource_id=resource_id)
@@ -884,6 +884,24 @@ class JotService:
                 status=status,
                 track=track,
             )
+
+
+def _validated_resource_note_path(config: AppConfig, kind: str, raw_path: str) -> Path:
+    path = Path(str(raw_path or "")).expanduser()
+    roots = {
+        "task": config.tasks_dir,
+        "chain": config.chains_dir,
+        "project": config.projects_dir,
+    }
+    root = roots[kind].resolve()
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise RuntimeError(f"resource note path is outside configured note directory: {path}") from exc
+    if not resolved.is_file():
+        raise RuntimeError(f"resource note path does not exist: {path}")
+    return resolved
 
 
 def _progress_summary_for_path(path: object, *, prefix: str = "") -> str:

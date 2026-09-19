@@ -111,6 +111,14 @@ class ServiceEdgeTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "unknown resource target kind"):
             self.service.attach_resource("bad", target="x", project_name="study")
 
+        with self.assertRaisesRegex(RuntimeError, "outside configured note directory"):
+            self.service.detach_resource(
+                "task",
+                task_ref="42",
+                note_path="/tmp/outside-note.md",
+                resource_id=1,
+            )
+
     def test_heading_mutations_return_typed_command_results(self) -> None:
         mutation = HeadingMutationResult(
             Path("/tmp/note.md"), True, "Notes", "fuzzy", "2026-09-19T10:00:00Z", "entry"
@@ -217,11 +225,15 @@ class ServiceEdgeTests(unittest.TestCase):
         self.assertEqual(self.service.task_ref_for_chain_id("chain-1"), "2d6d7d7d")
 
         resource = ResourceRecord(1, "docs", "https://example.test", "url", "exists", 1, "")
-        operation = ResourceOperationResult(Path("/tmp/note.md"), resource, (resource,))
+        chain_resource_path = self.config.chains_dir / "note.md"
+        project_resource_path = self.config.projects_dir / "note.md"
+        chain_resource_path.write_text("", encoding="utf-8")
+        project_resource_path.write_text("", encoding="utf-8")
+        operation = ResourceOperationResult(chain_resource_path, resource, (resource,))
         with mock.patch("jot_core.services.detach_chain_resource_storage", return_value=operation):
-            self.service.detach_resource("chain", task_ref="42", note_path="/tmp/note.md", resource_id=1)
+            self.service.detach_resource("chain", task_ref="42", note_path=str(chain_resource_path), resource_id=1)
         with mock.patch("jot_core.services.detach_project_resource_storage", return_value=operation):
-            self.service.detach_resource("project", project_name="study", note_path="/tmp/note.md", resource_id=1)
+            self.service.detach_resource("project", project_name="study", note_path=str(project_resource_path), resource_id=1)
 
         progress_path = self.config.tasks_dir / "progress.md"
         progress_path.write_text("", encoding="utf-8")
