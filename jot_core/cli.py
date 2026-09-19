@@ -13,7 +13,6 @@ from pathlib import Path
 from . import __version__
 from .app import build_app_context
 from .command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
-from .contracts import ResourceRequest
 from .config import ensure_app_dirs
 from .doctor import run_doctor, run_doctor_config_error
 from .editor import colorize_diff, note_diff, open_in_editor
@@ -40,10 +39,6 @@ from .models import (
     PathsResult,
     RebuildIndexResult,
     RecentReport,
-    ResourceListResult,
-    ResourceCommandResult,
-    ResourceOpenResult,
-    ResourceRecord,
     SearchCommandResult,
     StatsResult,
     TimelogIngestResult,
@@ -81,22 +76,21 @@ from .report import (
     recent_activity,
 )
 from .progress_cli import run_progress as _run_progress_command
-from .resources import open_resource_target
+from .resource_cli import (
+    run_attach as _run_attach_command,
+    run_detach_resource as _run_detach_resource_command,
+    run_open_resource as _run_open_resource_command,
+    run_resources as _run_resources_command,
+)
 from .search import normalize_chain_id, normalize_kinds, normalize_project, search_all
 from .services import JotService
 from .storage import (
     add_to_chain_heading_storage,
     add_to_project_heading_storage,
     add_to_task_heading_storage,
-    attach_chain_resource_storage,
-    attach_project_resource_storage,
-    attach_task_resource_storage,
     delete_chain_note_storage,
     delete_project_note_storage,
     delete_task_note_storage,
-    detach_chain_resource_storage,
-    detach_project_resource_storage,
-    detach_task_resource_storage,
     append_chain_note_storage,
     append_project_note_storage,
     append_task_note_storage,
@@ -1931,102 +1925,19 @@ def _run_progress(ctx, args) -> CommandResult:
 
 
 def _run_resources(ctx, args) -> CommandResult:
-    note_path, identity = _existing_note_path_for_kind(ctx, args.note_kind, args.note_ref)
-    result = list_note_resources(note_path)
-    return CommandResult(
-        command="resources",
-        data=ResourceListResult(
-            note_kind=args.note_kind,
-            path=result.note_path,
-            resources=tuple(ResourceRecord.from_mapping(item) for item in result.resources),
-            identity=identity,
-        ),
-    )
+    return _run_resources_command(ctx, args, _existing_note_path_for_kind)
 
 
 def _run_attach(ctx, args) -> CommandResult:
-    request = ResourceRequest(
-        kind=args.note_kind,
-        reference=args.note_ref,
-        target=args.target,
-        label=args.label,
-    )
-    if request.kind == "task":
-        task = ctx.taskwarrior.resolve_task(request.reference)
-        result = attach_task_resource_storage(ctx.config, task, target=args.target, label=args.label)
-        identity = {"task_short_uuid": task.task_short_uuid}
-    elif request.kind == "chain":
-        task = ctx.taskwarrior.resolve_task(request.reference)
-        result = attach_chain_resource_storage(ctx.config, task, target=args.target, label=args.label)
-        identity = {"task_short_uuid": task.task_short_uuid, "chain_id": chain_id_for_task(task.task) or None}
-    else:
-        project_name = request.reference
-        result = attach_project_resource_storage(ctx.config, project_name, target=args.target, label=args.label)
-        identity = {"project": project_name}
-    return CommandResult(
-        command="attach",
-        data=ResourceCommandResult(
-            note_kind=request.kind,
-            path=result.note_path,
-            opened=result.opened,
-            resource=result.resource,
-            resources=result.resources,
-            identity=identity,
-        ),
-    )
+    return _run_attach_command(ctx, args)
 
 
 def _run_open_resource(ctx, args) -> CommandResult:
-    note_path, identity = _existing_note_path_for_kind(ctx, args.note_kind, args.note_ref)
-    resources = list_note_resources(note_path).resources
-    resource = next((item for item in resources if int(item.get("id") or 0) == args.resource_id), None)
-    if resource is None:
-        raise RuntimeError(f"resource {args.resource_id} not found")
-    command = open_resource_target(str(resource.get("target") or ""))
-    return CommandResult(
-        command="open-resource",
-        data=ResourceOpenResult(
-            note_kind=args.note_kind,
-            path=note_path,
-            resource=ResourceRecord.from_mapping(resource),
-            opener=tuple(command),
-            identity=identity,
-        ),
-    )
+    return _run_open_resource_command(ctx, args, _existing_note_path_for_kind)
 
 
 def _run_detach_resource(ctx, args) -> CommandResult:
-    note_path, identity = _existing_note_path_for_kind(ctx, args.note_kind, args.note_ref)
-    request = ResourceRequest(
-        kind=args.note_kind,
-        reference=args.note_ref,
-        resource_id=args.resource_id,
-        note_path=str(note_path),
-    )
-    if request.kind == "task":
-        task = ctx.taskwarrior.resolve_task(request.reference)
-        result = detach_task_resource_storage(ctx.config, task, note_path=note_path, resource_id=args.resource_id)
-    elif request.kind == "chain":
-        task = ctx.taskwarrior.resolve_task(request.reference)
-        result = detach_chain_resource_storage(ctx.config, task, note_path=note_path, resource_id=args.resource_id)
-    else:
-        project_name = request.reference
-        result = detach_project_resource_storage(
-            ctx.config,
-            project_name,
-            note_path=note_path,
-            resource_id=args.resource_id,
-        )
-    return CommandResult(
-        command="detach-resource",
-        data=ResourceCommandResult(
-            note_kind=request.kind,
-            path=result.note_path,
-            resource=result.resource,
-            resources=result.resources,
-            identity=identity,
-        ),
-    )
+    return _run_detach_resource_command(ctx, args, _existing_note_path_for_kind)
 
 
 def _run_task_delete(ctx, task_ref: str) -> CommandResult:

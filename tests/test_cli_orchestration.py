@@ -189,22 +189,22 @@ class CliOrchestrationTests(unittest.TestCase):
         resource = ResourceRecord(1, "docs", "https://example.test", "url", "exists", 1, "")
         operation = ResourceOperationResult(Path("/tmp/task.md"), resource, (resource,), opened=True)
         args = SimpleNamespace(note_kind="task", note_ref="42", target="https://example.test", label="docs")
-        with mock.patch("jot_core.cli.attach_task_resource_storage", return_value=operation) as attach:
+        with mock.patch("jot_core.resource_cli.attach_task_resource_storage", return_value=operation) as attach:
             result = cli._run_attach(self.ctx, args)
         self.assertEqual(result.data.note_kind, "task")
         attach.assert_called_once()
 
         args = SimpleNamespace(note_kind="task", note_ref="42", resource_id=1)
         with mock.patch("jot_core.cli._existing_note_path_for_kind", return_value=(Path("/tmp/task.md"), {"task_short_uuid": "2d6d7d7d"})), mock.patch(
-            "jot_core.cli.list_note_resources", return_value=SimpleNamespace(resources=[resource.to_payload()])
-        ), mock.patch("jot_core.cli.open_resource_target", return_value=["xdg-open", "https://example.test"]):
+            "jot_core.resource_cli.list_note_resources", return_value=SimpleNamespace(resources=[resource.to_payload()])
+        ), mock.patch("jot_core.resource_cli.open_resource_target", return_value=["xdg-open", "https://example.test"]):
             result = cli._run_open_resource(self.ctx, args)
         self.assertEqual(result.data.resource.target, "https://example.test")
         self.assertEqual(result.data.opener, ("xdg-open", "https://example.test"))
 
         args = SimpleNamespace(note_kind="project", note_ref="study", note_path="/tmp/project.md", resource_id=1)
         with mock.patch("jot_core.cli._existing_note_path_for_kind", return_value=(Path("/tmp/project.md"), {"project": "study"})), mock.patch(
-            "jot_core.cli.detach_project_resource_storage", return_value=operation
+            "jot_core.resource_cli.detach_project_resource_storage", return_value=operation
         ) as detach:
             result = cli._run_detach_resource(self.ctx, args)
         self.assertEqual(result.command, "detach-resource")
