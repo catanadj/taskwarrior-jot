@@ -49,6 +49,13 @@ Use `color = "never"` for plain output. `NO_COLOR` always disables styling.
 
 ## Timelog Hook
 
+The remote bootstrap leaves the hook disabled unless explicitly requested:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/catanadj/taskwarrior-jot/main/bootstrap.sh \
+  | bash -s -- --with-timelog-hook
+```
+
 The installer can optionally install the Taskwarrior timelog hook:
 
 ```bash

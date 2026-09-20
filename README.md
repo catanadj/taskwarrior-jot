@@ -10,6 +10,18 @@ going.
 
 ## Install
 
+For a direct install of the latest tagged release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/catanadj/taskwarrior-jot/main/bootstrap.sh | bash
+```
+
+For an audited install, download `bootstrap.sh`, inspect it, and run it locally.
+The bootstrap supports `--version`, `--prefix`, `--taskdata`, `--dry-run`, and
+explicit timelog-hook options.
+
+For a local checkout:
+
 ```bash
 ./install.sh
 ```

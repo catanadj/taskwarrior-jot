@@ -2,11 +2,24 @@
 
 ## Install
 
-From the repository:
+For a direct install of the latest tagged release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/catanadj/taskwarrior-jot/main/bootstrap.sh | bash
+```
+
+For an audited install, download `bootstrap.sh`, inspect it, and run it locally.
+Use `--dry-run` to validate the release without installing it.
+
+From a local repository checkout:
 
 ```bash
 ./install.sh
 ```
+
+The bootstrap and local installer both preserve existing notes, configuration,
+templates, and non-Jot hooks. Use `--taskdata` or `TASKDATA` when the
+Taskwarrior data directory is not `~/.task`.
 
 The installer discovers the active Taskwarrior data directory and installs
 `jot` to `~/.local/bin/jot`. Run `jot paths` to inspect the paths it selected,
