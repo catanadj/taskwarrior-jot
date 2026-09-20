@@ -7,34 +7,25 @@ BIN_DIR="$PREFIX/bin"
 LIB_DIR="$PREFIX/lib/jot"
 REMOVE_TIMELOG_HOOK="no"
 
-resolve_taskdata_dir() {
-  if [[ -n "${TASKDATA:-}" ]]; then
-    printf '%s\n' "$TASKDATA"
-    return
-  fi
-  local taskrc="${TASKRC:-$HOME/.taskrc}"
-  if [[ -f "$taskrc" ]]; then
-    local line value
-    while IFS= read -r line; do
-      line="${line%%#*}"
-      line="${line#"${line%%[![:space:]]*}"}"
-      line="${line%"${line##*[![:space:]]}"}"
-      case "$line" in
-        data.location=*|data.location\ =*|rc.data.location=*|rc.data.location\ =*)
-          value="${line#*=}"
-          value="${value#"${value%%[![:space:]]*}"}"
-          value="${value%"${value##*[![:space:]]}"}"
-          value="${value%\"}"; value="${value#\"}"
-          value="${value%\'}"; value="${value#\'}"
-          if [[ -n "$value" ]]; then
-            printf '%s\n' "$value"
-            return
-          fi
-          ;;
-      esac
-    done < "$taskrc"
-  fi
-  printf '%s\n' "$HOME/.task"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
+  echo "error: jot requires Python 3.11 or newer" >&2
+  exit 1
+fi
+
+resolve_taskwarrior_environment() {
+  PYTHONPATH="$SCRIPT_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 - <<'PY'
+import sys
+
+from jot_core.config import TaskwarriorEnvironment
+
+resolved = TaskwarriorEnvironment.resolve()
+print(resolved.data_path)
+print(resolved.hooks_path)
+for warning in resolved.warnings:
+    print(f"warning: {warning}", file=sys.stderr)
+PY
 }
 
 usage() {
@@ -85,13 +76,18 @@ elif [[ -e "$BIN_DIR/jot" ]]; then
   echo "Kept non-Jot file: $BIN_DIR/jot"
 fi
 
-TASKDATA_DIR="$(resolve_taskdata_dir)"
-TASKDATA_DIR="${TASKDATA_DIR/#\~/$HOME}"
+mapfile -t TASK_ENVIRONMENT < <(resolve_taskwarrior_environment)
+if [[ "${#TASK_ENVIRONMENT[@]}" -lt 2 ]]; then
+  echo "error: could not resolve the Taskwarrior environment" >&2
+  exit 1
+fi
+TASKDATA_DIR="${TASK_ENVIRONMENT[0]}"
+TASK_HOOKS_DIR="${TASK_ENVIRONMENT[1]}"
 TIMELOG_HOOK_SRC="$LIB_DIR/current/hooks/on-modify_jot_timelog.py"
 if [[ ! -f "$TIMELOG_HOOK_SRC" ]]; then
   TIMELOG_HOOK_SRC="$LIB_DIR/hooks/on-modify_jot_timelog.py"
 fi
-TIMELOG_HOOK_DST="$TASKDATA_DIR/hooks/on-modify_jot_timelog.py"
+TIMELOG_HOOK_DST="$TASK_HOOKS_DIR/on-modify_jot_timelog.py"
 if [[ "$REMOVE_TIMELOG_HOOK" == "yes" && -e "$TIMELOG_HOOK_DST" ]]; then
   if [[ -f "$TIMELOG_HOOK_SRC" ]] && cmp -s "$TIMELOG_HOOK_SRC" "$TIMELOG_HOOK_DST"; then
     rm -f "$TIMELOG_HOOK_DST"

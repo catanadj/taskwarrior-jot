@@ -5499,6 +5499,33 @@ class InstallLifecycleTests(unittest.TestCase):
         self.assertIn(f"Task data directory:\n  {effective_data}", result.stdout)
         self.assertIn(f"Task hooks directory:\n  {effective_hooks}", result.stdout)
 
+    def test_uninstaller_uses_effective_taskwarrior_hooks_location(self) -> None:
+        taskrc = self.root / "custom.taskrc"
+        taskrc.write_text("include nested.taskrc\n", encoding="utf-8")
+        effective_data = self.root / "effective-data"
+        effective_hooks = self.root / "effective-hooks"
+        calls = self.root / "environment-calls.json"
+        task_bin = self.root / "task"
+        _write_environment_task_script(
+            task_bin,
+            data_location=effective_data,
+            hooks_location=effective_hooks,
+            calls_path=calls,
+        )
+        self.env.pop("TASKDATA", None)
+        self.env["TASKRC"] = str(taskrc)
+        self.env["PATH"] = f"{self.root}:{self.env['PATH']}"
+
+        installed = self.run_script("install.sh", "--with-timelog-hook")
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        hook = effective_hooks / "on-modify_jot_timelog.py"
+        self.assertTrue(hook.exists())
+
+        removed = self.run_script("uninstall.sh", "--remove-timelog-hook")
+
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        self.assertFalse(hook.exists())
+
     def test_installed_timelog_hook_is_executable_and_imports_canonical_hook(self) -> None:
         installed = self.run_script("install.sh", "--no-timelog-hook")
         self.assertEqual(installed.returncode, 0, installed.stderr)
