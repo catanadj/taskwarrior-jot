@@ -5442,6 +5442,15 @@ class InstallLifecycleTests(unittest.TestCase):
             (self.prefix / "lib" / "jot" / "jot").resolve().parent,
         )
 
+        interrupted = self.prefix / "lib" / "jot" / "runtimes" / ".runtime.interrupted"
+        interrupted.mkdir()
+        (interrupted / ".jot-installing").touch()
+        recovered = self.run_script("install.sh", "--no-timelog-hook")
+
+        self.assertEqual(recovered.returncode, 0, recovered.stderr)
+        self.assertFalse(interrupted.exists())
+        self.assertTrue(first_runtime.exists())
+
     def test_existing_timelog_hook_requires_explicit_replacement(self) -> None:
         first = self.run_script("install.sh", "--with-timelog-hook")
         self.assertEqual(first.returncode, 0, first.stderr)

@@ -152,7 +152,20 @@ for required in \
 done
 
 STAGE_DIR="$(mktemp -d "$PREFIX/.jot-install.XXXXXX")"
-trap 'rm -rf "$STAGE_DIR"' EXIT
+RUNTIME_DIR=""
+ACTIVATION_TMP=""
+cleanup_install() {
+  rm -rf "$STAGE_DIR"
+  if [[ -n "$ACTIVATION_TMP" ]]; then
+    rm -f "$ACTIVATION_TMP"
+  fi
+  if [[ -n "$RUNTIME_DIR" && -e "$RUNTIME_DIR/.jot-installing" ]]; then
+    if [[ ! -L "$LIB_DIR/current" || "$(readlink -f "$LIB_DIR/current")" != "$(readlink -f "$RUNTIME_DIR")" ]]; then
+      rm -rf "$RUNTIME_DIR"
+    fi
+  fi
+}
+trap cleanup_install EXIT HUP INT TERM
 
 install -m 755 "$SCRIPT_DIR/jot" "$STAGE_DIR/jot"
 tar -C "$SCRIPT_DIR" \
@@ -171,38 +184,52 @@ install -m 755 "$DATA_DIR/hooks/on-modify_jot_timelog.py" "$STAGE_DIR/hooks/on-m
 
 RUNTIME_ROOT="$LIB_DIR/runtimes"
 mkdir -p "$RUNTIME_ROOT"
+for marker in "$RUNTIME_ROOT"/.runtime.*/.jot-installing; do
+  if [[ -e "$marker" ]]; then
+    candidate="${marker%/.jot-installing}"
+    if [[ ! -L "$LIB_DIR/current" || "$(readlink -f "$LIB_DIR/current")" != "$(readlink -f "$candidate")" ]]; then
+      rm -rf "$candidate"
+    fi
+  fi
+done
 RUNTIME_DIR="$(mktemp -d "$RUNTIME_ROOT/.runtime.XXXXXX")"
+touch "$RUNTIME_DIR/.jot-installing"
 cp -R "$STAGE_DIR/." "$RUNTIME_DIR/"
 
 if ! "$RUNTIME_DIR/jot" --version >/dev/null; then
   echo "error: staged runtime failed verification" >&2
   exit 1
 fi
+rm -f "$RUNTIME_DIR/.jot-installing"
 
 if [[ -e "$LIB_DIR/jot" && ! -L "$LIB_DIR/jot" ]]; then
   LEGACY_RUNTIME="$(mktemp -d "$RUNTIME_ROOT/.runtime-legacy.XXXXXX")"
+  touch "$LEGACY_RUNTIME/.jot-installing"
   for component in jot jot_core jot_tui hooks templates config-jot.toml; do
     if [[ -e "$LIB_DIR/$component" ]]; then
       mv "$LIB_DIR/$component" "$LEGACY_RUNTIME/$component"
     fi
   done
+  rm -f "$LEGACY_RUNTIME/.jot-installing"
 fi
 
 activate_link() {
   local target="$1"
   local link="$2"
   local temporary="${link}.new.$$"
+  ACTIVATION_TMP="$temporary"
   rm -f "$temporary"
   ln -s "$target" "$temporary"
   mv -Tf "$temporary" "$link"
+  ACTIVATION_TMP=""
 }
 
-activate_link "$RUNTIME_DIR" "$LIB_DIR/current"
 activate_link "current/jot" "$LIB_DIR/jot"
 for component in jot_core jot_tui hooks templates; do
   activate_link "current/$component" "$LIB_DIR/$component"
 done
 activate_link "$LIB_DIR/jot" "$BIN_DIR/jot"
+activate_link "$RUNTIME_DIR" "$LIB_DIR/current"
 ACTIVE_DIR="$LIB_DIR/current"
 
 TIMELOG_HOOK_SRC="$ACTIVE_DIR/hooks/on-modify_jot_timelog.py"
