@@ -169,12 +169,43 @@ cp -R "$DATA_DIR/templates/." "$STAGE_DIR/templates/"
 mkdir -p "$STAGE_DIR/hooks"
 install -m 755 "$DATA_DIR/hooks/on-modify_jot_timelog.py" "$STAGE_DIR/hooks/on-modify_jot_timelog.py"
 
-mkdir -p "$LIB_DIR"
-rm -rf "$LIB_DIR/jot_core" "$LIB_DIR/jot_tui" "$LIB_DIR/hooks" "$LIB_DIR/templates"
-cp -R "$STAGE_DIR/." "$LIB_DIR/"
-ln -sfn "$LIB_DIR/jot" "$BIN_DIR/jot"
+RUNTIME_ROOT="$LIB_DIR/runtimes"
+mkdir -p "$RUNTIME_ROOT"
+RUNTIME_DIR="$(mktemp -d "$RUNTIME_ROOT/.runtime.XXXXXX")"
+cp -R "$STAGE_DIR/." "$RUNTIME_DIR/"
 
-TIMELOG_HOOK_SRC="$LIB_DIR/hooks/on-modify_jot_timelog.py"
+if ! "$RUNTIME_DIR/jot" --version >/dev/null; then
+  echo "error: staged runtime failed verification" >&2
+  exit 1
+fi
+
+if [[ -e "$LIB_DIR/jot" && ! -L "$LIB_DIR/jot" ]]; then
+  LEGACY_RUNTIME="$(mktemp -d "$RUNTIME_ROOT/.runtime-legacy.XXXXXX")"
+  for component in jot jot_core jot_tui hooks templates config-jot.toml; do
+    if [[ -e "$LIB_DIR/$component" ]]; then
+      mv "$LIB_DIR/$component" "$LEGACY_RUNTIME/$component"
+    fi
+  done
+fi
+
+activate_link() {
+  local target="$1"
+  local link="$2"
+  local temporary="${link}.new.$$"
+  rm -f "$temporary"
+  ln -s "$target" "$temporary"
+  mv -Tf "$temporary" "$link"
+}
+
+activate_link "$RUNTIME_DIR" "$LIB_DIR/current"
+activate_link "current/jot" "$LIB_DIR/jot"
+for component in jot_core jot_tui hooks templates; do
+  activate_link "current/$component" "$LIB_DIR/$component"
+done
+activate_link "$LIB_DIR/jot" "$BIN_DIR/jot"
+ACTIVE_DIR="$LIB_DIR/current"
+
+TIMELOG_HOOK_SRC="$ACTIVE_DIR/hooks/on-modify_jot_timelog.py"
 TIMELOG_HOOK_DIR="$TASK_HOOKS_DIR"
 TIMELOG_HOOK_DST="$TIMELOG_HOOK_DIR/on-modify_jot_timelog.py"
 if should_install_timelog_hook; then

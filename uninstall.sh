@@ -87,7 +87,10 @@ fi
 
 TASKDATA_DIR="$(resolve_taskdata_dir)"
 TASKDATA_DIR="${TASKDATA_DIR/#\~/$HOME}"
-TIMELOG_HOOK_SRC="$LIB_DIR/hooks/on-modify_jot_timelog.py"
+TIMELOG_HOOK_SRC="$LIB_DIR/current/hooks/on-modify_jot_timelog.py"
+if [[ ! -f "$TIMELOG_HOOK_SRC" ]]; then
+  TIMELOG_HOOK_SRC="$LIB_DIR/hooks/on-modify_jot_timelog.py"
+fi
 TIMELOG_HOOK_DST="$TASKDATA_DIR/hooks/on-modify_jot_timelog.py"
 if [[ "$REMOVE_TIMELOG_HOOK" == "yes" && -e "$TIMELOG_HOOK_DST" ]]; then
   if [[ -f "$TIMELOG_HOOK_SRC" ]] && cmp -s "$TIMELOG_HOOK_SRC" "$TIMELOG_HOOK_DST"; then
@@ -98,9 +101,7 @@ if [[ "$REMOVE_TIMELOG_HOOK" == "yes" && -e "$TIMELOG_HOOK_DST" ]]; then
   fi
 fi
 
-rm -rf "$LIB_DIR/jot_core" "$LIB_DIR/jot_tui" "$LIB_DIR/hooks" "$LIB_DIR/templates"
-rm -f "$LIB_DIR/jot" "$LIB_DIR/config-jot.toml"
-rmdir "$LIB_DIR" 2>/dev/null || true
+rm -rf "$LIB_DIR"
 
 cat <<EOF
 Removed:

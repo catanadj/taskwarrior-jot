@@ -5430,6 +5430,18 @@ class InstallLifecycleTests(unittest.TestCase):
         self.assertEqual(template.read_text(encoding="utf-8"), "# My task template\n")
         self.assertTrue((self.prefix / "bin" / "jot").is_symlink())
 
+        first_runtime = next((self.prefix / "lib" / "jot" / "runtimes").iterdir())
+        upgraded = self.run_script("install.sh", "--no-timelog-hook")
+
+        self.assertEqual(upgraded.returncode, 0, upgraded.stderr)
+        runtimes = list((self.prefix / "lib" / "jot" / "runtimes").iterdir())
+        self.assertGreaterEqual(len(runtimes), 2)
+        self.assertTrue(first_runtime.exists())
+        self.assertEqual(
+            (self.prefix / "lib" / "jot" / "current").resolve(),
+            (self.prefix / "lib" / "jot" / "jot").resolve().parent,
+        )
+
     def test_existing_timelog_hook_requires_explicit_replacement(self) -> None:
         first = self.run_script("install.sh", "--with-timelog-hook")
         self.assertEqual(first.returncode, 0, first.stderr)
@@ -5444,6 +5456,24 @@ class InstallLifecycleTests(unittest.TestCase):
         replaced = self.run_script("install.sh", "--with-timelog-hook", "--replace-timelog-hook")
         self.assertEqual(replaced.returncode, 0, replaced.stderr)
         self.assertNotEqual(hook.read_text(encoding="utf-8"), "custom hook\n")
+
+    def test_upgrade_migrates_legacy_flat_runtime(self) -> None:
+        library = self.prefix / "lib" / "jot"
+        library.mkdir(parents=True)
+        shutil.copy2(PROJECT_ROOT / "jot", library / "jot")
+        for component in ("jot_core", "jot_tui"):
+            shutil.copytree(PROJECT_ROOT / component, library / component)
+        shutil.copytree(PROJECT_ROOT / "jot_core" / "data" / "hooks", library / "hooks")
+        shutil.copytree(PROJECT_ROOT / "jot_core" / "data" / "templates", library / "templates")
+        shutil.copy2(PROJECT_ROOT / "jot_core" / "data" / "config-jot.toml", library / "config-jot.toml")
+
+        installed = self.run_script("install.sh", "--no-timelog-hook")
+
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        runtimes = list((library / "runtimes").iterdir())
+        self.assertEqual(len(runtimes), 2)
+        self.assertTrue((library / "current" / "jot_core" / "cli.py").exists())
+        self.assertTrue((runtimes[0] / "jot_core" / "cli.py").exists())
 
     def test_installer_uses_effective_taskwarrior_hooks_location(self) -> None:
         taskrc = self.root / "custom.taskrc"
