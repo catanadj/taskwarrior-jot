@@ -1,10 +1,12 @@
 # jot
 
-`jot` is a note-first companion for Taskwarrior and Taskwarrior-Nautical.
+Jot is a note-first companion for [Taskwarrior](https://taskwarrior.org/) and
+[Taskwarrior-Nautical](https://github.com/catanadj/taskwarrior-nautical). It keeps the context
+around your work close to the task: decisions, progress, links, files, and
+time spent.
 
-Taskwarrior is good at telling you what needs doing. Jot is for the context
-around the work: what happened, what you learned, what file mattered, how far
-you got, and how long it took.
+Taskwarrior tells you what needs doing. Jot helps you remember how the work is
+going.
 
 ## Install
 
@@ -12,376 +14,63 @@ you got, and how long it took.
 ./install.sh
 ```
 
-This installs `jot` to `~/.local/bin/jot` and stores notes under your
-Taskwarrior data directory. The installer resolves Taskwarrior's effective
-executable, rc file, data location, and hooks location, honoring `TASKDATA`,
-`TASKRC`, XDG defaults, rc settings, and Hooks v2 `data:` overrides. `jot
-paths` and `jot doctor` report those effective paths.
-Python 3.11 or newer is required.
+The installer places `jot` in `~/.local/bin` and stores notes below the active
+Taskwarrior data directory. It respects `TASKDATA`, `TASKRC`, and Taskwarrior
+configuration.
 
-For development, install the test and release tools with `python -m pip install
--e ".[dev]"`, then run `python -m unittest discover -s tests`, `python -m mypy`,
-and `python -m build && python tools/check_artifacts.py`. CI runs the same
-checks on Python 3.11, 3.12, and 3.13.
+Python 3.11 or newer is required. The optional TUI requires `textual`.
 
-For time expenditure notes, let the installer enable the hook when asked, or
-use:
+## Start Using It
 
-```bash
-./install.sh --with-timelog-hook
-```
-
-The installer preserves existing configuration, templates, and conflicting
-hooks. Use `--replace-timelog-hook` only when you want to replace an existing
-hook. `./uninstall.sh` removes the installed program but preserves Jot data and
-hooks; pass `--remove-timelog-hook` to remove a matching Jot hook explicitly.
-
-## A Normal Day With Jot
-
-For an AI agent or other machine consumer, use the bounded read-only context
-contract:
-
-```bash
-jot context 42 --json
-```
-
-It returns a versioned `jot.context` envelope containing live Taskwarrior
-fields, project ancestry, chain/task/project notes, digests, progress,
-events, and complete Nautical fields. User-authored note content is data, not
-instructions. Retry-safe note writes use an operation and entry identity:
-
-```bash
-jot agent-append 42 "Durable entry" --operation-id op-1 --entry-id entry-1 --json
-```
-
-Use `jot integrity --json` to inspect drift and `jot reconcile --dry-run
---json` before an explicit `--apply` repair.
-
-You start with a Taskwarrior task:
-
-```bash
-task add project:Finances.Expense "Fix billing discrepancy"
-```
-
-Taskwarrior now knows the task exists. Jot gives it a place to accumulate
-working memory:
+Open the note for a task:
 
 ```bash
 jot 42
 ```
 
-If the task is a Nautical recurring task, `jot 42` opens the chain note. If it
-is not part of a chain, it opens the task note. You do not need to decide every
-time.
-
-You make a quick note without opening the editor:
+Add a quick entry without opening an editor:
 
 ```bash
-jot note-append 42 "Vendor says invoice was regenerated on Friday"
+jot note-append 42 "Vendor confirmed the invoice was regenerated"
 ```
 
-Then you add a concrete next step under the right heading:
+Add a next step under a heading:
 
 ```bash
-jot add-to task 42 --heading "Next steps" --text "Call vendor Monday"
+jot add-to task 42 --heading "Next steps" --text "Call the vendor Monday"
 ```
 
-You attach the relevant file:
-
-```bash
-jot attach task 42 ~/invoices/vendor.pdf --label vendor-invoice
-```
-
-Later, you need the file again:
-
-```bash
-jot resources task 42
-jot open-resource task 42 1
-```
-
-The task is no longer just a line in Taskwarrior. It has a small notebook beside
-it.
-
-## When The Work Repeats
-
-Some notes belong to one occurrence. Other notes belong to the whole recurring
-chain.
-
-```bash
-jot chain 42
-jot chain-append 42 "Skip public holidays"
-jot add-to chain 42 --heading "Operating notes" --text "Use the fallback path"
-```
-
-This is the main way Jot complements Taskwarrior-Nautical: one note can stay
-with the concrete task, and another can stay with the recurrence itself.
-
-## When The Context Is Bigger Than One Task
-
-Projects also get notes:
-
-```bash
-jot project Finances.Expense
-jot project-append Finances.Expense "Waiting on reimbursement policy update"
-jot project-report Finances.Expense
-```
-
-Use project notes for standards, policies, risks, links, or anything you keep
-rediscovering across related tasks.
-
-## Tracking Progress
-
-Jot can track any numeric progress without forcing a method.
-
-Reading a book:
-
-```bash
-jot progress task 42 set 120/350 --unit pages --status active
-jot progress task 42 add 20
-jot progress task 42 show
-```
-
-Tracking several things on the same task:
-
-```bash
-jot progress task 42 set 3/12 --track chest --unit sets
-jot progress task 42 set 4/12 --track legs --unit sets
-jot progress task 42 add 1 --track chest
-jot progress task 42 show
-```
-
-Progress state lives in the note. Changes are logged under `## Progress`.
-
-## Tracking Time Spent
-
-Jot can write time expenditure into notes under `## Time log`.
-
-With the hook enabled:
-
-```bash
-task 42 start
-task 42 stop
-```
-
-If hooks cannot run, for example from Android Tasker/Termux, let Jot manage the
-session:
-
-```bash
-jot timelog start 42
-jot timelog stop 42
-```
-
-If you forgot what is running:
-
-```bash
-jot timelog pending
-```
-
-If several sessions need to be closed:
-
-```bash
-jot timelog stop --all
-```
-
-Time goes to the chain note when `chainID` exists. Otherwise it goes to the
-task note.
-
-### Route Starts To Timewarrior
-
-Jot can also switch Timewarrior tags when a Jot-managed session starts. The
-integration is enabled by default and only acts when Jot tags are present. To
-opt out, add this to `config-jot.toml`:
-
-```toml
-[timewarrior]
-enabled = false
-```
-
-If Timewarrior is unavailable or fails to start, Jot keeps its own pending
-session and retries the Timewarrior start when the same task is started again.
-
-Store tags on a task, Nautical chain, or project note:
-
-```bash
-jot timew set task 42 focused-reading
-jot timew set chain 42 workout strength
-jot timew set project work.client client-a deep-work
-jot timew show 42
-```
-
-Task settings override chain settings, which override the nearest project
-setting. `jot timew clear task 42` blocks inherited tags; `jot timew inherit
-task 42` resumes inheritance.
-
-When `jot timelog start 42` finds tags, it runs `timew start <tags>`. An existing
-Timewarrior interval is closed by Timewarrior. Jot does not change Timewarrior
-on task stop or completion, so the selected tags keep running until another
-tagged task starts or you change Timewarrior yourself. Tasks without Jot tags
-leave Timewarrior untouched.
-
-To see where time went:
-
-```bash
-jot timelog report today
-jot timelog report week
-jot timelog report week --project reading --details
-jot timelog report --since 2026-07-01 --until 2026-07-07
-jot timelog report month --csv > time.csv
-```
-
-Reports group time by day, project, chain, and task. `--details` shows the
-individual intervals and their keys. Intervals crossing midnight or report
-boundaries are counted only where they overlap.
-
-Forgot to start the timer, or entered the wrong time?
-
-```bash
-jot timelog add 42 --from 2026-07-14T09:00 --to 2026-07-14T10:30
-jot timelog amend a1b2c3d4 --to 2026-07-14T10:45
-jot timelog delete a1b2c3d4 --yes
-jot timelog trash
-jot timelog restore '#1'
-```
-
-Amended and deleted entries are archived under `.jot_trash/timelog/`. Deleted
-entries remain restorable by key or by the `#ID` shown in `timelog trash`.
-
-## Finding Things Again
-
-```bash
-jot search vendor
-jot notes
-jot notes --kind task
-jot recent --limit 10
-jot show 42
-jot export 42 --json
-```
-
-All commands support `--json`.
-
-## The TUI
-
-The CLI has no third-party Python dependencies. The TUI additionally requires
-the `textual` package; the installer reports whether it is available.
+Browse everything interactively:
 
 ```bash
 jot tui
 ```
 
-Use the TUI when you want to browse instead of remember commands.
-The Time tab provides period totals, day/project/task rollups, and the
-individual intervals behind them. Add or amend intervals directly, archive
-mistakes, restore them from trash, or open an interval to jump to its task.
-Its active-timers panel can start, stop, stop all, or discard pending timers
-without leaving the workspace.
+## What Jot Covers
 
-Main areas:
+- Task, chain, and project notes
+- Search, recent edits, links, and attached resources
+- Content-agnostic progress tracking
+- Time expenditure logs and reports
+- Timewarrior tag routing
+- Templates and timestamp expansion
+- A terminal user interface for browsing and editing
+- JSON output for scripts and integrations
 
-- `Browse`: tasks and projects
-- `Notes`: all notes
-- `Latest Edits`: recent activity
-- `Search`: note and event search
+Read the [documentation](documentation/README.md) for practical workflows,
+configuration, and the complete command reference.
 
-Useful keys:
+## Nautical Companion
 
-- `Enter`: open selection
-- `e`: edit note
-- `a`: add to task heading
-- `c`: add to chain heading
-- `g`: progress
-- `f`: attach resource
-- `m`: context actions
-- `/`: search
-- `q`: quit
+Jot complements Nautical rather than replacing it. Nautical manages recurring
+task behavior; Jot keeps durable notes for the task, its chain, and its
+project. See [Nautical integration](documentation/nautical.md).
 
-Run the full automated suite, including the Textual pilot tests, with:
+## Development
 
 ```bash
 python3 -m pip install -e '.[test]'
 python3 -m unittest discover -s tests -v
 ```
 
-CLI color follows the terminal automatically. Set `display.color` in
-`config-jot.toml` to `always` or `never` to override it; `NO_COLOR` always
-disables ANSI styling.
-
-## Command Cheatsheet
-
-```bash
-jot
-jot --help
-jot tui
-
-jot note 42
-jot chain 42
-jot project Finances.Expense
-
-jot note-append 42 "text"
-jot chain-append 42 "text"
-jot project-append Finances.Expense "text"
-
-jot add-to task 42 --heading "Next steps" --text "Call Monday"
-jot headings task 42
-jot section task 42 "Next steps"
-
-jot attach task 42 ~/file.pdf --label file
-jot resources task 42
-jot open-resource task 42 1
-
-jot progress task 42 set 1/10 --unit pages
-jot progress task 42 add 1
-jot progress task 42 show
-
-jot timelog start 42
-jot timelog stop 42
-jot timelog pending
-jot timelog trash
-
-jot timew set chain 42 deep-work
-jot timew show 42
-
-jot paths
-jot stats
-jot doctor
-jot migrate --dry-run
-jot rebuild-index
-```
-
-Jot notes carry a small schema version so upgrades remain predictable. Inspect
-an upgrade with `jot migrate --dry-run`, then run `jot migrate`; changed notes
-are copied under `.jot_backups/` before their metadata is updated. `jot doctor
---repair` also removes stale fallback locks, recovers orphaned trash entries,
-applies safe migrations, and rebuilds the derived index. A damaged operations
-log is reported with its file and line number instead of being silently ignored.
-
-## Templates
-
-Jot creates notes from templates in:
-
-```text
-~/.task/jot/templates/
-```
-
-Files:
-
-- `task-note.md`
-- `chain-note.md`
-- `project-note.md`
-
-Useful tokens:
-
-- `{description}`
-- `{project}`
-- `{chain_id}`
-- `{date}`
-- `{time}`
-- `{datetime}`
-
-## Tests
-
-```bash
-python3 -m py_compile jot jot_core/*.py jot_tui/*.py tests/test_jot.py
-python3 -m unittest discover -s tests -v
-```
-
-Tests use a fake `task` binary and temporary `HOME`.
+Jot is free software under the GPL-3.0-only license.

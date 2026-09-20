@@ -1,0 +1,15 @@
+site_name: Jot
+site_description: A practical notebook companion for Taskwarrior and Taskwarrior-Nautical.
+repo_url: https://github.com/catanadj/taskwarrior-jot
+docs_dir: documentation
+nav:
+  - Home: README.md
+  - Getting started: getting-started.md
+  - Notes and resources: notes.md
+  - Progress and time: progress-and-time.md
+  - Terminal UI: tui.md
+  - Configuration: configuration.md
+  - Nautical integration: nautical.md
+  - Command reference: reference.md
+theme:
+  name: readthedocs
