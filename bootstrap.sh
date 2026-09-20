@@ -193,3 +193,8 @@ LAUNCHER="$PREFIX/bin/jot"
 [[ -x "$LAUNCHER" ]] || die "installation did not create an executable launcher: $LAUNCHER"
 VERSION_OUTPUT="$($LAUNCHER --version)"
 printf 'Installation verified: %s\n' "$VERSION_OUTPUT"
+if ! DOCTOR_OUTPUT="$($LAUNCHER doctor --installation-only --json)"; then
+  printf '%s\n' "$DOCTOR_OUTPUT" >&2
+  die "installation Doctor failed"
+fi
+printf 'Installation Doctor passed\n'

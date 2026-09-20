@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import hashlib
@@ -69,6 +70,49 @@ class BootstrapTests(unittest.TestCase):
             )
             self.assertEqual(version.returncode, 0, version.stderr)
             self.assertTrue(version.stdout.startswith("jot "))
+
+            doctor = subprocess.run(
+                [str(launcher), "doctor", "--installation-only", "--json"],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+            self.assertEqual(doctor.returncode, 0, doctor.stderr)
+            self.assertTrue(all(item["ok"] for item in json.loads(doctor.stdout)["checks"]))
+
+    def test_installation_doctor_rejects_corrupt_runtime(self) -> None:
+        with TemporaryDirectory(prefix="jot-bootstrap-doctor-") as temporary:
+            root = Path(temporary)
+            archive = make_fixture_archive(root)
+            prefix = root / "prefix"
+            environment = dict(os.environ, HOME=str(root / "home"), TASKDATA=str(root / "taskdata"))
+
+            installed = self.run_bootstrap(
+                "--archive-url", archive.as_uri(),
+                "--prefix", str(prefix),
+                "--no-timelog-hook",
+                env=environment,
+            )
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            runtime = (prefix / "lib" / "jot" / "current").resolve()
+            (runtime / "templates" / "task-note.md").unlink()
+
+            doctor = subprocess.run(
+                [str(prefix / "bin" / "jot"), "doctor", "--installation-only", "--json"],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+
+            self.assertNotEqual(doctor.returncode, 0)
+            checks = {item["name"]: item for item in json.loads(doctor.stdout)["checks"]}
+            self.assertFalse(checks["runtime:templates/task-note.md"]["ok"])
 
     def test_checksum_mismatch_is_rejected_before_installation(self) -> None:
         with TemporaryDirectory(prefix="jot-bootstrap-checksum-") as temporary:

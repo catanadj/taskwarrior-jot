@@ -4,6 +4,7 @@ from dataclasses import asdict
 import importlib.util
 from pathlib import Path
 import shutil
+import subprocess
 import tempfile
 
 from .editor import resolve_editor_executable, split_editor_command
@@ -16,6 +17,143 @@ from .ops import ops_log_path, read_ops
 from .schema import inspect_note_schemas
 from .taskwarrior import TaskwarriorClient
 from .trash import list_trash, repair_trash
+
+
+def run_installation_doctor(
+    runtime_root: Path | None = None,
+) -> CommandResult[DoctorReport]:
+    """Validate the installed runtime without reading user data or config."""
+    runtime = (runtime_root or Path(__file__).resolve().parent.parent).resolve()
+    checks: list[DoctorCheck] = []
+
+    required_files = (
+        "jot",
+        "jot_core/__init__.py",
+        "jot_core/cli.py",
+        "jot_tui/launcher.py",
+        "templates/task-note.md",
+        "templates/chain-note.md",
+        "templates/project-note.md",
+        "hooks/on-modify_jot_timelog.py",
+    )
+    for relative in required_files:
+        path = runtime / relative
+        checks.append(
+            DoctorCheck(
+                name=f"runtime:{relative}",
+                ok=path.is_file(),
+                detail=str(path) if path.is_file() else f"missing: {path}",
+            )
+        )
+
+    launcher = runtime / "jot"
+    launcher_ok = launcher.is_file() and bool(launcher.stat().st_mode & 0o111)
+    checks.append(
+        DoctorCheck(
+            name="runtime:launcher",
+            ok=launcher_ok,
+            detail=(
+                f"executable: {launcher}"
+                if launcher_ok
+                else f"not executable: {launcher}"
+            ),
+        )
+    )
+
+    package_version: str | None = None
+    try:
+        from . import __version__
+
+        package_version = __version__
+        checks.append(
+            DoctorCheck(
+                name="runtime:version",
+                ok=True,
+                detail=f"jot {package_version}",
+            )
+        )
+    except Exception as exc:
+        checks.append(DoctorCheck(name="runtime:version", ok=False, detail=str(exc)))
+
+    if launcher_ok:
+        try:
+            result = subprocess.run(
+                [str(launcher), "--version"],
+                cwd=runtime,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=10,
+            )
+            output = result.stdout.strip()
+            checks.append(
+                DoctorCheck(
+                    name="runtime:entrypoint",
+                    ok=result.returncode == 0 and output == f"jot {package_version}",
+                    detail=output or result.stderr.strip() or f"exit code {result.returncode}",
+                )
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            checks.append(DoctorCheck(name="runtime:entrypoint", ok=False, detail=str(exc)))
+    else:
+        checks.append(
+            DoctorCheck(
+                name="runtime:entrypoint",
+                ok=False,
+                detail="skipped because the launcher is not executable",
+            )
+        )
+
+    library = runtime.parent.parent if runtime.parent.name == "runtimes" else None
+    if library is not None and library.name == "jot":
+        expected_links = {
+            "current": runtime,
+            "jot": runtime / "jot",
+            "jot_core": runtime / "jot_core",
+            "jot_tui": runtime / "jot_tui",
+            "hooks": runtime / "hooks",
+            "templates": runtime / "templates",
+        }
+        for name, expected in expected_links.items():
+            link = library / name
+            ok = link.is_symlink() and link.resolve() == expected
+            checks.append(
+                DoctorCheck(
+                    name=f"link:{name}",
+                    ok=ok,
+                    detail=(
+                        f"{link} -> {link.resolve()}"
+                        if link.is_symlink()
+                        else f"missing symlink: {link}"
+                    ),
+                )
+            )
+        bin_link = library.parent.parent / "bin" / "jot"
+        ok = bin_link.is_symlink() and bin_link.resolve() == (library / "jot").resolve()
+        checks.append(
+            DoctorCheck(
+                name="link:bin",
+                ok=ok,
+                detail=(
+                    f"{bin_link} -> {bin_link.resolve()}"
+                    if bin_link.is_symlink()
+                    else f"missing symlink: {bin_link}"
+                ),
+            )
+        )
+    else:
+        checks.append(
+            DoctorCheck(
+                name="runtime:layout",
+                ok=True,
+                detail="standalone Python package layout; managed symlinks not applicable",
+            )
+        )
+
+    return CommandResult(
+        command="doctor",
+        data=DoctorReport.from_mapping({"checks": [asdict(check) for check in checks]}),
+    )
 
 
 def run_doctor(config: AppConfig, client: TaskwarriorClient, *, repair: bool = False) -> CommandResult[DoctorReport]:

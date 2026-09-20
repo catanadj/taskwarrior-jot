@@ -15,7 +15,7 @@ from . import note_cli as _note_cli
 from .app import build_app_context
 from .command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from .config import ensure_app_dirs
-from .doctor import run_doctor, run_doctor_config_error
+from .doctor import run_doctor, run_doctor_config_error, run_installation_doctor
 from .editor import colorize_diff, note_diff, open_in_editor
 from .events import collect_event_text, format_event_text, validate_event_type
 from .frontmatter import atomic_write_text, exclusive_file_lock, parse_document, read_document
@@ -211,6 +211,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--repair",
         action="store_true",
         help="repair stale locks, migrate safe notes, and rebuild the index",
+    )
+    doctor.add_argument(
+        "--installation-only",
+        action="store_true",
+        help="validate the installed runtime without reading user data",
     )
     migrate = subparsers.add_parser(
         "migrate",
@@ -911,6 +916,14 @@ def main(argv: list[str] | None = None) -> int:
     except AmbiguousCommandPrefix as exc:
         parser.error(str(exc))
     args = parser.parse_args(argv)
+
+    if args.command == "doctor" and args.installation_only:
+        if args.repair:
+            parser.error("--installation-only cannot be combined with --repair")
+        result = run_installation_doctor()
+        emit_result(result, json_mode=args.json)
+        failed = [item for item in result.data.checks if not item.get("ok")]
+        return 1 if failed else 0
 
     try:
         ctx = build_app_context()
