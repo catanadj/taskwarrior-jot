@@ -15,9 +15,9 @@ authors = [
 dependencies = []
 
 [project.optional-dependencies]
-tui = ["textual>=0.47", "rich>=13.3.3"]
-test = ["textual>=0.47", "rich>=13.3.3"]
-dev = ["textual>=0.47", "rich>=13.3.3", "mypy>=1.11", "build>=1.2"]
+tui = ["textual>=0.50.1", "rich>=13.3.3"]
+test = ["textual>=0.50.1", "rich>=13.3.3"]
+dev = ["textual>=0.50.1", "rich>=13.3.3", "mypy>=1.11", "build>=1.2"]
 
 [project.scripts]
 jot = "jot_tui.launcher:main"
