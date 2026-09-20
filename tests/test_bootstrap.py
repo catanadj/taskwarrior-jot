@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import hashlib
 import subprocess
 import tarfile
 from tempfile import TemporaryDirectory
@@ -46,6 +47,7 @@ class BootstrapTests(unittest.TestCase):
             result = self.run_bootstrap(
                 "--version", "fixture",
                 "--archive-url", archive.as_uri(),
+                "--sha256", hashlib.sha256(archive.read_bytes()).hexdigest(),
                 "--prefix", str(prefix),
                 "--taskdata", str(taskdata),
                 "--no-timelog-hook",
@@ -67,6 +69,22 @@ class BootstrapTests(unittest.TestCase):
             )
             self.assertEqual(version.returncode, 0, version.stderr)
             self.assertTrue(version.stdout.startswith("jot "))
+
+    def test_checksum_mismatch_is_rejected_before_installation(self) -> None:
+        with TemporaryDirectory(prefix="jot-bootstrap-checksum-") as temporary:
+            root = Path(temporary)
+            archive = make_fixture_archive(root)
+            prefix = root / "prefix"
+            result = self.run_bootstrap(
+                "--archive-url", archive.as_uri(),
+                "--sha256", "0" * 64,
+                "--prefix", str(prefix),
+                env=dict(os.environ, HOME=str(root / "home")),
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("archive checksum mismatch", result.stderr)
+            self.assertFalse(prefix.exists())
 
     def test_dry_run_does_not_create_prefix(self) -> None:
         with TemporaryDirectory(prefix="jot-bootstrap-dry-") as temporary:

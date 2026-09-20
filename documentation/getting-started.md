@@ -10,6 +10,13 @@ curl -fsSL https://raw.githubusercontent.com/catanadj/taskwarrior-jot/main/boots
 
 For an audited install, download `bootstrap.sh`, inspect it, and run it locally.
 Use `--dry-run` to validate the release without installing it.
+For a checksummed release asset, pass its digest explicitly or provide a
+checksum manifest URL:
+
+```bash
+./bootstrap.sh --version v1.0.0 --sha256 SHA256_DIGEST
+./bootstrap.sh --version v1.0.0 --checksum-url CHECKSUM_FILE_URL
+```
 
 From a local repository checkout:
 

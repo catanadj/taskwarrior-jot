@@ -6,6 +6,8 @@ set -euo pipefail
 REPOSITORY="${JOT_REPOSITORY:-https://github.com/catanadj/taskwarrior-jot}"
 VERSION="${JOT_VERSION:-v0.9.0}"
 ARCHIVE_URL="${JOT_ARCHIVE_URL:-}"
+CHECKSUM="${JOT_SHA256:-}"
+CHECKSUM_URL="${JOT_CHECKSUM_URL:-}"
 PREFIX="${PREFIX:-$HOME/.local}"
 TASKDATA_PATH="${TASKDATA:-$HOME/.task}"
 INSTALL_TIMELOG_HOOK="no"
@@ -24,6 +26,8 @@ Options:
   --prefix DIR          Installation prefix (default: ~/.local)
   --taskdata PATH       Taskwarrior data directory (default: TASKDATA or ~/.task)
   --archive-url URL     Archive URL override, useful for mirrors and testing
+  --sha256 DIGEST       Expected SHA-256 digest for the archive
+  --checksum-url URL    URL of a checksum file whose first field is the digest
   --with-timelog-hook   Install Jot's Taskwarrior timelog hook
   --no-timelog-hook     Do not install the timelog hook
   --replace-timelog-hook
@@ -65,6 +69,16 @@ while (($#)); do
       ARCHIVE_URL="$2"
       shift 2
       ;;
+    --sha256)
+      (($# >= 2)) || die "--sha256 requires a digest"
+      CHECKSUM="$2"
+      shift 2
+      ;;
+    --checksum-url)
+      (($# >= 2)) || die "--checksum-url requires a URL"
+      CHECKSUM_URL="$2"
+      shift 2
+      ;;
     --with-timelog-hook)
       INSTALL_TIMELOG_HOOK="yes"
       shift
@@ -97,6 +111,7 @@ done
 
 require_command curl
 require_command tar
+require_command python3
 
 if [[ -z "$ARCHIVE_URL" ]]; then
   ARCHIVE_URL="$REPOSITORY/archive/refs/tags/$VERSION.tar.gz"
@@ -116,6 +131,35 @@ ARCHIVE="$CHECKOUT/release.tar.gz"
 printf 'Downloading Jot %s\n' "$VERSION"
 printf '  %s\n' "$ARCHIVE_URL"
 curl --fail --silent --show-error --location "$ARCHIVE_URL" --output "$ARCHIVE"
+
+if [[ -n "$CHECKSUM_URL" ]]; then
+  CHECKSUM_FILE="$CHECKOUT/release.sha256"
+  curl --fail --silent --show-error --location "$CHECKSUM_URL" --output "$CHECKSUM_FILE"
+  CHECKSUM="$(awk 'NF { print $1; exit }' "$CHECKSUM_FILE")"
+fi
+
+if [[ -n "$CHECKSUM" ]]; then
+  if [[ ! "$CHECKSUM" =~ ^[[:xdigit:]]{64}$ ]]; then
+    die "invalid SHA-256 digest"
+  fi
+  ACTUAL_CHECKSUM="$(python3 - "$ARCHIVE" <<'PY'
+import hashlib
+import sys
+
+digest = hashlib.sha256()
+with open(sys.argv[1], "rb") as archive:
+    for block in iter(lambda: archive.read(1024 * 1024), b""):
+        digest.update(block)
+print(digest.hexdigest())
+PY
+)"
+  if [[ "${CHECKSUM,,}" != "$ACTUAL_CHECKSUM" ]]; then
+    die "archive checksum mismatch"
+  fi
+  printf 'Archive checksum verified: %s\n' "$ACTUAL_CHECKSUM"
+else
+  printf 'warning: archive checksum was not verified\n' >&2
+fi
 
 ARCHIVE_LIST="$CHECKOUT/archive.list"
 tar -tzf "$ARCHIVE" > "$ARCHIVE_LIST"
