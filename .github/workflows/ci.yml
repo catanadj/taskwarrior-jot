@@ -51,6 +51,19 @@ jobs:
       - name: Run tests
         run: python -m unittest discover -s tests -v
 
+      - name: Enforce focused core coverage
+        run: |
+          rm -f .coverage .coverage.*
+          for pattern in test_core_reading.py test_storage.py test_nautical_fixture.py test_timelog_core.py; do
+            coverage run --parallel-mode \
+              --source=jot_core.notes,jot_core.frontmatter,jot_core.storage,jot_core.nautical \
+              -m unittest discover -s tests -p "$pattern" -q
+          done
+          coverage combine
+          coverage report \
+            --include='jot_core/notes.py,jot_core/frontmatter.py,jot_core/storage.py,jot_core/nautical.py' \
+            --fail-under=70
+
   tui-compatibility:
     name: Textual ${{ matrix.textual }} / Rich ${{ matrix.rich }}
     runs-on: ubuntu-latest
