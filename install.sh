@@ -8,7 +8,7 @@ LIB_DIR="$PREFIX/lib/jot"
 INSTALL_TIMELOG_HOOK="ask"
 REPLACE_TIMELOG_HOOK="no"
 
-SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 DATA_DIR="$SCRIPT_DIR/jot_core/data"
 
 if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then

@@ -7,7 +7,7 @@ BIN_DIR="$PREFIX/bin"
 LIB_DIR="$PREFIX/lib/jot"
 REMOVE_TIMELOG_HOOK="no"
 
-SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 if ! python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)'; then
   echo "error: jot requires Python 3.11 or newer" >&2
@@ -81,7 +81,6 @@ if [[ "${#TASK_ENVIRONMENT[@]}" -lt 2 ]]; then
   echo "error: could not resolve the Taskwarrior environment" >&2
   exit 1
 fi
-TASKDATA_DIR="${TASK_ENVIRONMENT[0]}"
 TASK_HOOKS_DIR="${TASK_ENVIRONMENT[1]}"
 TIMELOG_HOOK_SRC="$LIB_DIR/current/hooks/on-modify_jot_timelog.py"
 if [[ ! -f "$TIMELOG_HOOK_SRC" ]]; then

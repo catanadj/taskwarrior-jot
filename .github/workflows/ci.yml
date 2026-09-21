@@ -106,6 +106,23 @@ jobs:
           HOME="$root/home" TASKDATA="$root/taskdata" PREFIX="$root/prefix" \
             "$root/prefix/bin/jot" --version
 
+  shell-hardening:
+    name: Shell syntax and lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes shellcheck
+
+      - name: Validate shell scripts
+        run: |
+          bash -n bootstrap.sh install.sh uninstall.sh
+          shellcheck bootstrap.sh install.sh uninstall.sh
+
   taskwarrior-integration:
     name: Taskwarrior integration
     runs-on: ubuntu-latest
