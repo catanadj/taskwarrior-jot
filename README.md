@@ -16,15 +16,6 @@ For a direct install of the latest tagged release:
 curl -fsSL https://raw.githubusercontent.com/catanadj/taskwarrior-jot/main/bootstrap.sh | bash
 ```
 
-For an audited install, download `bootstrap.sh`, inspect it, and run it locally.
-The bootstrap supports `--version`, `--prefix`, `--taskdata`, `--dry-run`, and
-explicit timelog-hook options.
-
-For a local checkout:
-
-```bash
-./install.sh
-```
 
 The installer places `jot` in `~/.local/bin` and stores notes below the active
 Taskwarrior data directory. It respects `TASKDATA`, `TASKRC`, and Taskwarrior
@@ -78,11 +69,6 @@ Jot complements Nautical rather than replacing it. Nautical manages recurring
 task behavior; Jot keeps durable notes for the task, its chain, and its
 project. See [Nautical integration](documentation/nautical.md).
 
-## Development
+If Jot is useful to you, support is appreciated:
 
-```bash
-python3 -m pip install -e '.[test]'
-python3 -m unittest discover -s tests -v
-```
-
-Jot is free software under the GPL-3.0-only license.
+[Buy me a book](https://buymeacoffee.com/catanadj)
