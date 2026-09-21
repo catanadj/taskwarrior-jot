@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 from .frontmatter import read_document
@@ -25,6 +27,7 @@ def search_all(
 
     return SearchResults.from_mapping({
         "notes": _search_notes(config, needle, selected, project=project, chain_id=chain_id),
+        "trash": _search_trash_notes(config, needle, selected, project=project, chain_id=chain_id),
         "events": _search_events(
             config,
             needle,
@@ -85,6 +88,84 @@ def _search_notes(
                 item["task_short_uuid"] = task_short_uuid
             hits.append(item)
     return hits
+
+
+def _search_trash_notes(
+    config: AppConfig,
+    needle: str,
+    kinds: set[str],
+    *,
+    project: str | None,
+    chain_id: str | None,
+) -> list[dict[str, Any]]:
+    hits: list[dict[str, Any]] = []
+    if not config.trash_dir.exists():
+        return hits
+    for path in sorted(config.trash_dir.rglob("*.md")):
+        manifest = _read_trash_manifest(path)
+        metadata, body = read_document(path)
+        original_path = str(manifest.get("path") or "").strip()
+        kind = str(manifest.get("kind") or metadata.get("kind") or "").strip()
+        if not kind:
+            kind = _infer_trash_kind(config, original_path)
+        if kind not in {"task-note", "chain-note", "project-note"} or kind not in kinds:
+            continue
+        project_name = str(manifest.get("project") or metadata.get("project") or "").strip()
+        note_chain_id = str(manifest.get("chain_id") or metadata.get("chain_id") or "").strip()
+        if project and project_name != project:
+            continue
+        if chain_id and note_chain_id != chain_id:
+            continue
+        haystacks = [
+            str(metadata.get("description") or ""),
+            project_name,
+            note_chain_id,
+            str(body or ""),
+            path.name,
+            original_path,
+        ]
+        if needle not in "\n".join(haystacks).lower():
+            continue
+        item: dict[str, Any] = {
+            "kind": kind,
+            "path": str(path),
+            "original_path": original_path,
+            "deleted_at": str(manifest.get("deleted_at") or ""),
+            "description": str(metadata.get("description") or ""),
+            "match": _excerpt(str(body or ""), needle),
+        }
+        for key, value in (
+            ("project", project_name),
+            ("chain_id", note_chain_id),
+            ("task_short_uuid", str(manifest.get("task_short_uuid") or metadata.get("task_short_uuid") or "").strip()),
+        ):
+            if value:
+                item[key] = value
+        hits.append(item)
+    return hits
+
+
+def _read_trash_manifest(note_path: Path) -> dict[str, Any]:
+    manifest_path = note_path.with_name(f".{note_path.name}.jot-manifest.json")
+    try:
+        value = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _infer_trash_kind(config: AppConfig, original_path: str) -> str:
+    try:
+        relative = Path(original_path).relative_to(config.root_dir)
+    except ValueError:
+        return ""
+    if relative.parts and relative.parts[0] == config.tasks_dir.name:
+        return "task-note"
+    if relative.parts and relative.parts[0] == config.chains_dir.name:
+        return "chain-note"
+    if relative.parts and relative.parts[0] == config.projects_dir.name:
+        return "project-note"
+    return ""
 
 
 def _search_events(

@@ -1104,6 +1104,7 @@ def _emit_search(payload: Mapping[str, Any]) -> None:
     if chain_id:
         _write_inline_field("Chain", chain_id)
     note_hits = payload.get("notes") or []
+    trash_hits = payload.get("trash") or []
     event_hits = payload.get("events") or []
     _write_section_title("Notes:")
     if not note_hits:
@@ -1113,6 +1114,20 @@ def _emit_search(payload: Mapping[str, Any]) -> None:
             kind = _style(f"[{item.get('kind')}]", color="identity", bold=True)
             path = _style(str(item.get("path") or ""), color="path")
             sys.stdout.write(f"  {kind} {path}\n")
+            match = item.get("match") or ""
+            if match:
+                sys.stdout.write(f"    {match}\n")
+    _write_section_title("Trash:")
+    if not trash_hits:
+        sys.stdout.write("  (none)\n")
+    else:
+        for item in trash_hits:
+            kind = _style(f"[{item.get('kind')}]")
+            path = _style(str(item.get("path") or ""), color="path")
+            sys.stdout.write(f"  {kind} {path}\n")
+            original_path = str(item.get("original_path") or "").strip()
+            if original_path:
+                sys.stdout.write(f"    original: {original_path}\n")
             match = item.get("match") or ""
             if match:
                 sys.stdout.write(f"    {match}\n")

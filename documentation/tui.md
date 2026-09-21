@@ -11,7 +11,7 @@ The main areas are:
 - **Browse**: task and project trees with task details
 - **Notes**: find and edit notes
 - **Latest Edits**: inspect recent changes without leaving the view
-- **Search**: search notes and events
+- **Search**: search active notes, deleted notes, and events
 - **Time**: inspect and manage time intervals and reports
 
 Useful keys include:

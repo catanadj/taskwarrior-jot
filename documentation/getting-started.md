@@ -65,6 +65,9 @@ jot search washer
 jot recent
 ```
 
+Search results keep deleted matches in a separate `Trash` section. The JSON
+form exposes them under `trash`, including the original note path.
+
 ## Add Useful Structure
 
 Jot creates headings only when a template or command needs them. Add a

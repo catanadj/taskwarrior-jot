@@ -4603,6 +4603,41 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(note_chain_ids, {"a4bf5egh"})
         self.assertEqual({item["chain_id"] for item in chain_payload["events"]}, {"a4bf5egh"})
 
+    def test_search_includes_trash_in_a_separate_section(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Fix billing discrepancy",
+            "project": "finance.audit",
+            "tags": ["ann"],
+            "chainID": "a4bf5egh",
+            "link": 3,
+            "anchor": "m:last-fri",
+            "anchor_mode": "skip",
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        self.assertEqual(
+            self.run_jot("note-append", "1", "trash-only-vendor detail").returncode,
+            0,
+        )
+        self.assertEqual(self.run_jot("task-delete", "1").returncode, 0)
+
+        json_result = self.run_jot("--json", "search", "trash-only-vendor")
+        self.assertEqual(json_result.returncode, 0, json_result.stderr)
+        payload = json.loads(json_result.stdout)
+        self.assertEqual(payload["notes"], [])
+        self.assertEqual(len(payload["trash"]), 1)
+        self.assertEqual(payload["trash"][0]["kind"], "task-note")
+        self.assertIn(".jot_trash/", payload["trash"][0]["path"])
+        self.assertTrue(payload["trash"][0]["original_path"].endswith("tasks/2d6d7d7d--fix-billing-discrepancy.md"))
+
+        text_result = self.run_jot("search", "trash-only-vendor")
+        self.assertEqual(text_result.returncode, 0, text_result.stderr)
+        self.assertIn("Notes:\n  (none)", text_result.stdout)
+        self.assertIn("Trash:", text_result.stdout)
+        self.assertIn("original:", text_result.stdout)
+        self.assertLess(text_result.stdout.index("Trash:"), text_result.stdout.index("Events:"))
+
     def test_list_json_contract(self) -> None:
         task = {
             "uuid": "2d6d7d7d-1111-2222-3333-444444444444",

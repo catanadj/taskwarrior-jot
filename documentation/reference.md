@@ -17,7 +17,7 @@ jot resources KIND REF           List resources
 jot progress KIND REF ...        Set, add, show, or inspect progress
 jot timelog ...                  Record and report time expenditure
 jot timew ...                    Configure Timewarrior tags
-jot search TEXT                  Search notes and events
+jot search TEXT                  Search active notes, trash, and events
 jot recent                       Show recent edits
 jot export REF --json            Export structured context
 jot tui                          Start the terminal UI

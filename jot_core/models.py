@@ -839,6 +839,7 @@ class SearchHit(PayloadModel):
 class SearchResults(PayloadModel):
     notes: tuple[SearchHit, ...]
     events: tuple[SearchHit, ...]
+    trash: tuple[SearchHit, ...] = ()
 
     @classmethod
     def from_mapping(cls, item: Mapping[str, Any]) -> "SearchResults":
@@ -847,12 +848,13 @@ class SearchResults(PayloadModel):
             return tuple(SearchHit.from_mapping(row) for row in value if isinstance(row, Mapping)) \
                 if isinstance(value, list) else ()
 
-        return cls(notes=hits("notes"), events=hits("events"))
+        return cls(notes=hits("notes"), events=hits("events"), trash=hits("trash"))
 
     def to_payload(self) -> dict[str, Any]:
         return {
             "notes": [item.to_payload() for item in self.notes],
             "events": [item.to_payload() for item in self.events],
+            "trash": [item.to_payload() for item in self.trash],
         }
 
 
