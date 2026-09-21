@@ -45,6 +45,9 @@ jobs:
       - name: Install wheel without optional UI dependencies
         run: python tools/check_install.py dist/*.whl
 
+      - name: Install source archive without optional UI dependencies
+        run: python tools/check_install.py dist/*.tar.gz
+
       - name: Run tests
         run: python -m unittest discover -s tests -v
 
@@ -74,6 +77,24 @@ jobs:
 
       - name: Run TUI pilot tests
         run: python -m unittest discover -s tests -p 'test_tui.py' -v
+
+  documentation:
+    name: Strict documentation build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install MkDocs
+        run: python -m pip install --upgrade pip mkdocs
+
+      - name: Build documentation strictly
+        run: mkdocs build --strict --site-dir "$RUNNER_TEMP/jot-site"
 
   install-smoke:
     name: Installer without Textual

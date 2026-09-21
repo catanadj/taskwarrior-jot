@@ -1,4 +1,4 @@
-"""Install a built wheel in an isolated environment and smoke-test it."""
+"""Install a built distribution artifact in an isolated environment."""
 
 from __future__ import annotations
 
@@ -12,12 +12,12 @@ import venv
 def main(argv: list[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
     if len(arguments) != 1:
-        print("usage: check_install.py WHEEL", file=sys.stderr)
+        print("usage: check_install.py ARTIFACT", file=sys.stderr)
         return 2
 
-    wheel = Path(arguments[0]).resolve()
-    if wheel.suffix != ".whl" or not wheel.is_file():
-        print(f"install check: wheel not found: {wheel}", file=sys.stderr)
+    artifact = Path(arguments[0]).resolve()
+    if not (artifact.name.endswith((".whl", ".tar.gz")) and artifact.is_file()):
+        print(f"install check: distribution artifact not found: {artifact}", file=sys.stderr)
         return 2
 
     with tempfile.TemporaryDirectory(prefix="jot-wheel-install-") as temporary:
@@ -26,7 +26,7 @@ def main(argv: list[str] | None = None) -> int:
         python = environment / "bin" / "python"
         jot = environment / "bin" / "jot"
         subprocess.run(
-            [str(python), "-m", "pip", "install", "--no-deps", str(wheel)],
+            [str(python), "-m", "pip", "install", "--no-deps", str(artifact)],
             check=True,
             capture_output=True,
             text=True,
@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
             ],
             check=True,
         )
-    print(f"install check: validated {wheel.name} without optional UI dependencies")
+    print(f"install check: validated {artifact.name} without optional UI dependencies")
     return 0
 
 
