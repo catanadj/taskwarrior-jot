@@ -142,7 +142,8 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Note-first companion for Taskwarrior and Taskwarrior-Nautical. "
             "Taskwarrior annotations remain the visible event stream; durable "
-            "task, chain, and project context lives in note files under ~/.task/jot/."
+            "task, chain, and project context lives in note files under the active "
+            "Taskwarrior data directory; use `jot paths` to inspect the resolved location."
         ),
         epilog=(
             "Examples:\n"
