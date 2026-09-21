@@ -17,5 +17,3 @@ jot chain-append 42 "The exercise can be shortened when time is limited"
 When `jot 42` is used, Jot opens the chain note if the task has a chain and
 the task note otherwise.
 
-For recurring-task completion, keep Nautical hooks enabled when completing
-through Jot so Nautical can create the next occurrence.
