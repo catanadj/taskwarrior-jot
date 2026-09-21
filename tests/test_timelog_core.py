@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest import mock
 
 from jot_core.config import ensure_app_dirs
@@ -109,6 +110,42 @@ class TimelogCoreTests(unittest.TestCase):
             self.assertEqual(report.total_minutes, 30)
             self.assertEqual(report.entry_count, 1)
             self.assertEqual(len(report.entries), 1)
+
+    def test_concurrent_timelog_writes_preserve_every_interval(self) -> None:
+        with TemporaryDirectory(prefix="jot-timelog-concurrent-") as temporary:
+            config = self._config(Path(temporary))
+            ensure_app_dirs(config)
+            task = self._task()
+            intervals = [
+                (
+                    f"2026-09-19T{hour:02d}:00:00Z",
+                    f"2026-09-19T{hour:02d}:15:00Z",
+                )
+                for hour in range(8, 20)
+            ]
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                results = list(
+                    executor.map(
+                        lambda interval: add_time_log(
+                            config,
+                            task,
+                            started_at=interval[0],
+                            stopped_at=interval[1],
+                            scope="task",
+                        ),
+                        intervals,
+                    )
+                )
+
+            self.assertEqual(sum(result.written for result in results), len(intervals))
+            note_path = next(config.tasks_dir.glob("*.md"))
+            _metadata, body = read_document(note_path)
+            self.assertEqual(body.count("jot-time-log"), len(intervals))
+            self.assertEqual(
+                sum(item["op"] == "task_note_timelog" for item in read_ops(config)),
+                len(intervals),
+            )
 
     def test_deleted_entry_can_be_restored_and_is_not_duplicated(self) -> None:
         with TemporaryDirectory(prefix="jot-timelog-") as temporary:

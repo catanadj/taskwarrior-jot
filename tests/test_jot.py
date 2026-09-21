@@ -3290,6 +3290,7 @@ class CliIntegrationTests(JotCliTestCase):
             json.dumps({"pid": 999999, "created": 0}),
             encoding="utf-8",
         )
+        (jot_root / "index.json").write_text("corrupted index\n", encoding="utf-8")
 
         before = self.run_jot("--json", "doctor")
         self.assertEqual(before.returncode, 1, before.stderr)
@@ -3306,6 +3307,7 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertTrue(checks["locks"]["ok"])
         self.assertTrue(checks["note_schema"]["ok"])
         self.assertFalse(stale_lock.exists())
+        self.assertTrue(json.loads((jot_root / "index.json").read_text(encoding="utf-8"))["projects"])
         metadata, _body = read_document(note_path)
         self.assertEqual(metadata["schema_version"], "1")
         self.assertTrue((jot_root / "index.json").exists())
