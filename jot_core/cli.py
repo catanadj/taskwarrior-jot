@@ -158,7 +158,8 @@ class _JotArgumentParser(argparse.ArgumentParser):
         usage = style_text(self.format_usage().rstrip(), role="muted", stream=sys.stderr)
         label = style_text(f"{self.prog}: error:", role="error", bold=True, stream=sys.stderr)
         detail = style_text(message, role="label", stream=sys.stderr)
-        self._print_message(f"{usage}\n{label} {detail}\n", sys.stderr)
+        hint = style_text("Use `jot --help` for the full command list.", role="muted", stream=sys.stderr)
+        self._print_message(f"{usage}\n{label} {detail}\n{hint}\n", sys.stderr)
         self.exit(2)
 
 

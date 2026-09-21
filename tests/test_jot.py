@@ -2957,6 +2957,7 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("usage: jot [options] COMMAND ...", result.stderr)
         self.assertNotIn("{doctor,migrate", result.stderr)
         self.assertIn("ambiguous command 'pro'", result.stderr)
+        self.assertIn("Use `jot --help` for the full command list.", result.stderr)
         self.assertIn("progress", result.stderr)
         self.assertIn("project", result.stderr)
 

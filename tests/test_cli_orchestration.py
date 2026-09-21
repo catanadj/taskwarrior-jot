@@ -192,6 +192,7 @@ class CliOrchestrationTests(unittest.TestCase):
         self.assertNotIn("{doctor,migrate", rendered)
         self.assertIn("\033[", rendered)
         self.assertIn("ambiguous command 'pro'", rendered)
+        self.assertIn("Use `jot --help` for the full command list.", rendered)
 
     def test_completion_command_does_not_load_taskwarrior_context(self) -> None:
         output = io.StringIO()
