@@ -64,6 +64,19 @@ jobs:
             --include='jot_core/notes.py,jot_core/frontmatter.py,jot_core/storage.py,jot_core/nautical.py' \
             --fail-under=70
 
+      - name: Enforce failure-path coverage
+        run: |
+          rm -f .coverage .coverage.*
+          for pattern in test_doctor.py test_taskwarrior_client.py test_cli_orchestration.py; do
+            coverage run --parallel-mode \
+              --source=jot_core.cli,jot_core.doctor,jot_core.config,jot_core.taskwarrior \
+              -m unittest discover -s tests -p "$pattern" -q
+          done
+          coverage combine
+          coverage report \
+            --include='jot_core/cli.py,jot_core/doctor.py,jot_core/config.py,jot_core/taskwarrior.py' \
+            --fail-under=45
+
   tui-compatibility:
     name: Textual ${{ matrix.textual }} / Rich ${{ matrix.rich }}
     runs-on: ubuntu-latest
@@ -86,10 +99,20 @@ jobs:
           python-version: "3.11"
 
       - name: Install pinned TUI dependencies
-        run: python -m pip install --upgrade pip && python -m pip install "textual==${{ matrix.textual }}" "rich==${{ matrix.rich }}"
+        run: python -m pip install --upgrade pip && python -m pip install "textual==${{ matrix.textual }}" "rich==${{ matrix.rich }}" coverage
 
       - name: Run TUI pilot tests
         run: python -m unittest discover -s tests -p 'test_tui.py' -v
+
+      - name: Enforce TUI coverage
+        run: |
+          rm -f .coverage .coverage.*
+          for pattern in test_tui.py test_tui_launcher.py test_tui_rendering.py test_tui_state.py; do
+            coverage run --parallel-mode --source=jot_tui \
+              -m unittest discover -s tests -p "$pattern" -q
+          done
+          coverage combine
+          coverage report --include='jot_tui/**/*.py,jot_tui/*.py' --fail-under=50
 
   documentation:
     name: Strict documentation build
