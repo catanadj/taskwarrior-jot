@@ -9,7 +9,7 @@ installation and core workflow pass the release checks.
 | Area | 1.0 target |
 | --- | --- |
 | Python | 3.11, 3.12, and 3.13 |
-| Taskwarrior | 3.4.2 and newer 3.x releases |
+| Taskwarrior | 3.x; real integration coverage is required before a release claim |
 | Operating systems | Linux and Termux |
 | CLI | No optional Python dependencies |
 | TUI | Textual `>=0.50.1`, with Rich `>=13.3.3` |
@@ -29,8 +29,24 @@ dedicated installation check.
 - The current TUI test environment uses Textual 6.1.0 and Rich 13.9.4.
 - The CLI has been tested without Textual installed.
 
-The newest supported Taskwarrior release and Termux installation still require
-dedicated release tests.
+The newest supported Python 3.x release and Termux installation require a
+dedicated release check before being added to the promise. Taskwarrior 2.x is
+not a release target, although some compatibility behavior may work in local
+installations.
+
+## Configuration Compatibility
+
+Jot resolves the active Taskwarrior environment in this order:
+
+1. An explicit `TASKDATA` environment value.
+2. `data.location` from the active `TASKRC`.
+3. Taskwarrior's default data directory.
+
+The Jot configuration is `jot/config-jot.toml` below that resolved data
+directory. Existing keys retain their meaning within a 1.x series. New keys
+may be added with safe defaults. Unknown keys are ignored so a newer config
+can be shared with an older installation only when the older behavior is
+acceptable.
 
 ## Stability Promise
 

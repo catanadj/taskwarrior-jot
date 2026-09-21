@@ -9,6 +9,7 @@ nav:
   - Progress and time: progress-and-time.md
   - Terminal UI: tui.md
   - Configuration: configuration.md
+  - Operations and recovery: operations.md
   - Compatibility: compatibility.md
   - Nautical integration: nautical.md
   - Command reference: reference.md

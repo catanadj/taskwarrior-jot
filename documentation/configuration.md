@@ -23,6 +23,16 @@ The user configuration is:
 The exact root follows the active Taskwarrior data directory. The repository
 contains a starter `config-jot.toml` that the installer can copy.
 
+To verify which file is active:
+
+```bash
+jot paths
+```
+
+Keep this file in the Jot data directory when moving or backing up an
+installation. Do not hard-code `~/.task` in scripts; use `TASKDATA`,
+Taskwarrior's `data.location`, or the path reported by `jot paths`.
+
 ## Templates
 
 Templates live under:
