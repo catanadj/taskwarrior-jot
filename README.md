@@ -1,5 +1,3 @@
-# jot
-
 ![Taskwarrior Jot](taskwarrior-jot-banner.svg)
 
 Jot is a note-first companion for [Taskwarrior](https://taskwarrior.org/) and
