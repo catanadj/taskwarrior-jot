@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from tools.write_checksums import write_checksums
+from jot_core import __version__
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -23,8 +24,8 @@ class PackagingTests(unittest.TestCase):
     def test_checksum_manifest_is_deterministic_and_excludes_other_files(self) -> None:
         with TemporaryDirectory(prefix="jot-checksums-") as temporary:
             dist = Path(temporary)
-            wheel = dist / "jot_taskwarrior-0.9.0-py3-none-any.whl"
-            source = dist / "jot_taskwarrior-0.9.0.tar.gz"
+            wheel = dist / f"jot_taskwarrior-{__version__}-py3-none-any.whl"
+            source = dist / f"jot_taskwarrior-{__version__}.tar.gz"
             wheel.write_bytes(b"wheel")
             source.write_bytes(b"source")
             (dist / "notes.txt").write_text("ignored", encoding="utf-8")

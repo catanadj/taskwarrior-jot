@@ -26,6 +26,7 @@ from jot_core.cli import (
     _normalize_json_argv,
     build_parser,
 )
+from jot_core import __version__
 from jot_core.command_help import build_command_catalog
 from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from jot_core.contracts import (
@@ -2940,7 +2941,7 @@ class CliIntegrationTests(JotCliTestCase):
     def test_version_flag(self) -> None:
         result = self.run_jot("--version")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.strip(), "jot 0.9.0")
+        self.assertEqual(result.stdout.strip(), f"jot {__version__}")
 
     def test_unique_command_prefix_runs_command(self) -> None:
         result = self.run_jot("sta")
