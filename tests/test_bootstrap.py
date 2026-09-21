@@ -83,6 +83,43 @@ class BootstrapTests(unittest.TestCase):
             self.assertEqual(doctor.returncode, 0, doctor.stderr)
             self.assertTrue(all(item["ok"] for item in json.loads(doctor.stdout)["checks"]))
 
+    def test_bootstrap_installs_executable_timelog_hook(self) -> None:
+        with TemporaryDirectory(prefix="jot-bootstrap-hook-") as temporary:
+            root = Path(temporary)
+            archive = make_fixture_archive(root)
+            home = root / "home"
+            taskdata = root / "taskdata"
+            prefix = root / "prefix"
+            hooks = root / "task-hooks"
+            home.mkdir()
+            taskdata.mkdir()
+            hooks.mkdir()
+            taskrc = home / ".taskrc"
+            taskrc.write_text(
+                f"data.location={taskdata}\n"
+                f"hooks.location={hooks}\n",
+                encoding="utf-8",
+            )
+            environment = dict(
+                os.environ,
+                HOME=str(home),
+                TASKDATA=str(taskdata),
+                TASKRC=str(taskrc),
+            )
+
+            result = self.run_bootstrap(
+                "--archive-url", archive.as_uri(),
+                "--prefix", str(prefix),
+                "--taskdata", str(taskdata),
+                "--with-timelog-hook",
+                env=environment,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            installed_hook = hooks / "on-modify_jot_timelog.py"
+            self.assertTrue(installed_hook.is_file())
+            self.assertTrue(os.access(installed_hook, os.X_OK))
+
     def test_installation_doctor_rejects_corrupt_runtime(self) -> None:
         with TemporaryDirectory(prefix="jot-bootstrap-doctor-") as temporary:
             root = Path(temporary)

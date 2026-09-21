@@ -2115,6 +2115,26 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertFalse(payload["written"])
         self.assertEqual(payload["reason"], "not a task stop")
 
+    def test_timelog_ingest_accepts_empty_start_on_stopped_task(self) -> None:
+        old = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Read",
+            "start": "20260703T060000Z",
+        }
+        new = {**old, "start": ""}
+
+        result = self.run_jot(
+            "--json",
+            "timelog",
+            "ingest",
+            "--stopped-at",
+            "20260703T064500Z",
+            input_text=json.dumps(old) + "\n" + json.dumps(new) + "\n",
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(json.loads(result.stdout)["written"])
+
     def test_jot_timelog_hook_preserves_task_json_stdout(self) -> None:
         task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
         old = {

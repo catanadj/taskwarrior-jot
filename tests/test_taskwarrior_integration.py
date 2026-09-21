@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest import mock
@@ -16,6 +17,7 @@ from jot_core.taskwarrior import TaskwarriorClient
 
 
 TASK_BIN = shutil.which("task")
+ROOT = Path(__file__).parents[1]
 
 
 @unittest.skipUnless(TASK_BIN, "Taskwarrior is not installed")
@@ -31,12 +33,7 @@ class TaskwarriorIntegrationTests(unittest.TestCase):
         self.data.mkdir()
         self.hooks.mkdir()
         self.taskrc = root / "taskrc"
-        self.taskrc.write_text(
-            f"data.location={self.data}\n"
-            f"hooks.location={self.hooks}\n"
-            "hooks=off\nconfirmation=off\nverbose=nothing\n",
-            encoding="utf-8",
-        )
+        self._write_taskrc(hooks="off")
         self.environment = {
             **os.environ,
             "HOME": str(self.home),
@@ -55,9 +52,17 @@ class TaskwarriorIntegrationTests(unittest.TestCase):
         self.addCleanup(self.environment_patch.stop)
         self.client = TaskwarriorClient(task_bin=str(TASK_BIN), taskdata=str(self.data))
 
+    def _write_taskrc(self, *, hooks: str) -> None:
+        self.taskrc.write_text(
+            f"data.location={self.data}\n"
+            f"hooks.location={self.hooks}\n"
+            f"hooks={hooks}\nconfirmation=off\nverbose=nothing\n",
+            encoding="utf-8",
+        )
+
     def _run_task(self, *arguments: str) -> subprocess.CompletedProcess[str]:
         result = subprocess.run(
-            [str(TASK_BIN), f"rc.data.location={self.data}", "rc.hooks=off", *arguments],
+            [str(TASK_BIN), f"rc:{self.taskrc}", f"rc.data.location={self.data}", "rc.hooks=off", *arguments],
             env=self.environment,
             capture_output=True,
             text=True,
@@ -66,6 +71,32 @@ class TaskwarriorIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         return result
+
+    def _install_timelog_hook(self) -> None:
+        hook = self.hooks / "on-modify_jot_timelog.py"
+        hook.write_bytes((ROOT / "jot_core" / "data" / "hooks" / hook.name).read_bytes())
+        hook.chmod(0o755)
+        jot_bin = self.hooks / "jot-test-bin"
+        jot_bin.write_text(
+            "#!/bin/sh\n"
+            f"exec {sys.executable} -c 'from jot_core.cli import main; raise SystemExit(main())' \"$@\"\n",
+            encoding="utf-8",
+        )
+        jot_bin.chmod(0o755)
+        self.environment["JOT_BIN"] = str(jot_bin)
+        self.environment["JOT_HOME"] = str(self.data / "jot")
+        self.environment["JOT_TIMELOG_STRICT"] = "1"
+        self.environment["NAUTICAL_DIAG"] = "1"
+        for name in ("JOT_BIN", "JOT_HOME", "JOT_TIMELOG_STRICT", "NAUTICAL_DIAG"):
+            previous = os.environ.get(name)
+            if previous is None:
+                self.addCleanup(os.environ.pop, name, None)
+            else:
+                self.addCleanup(os.environ.__setitem__, name, previous)
+        os.environ["JOT_BIN"] = str(jot_bin)
+        os.environ["JOT_HOME"] = str(self.data / "jot")
+        os.environ["JOT_TIMELOG_STRICT"] = "1"
+        os.environ["NAUTICAL_DIAG"] = "1"
 
     def _jot_config(self) -> AppConfig:
         root = self.data / "jot"
@@ -114,12 +145,27 @@ class TaskwarriorIntegrationTests(unittest.TestCase):
         self.assertTrue(note.note_path.exists())
         self.assertIn("Written through the Jot storage layer", note.note_path.read_text(encoding="utf-8"))
 
+        self._install_timelog_hook()
         self._run_task(task_id, "start")
         started = json.loads(self._run_task("rc.json.array=1", task_id, "export").stdout)[0]
         self.assertTrue(started.get("start"))
         self._run_task(task_id, "stop")
         stopped = json.loads(self._run_task("rc.json.array=1", task_id, "export").stdout)[0]
         self.assertFalse(stopped.get("start"))
+
+        hook = self.hooks / "on-modify_jot_timelog.py"
+        hook_result = subprocess.run(
+            [str(hook), f"data:{self.data}"],
+            input=json.dumps(started) + "\n" + json.dumps(stopped) + "\n",
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+        self.assertEqual(hook_result.returncode, 0, hook_result.stderr)
+        self.assertEqual(json.loads(hook_result.stdout), stopped)
+        self.assertIn("Time log", note.note_path.read_text(encoding="utf-8"), hook_result.stderr)
 
         self.client.complete_task(task_id)
         completed = self.client.list_tasks(limit=10, status="completed")

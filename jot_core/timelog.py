@@ -48,11 +48,13 @@ def ingest_time_log(
 ) -> dict[str, Any] | TimelogWriteResult:
     if not isinstance(old, dict) or not isinstance(new, dict):
         raise RuntimeError("timelog ingest expects old and new task JSON objects")
-    if "start" not in old or "start" in new:
+    started_text = str(old.get("start") or "").strip()
+    new_start_text = str(new.get("start") or "").strip()
+    if not started_text or new_start_text:
         return {"written": False, "reason": "not a task stop"}
 
     task = _resolved_task_from_json(new)
-    started = _parse_datetime(str(old.get("start") or ""))
+    started = _parse_datetime(started_text)
     stopped = _parse_datetime(stopped_at) if stopped_at else datetime.now(timezone.utc)
     if stopped < started:
         raise RuntimeError("stop time is before start time")
