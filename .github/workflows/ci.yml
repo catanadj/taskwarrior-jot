@@ -163,6 +163,20 @@ jobs:
           HOME="$root/home" TASKDATA="$root/taskdata" PREFIX="$root/prefix" \
             "$root/prefix/bin/jot" --version
 
+      - name: Bootstrap a packaged release archive
+        run: |
+          root=$(mktemp -d)
+          archive="$root/jot-release.tar.gz"
+          git archive --format=tar.gz --prefix=jot-release/ HEAD > "$archive"
+          checksum=$(sha256sum "$archive" | awk '{print $1}')
+          HOME="$root/home" TASKDATA="$root/taskdata" PREFIX="$root/prefix" \
+            bash ./bootstrap.sh \
+              --archive-url "file://$archive" \
+              --sha256 "$checksum" \
+              --no-timelog-hook
+          HOME="$root/home" TASKDATA="$root/taskdata" PREFIX="$root/prefix" \
+            "$root/prefix/bin/jot" doctor --installation-only
+
   shell-hardening:
     name: Shell syntax and lint
     runs-on: ubuntu-latest
