@@ -19,6 +19,7 @@ from jot_core.models import (
     ResolvedTask,
     TaskRef,
 )
+from jot_core.output import configure_output
 
 
 class FakeEnvironment:
@@ -154,6 +155,24 @@ class CliOrchestrationTests(unittest.TestCase):
                 cli.main(["--help"])
         self.assertEqual(raised.exception.code, 0)
         self.assertIn(f"note files under {self.root}", output.getvalue())
+
+    def test_top_level_help_uses_colored_command_catalog_layout(self) -> None:
+        help_text = cli.build_parser(note_root=str(self.root)).format_help()
+
+        self.assertNotIn("positional arguments:", help_text)
+        self.assertNotIn("{doctor,migrate", help_text)
+        self.assertIn("Commands", help_text)
+        self.assertIn("jot note", help_text)
+        self.assertIn(".. jot note 42", help_text)
+
+        try:
+            with mock.patch.dict("os.environ", {}, clear=True):
+                configure_output(color_mode="always")
+                with mock.patch("sys.stdout", io.StringIO()):
+                    colored_help = cli.build_parser(note_root=str(self.root)).format_help()
+        finally:
+            configure_output(color_mode="auto")
+        self.assertIn("\033[", colored_help)
 
     def test_timelog_orchestration_validates_and_routes_operations(self) -> None:
         pending_args = SimpleNamespace(timelog_command="pending")

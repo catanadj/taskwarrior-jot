@@ -2937,7 +2937,7 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("note files under ", result.stdout)
         self.assertIn("use `jot paths`", result.stdout)
         self.assertNotIn("~/.task/jot/", result.stdout)
-        self.assertIn("jot add-to task 42 --heading \"Next steps\" --text \"Call vendor Monday\"", result.stdout)
+        self.assertIn(".. jot add-to task 42 --heading \"Next steps\" --text \"Call vendor\"", result.stdout)
         self.assertIn("jot report recent --limit 10", result.stdout)
         self.assertIn("jot tui", result.stdout)
 

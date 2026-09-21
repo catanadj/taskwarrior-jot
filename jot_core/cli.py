@@ -13,6 +13,7 @@ from pathlib import Path
 from . import __version__
 from . import note_cli as _note_cli
 from .app import build_app_context
+from .command_help import build_command_catalog
 from .command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from .config import ensure_app_dirs, load_config
 from .doctor import run_doctor, run_doctor_config_error, run_installation_doctor
@@ -130,10 +131,70 @@ def _normalize_json_argv(argv: list[str]) -> list[str]:
 
 
 class _JotArgumentParser(argparse.ArgumentParser):
+    def __init__(self, *args, top_level: bool = False, **kwargs):
+        self._top_level = top_level
+        super().__init__(*args, **kwargs)
+
     def parse_args(self, args=None, namespace=None):
         if args is not None:
             args = _normalize_json_argv(list(args))
         return super().parse_args(args, namespace)
+
+    def format_help(self) -> str:
+        if self._top_level:
+            return _format_top_level_help(self)
+        return super().format_help()
+
+
+def _format_top_level_help(parser: argparse.ArgumentParser) -> str:
+    """Render the root help as a compact, color-aware command catalog."""
+    lines = [
+        "usage: jot [options] COMMAND ...",
+        "",
+        str(parser.description or "").strip(),
+        "",
+        style_text("Options", role="section", bold=True),
+    ]
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            continue
+        labels = ", ".join(action.option_strings)
+        lines.append(
+            f"  {style_text(labels, role='identity', bold=True)}  "
+            f"{style_text(str(action.help or ''), role='label')}"
+        )
+
+    lines.extend(("", style_text("Commands", role="section", bold=True)))
+    catalog = build_command_catalog(parser)
+    command_width = max((len(f"jot {item.name}") for item in catalog), default=0)
+    current_category = ""
+    for item in catalog:
+        if item.category != current_category:
+            if current_category:
+                lines.append("")
+            current_category = item.category
+            lines.append(f"  {style_text(current_category, role='title', bold=True)}")
+        command = f"jot {item.name}"
+        description = item.description.rstrip(".")
+        prefix = f"    {command.ljust(command_width)}  "
+        wrapped = textwrap.wrap(description, width=max(36, 96 - len(prefix))) or [""]
+        lines.append(
+            f"{style_text(prefix, role='identity', bold=True)}"
+            f"{style_text(wrapped[0], role='label')}"
+        )
+        for continuation in wrapped[1:]:
+            lines.append(" " * len(prefix) + style_text(continuation, role="label"))
+        if item.example:
+            lines.append(f"      {style_text('.. ' + item.example, role='muted')}")
+
+    lines.extend(
+        (
+            "",
+            "Commands accept unique prefixes, for example: jot proj-r Finances.Expense.",
+            "Use `jot COMMAND --help` for command-specific options.",
+        )
+    )
+    return "\n".join(lines) + "\n"
 
 
 def build_parser(note_root: str | None = None) -> argparse.ArgumentParser:
@@ -144,54 +205,12 @@ def build_parser(note_root: str | None = None) -> argparse.ArgumentParser:
     )
     parser = _JotArgumentParser(
         prog="jot",
+        top_level=True,
         description=(
             "Note-first companion for Taskwarrior and Taskwarrior-Nautical. "
             "Taskwarrior annotations remain the visible event stream; durable "
             f"task, chain, and project context lives in {location}; use `jot paths` "
             "to inspect the resolved location."
-        ),
-        epilog=(
-            "Examples:\n"
-            "  jot 42\n"
-            "  jot note 42\n"
-            "  jot chain 42\n"
-            "  jot project Finances.Expense\n"
-            "  jot show 42\n"
-            "  jot list 42\n"
-            "  jot --json export 42\n"
-            "  jot add --type status 42 waiting on vendor\n"
-            "  jot add-to task 42 --heading \"Next steps\" --text \"Call vendor Monday\"\n"
-            "  jot attach task 42 ~/invoice.pdf --label invoice\n"
-            "  jot resources task 42\n"
-            "  jot open-resource task 42 1\n"
-            "  jot notes --kind task\n"
-            "  jot recent --limit 10\n"
-            "  jot open chain 42\n"
-            "  jot cat project Finances.Expense\n"
-            "  jot progress task 42 set 120/350 --unit pages\n"
-            "  jot progress task 42 add 20\n"
-            "  jot progress task 42 show\n"
-            "  jot project-append Finances.Expense \"baseline updated\"\n"
-            "  jot project-show Finances.Expense\n"
-            "  jot project-report Finances.Expense\n"
-            "  jot task-cat 42\n"
-            "  jot chain-cat 42\n"
-            "  jot search --kind project-note vendor\n"
-            "  jot report recent --limit 10\n"
-            "  jot headings task 42\n"
-            "  jot section task 42 \"Next steps\"\n"
-            "  jot trash-list\n"
-            "  jot trash-restore 1\n"
-            "  jot cleanup --trash-older-than 365 --yes\n"
-            "  jot migrate --dry-run\n"
-            "  jot stats\n"
-            "  jot paths\n"
-            "  jot timew set chain 42 deep-work client-a\n"
-            "  jot timew show 42\n"
-            "  jot tui\n"
-            "\n"
-            "Commands accept unique prefixes, for example: jot proj-r Finances.Expense.\n"
-            "The global --json switch may appear before or after a subcommand. Existing command JSON remains raw payloads; new agent surfaces use a versioned envelope (schema, schema_version, ok, data/warnings or error)."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
