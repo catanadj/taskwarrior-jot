@@ -1608,6 +1608,62 @@ class OutputColorTests(unittest.TestCase):
         self.assertEqual(result["action"], "complete-task")
         taskwarrior.complete_task.assert_called_once_with(task.task_uuid)
 
+    def test_post_save_actions_hide_complete_for_completed_tasks(self) -> None:
+        class TtyInput(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        taskwarrior = mock.Mock()
+        ctx = SimpleNamespace(
+            config=SimpleNamespace(editor_post_save_actions=True),
+            taskwarrior=taskwarrior,
+        )
+        task = SimpleNamespace(
+            task_uuid="2d6d7d7d-1111-2222-3333-444444444444",
+            task_short_uuid="2d6d7d7d",
+            description="Read book",
+            task={"status": "completed"},
+        )
+        stdin = TtyInput("\n")
+        stderr = io.StringIO()
+        with mock.patch("sys.stdin", stdin), mock.patch("sys.stderr", stderr):
+            result = _offer_post_save_task_action(ctx, task)
+
+        self.assertIsNone(result)
+        self.assertNotIn("complete task", stderr.getvalue())
+        self.assertIn("do nothing", stderr.getvalue())
+        taskwarrior.complete_task.assert_not_called()
+
+    def test_post_save_actions_can_delete_the_edited_note(self) -> None:
+        class TtyInput(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        taskwarrior = mock.Mock()
+        ctx = SimpleNamespace(
+            config=SimpleNamespace(editor_post_save_actions=True),
+            taskwarrior=taskwarrior,
+        )
+        task = SimpleNamespace(
+            task_uuid="2d6d7d7d-1111-2222-3333-444444444444",
+            task_short_uuid="2d6d7d7d",
+            description="Read book",
+            task={"status": "pending"},
+        )
+        deleted = SimpleNamespace(note_path=Path("/tmp/task.md"), trash_path=Path("/tmp/.jot_trash/task.md"))
+        stdin = TtyInput("d\n")
+        stderr = io.StringIO()
+        with mock.patch("jot_core.cli.delete_task_note_storage", return_value=deleted) as delete_note, mock.patch(
+            "sys.stdin", stdin
+        ), mock.patch("sys.stderr", stderr):
+            result = _offer_post_save_task_action(ctx, task)
+
+        self.assertEqual(result["action"], "delete-note")
+        self.assertEqual(result["trash_path"], "/tmp/.jot_trash/task.md")
+        self.assertIn("delete note", stderr.getvalue())
+        delete_note.assert_called_once_with(ctx.config, task)
+        taskwarrior.complete_task.assert_not_called()
+
 
 class JsonEnvelopeTests(unittest.TestCase):
     def test_success_envelope_has_versioned_contract_and_warnings(self) -> None:
@@ -5037,6 +5093,21 @@ class CliIntegrationTests(JotCliTestCase):
         text = self.run_jot("notes", "--kind", "project")
         self.assertEqual(text.returncode, 0, text.stderr)
         self.assertIn("project-note finance.audit", text.stdout)
+
+        compact = self.run_jot("list")
+        self.assertEqual(compact.returncode, 0, compact.stderr)
+        self.assertIn("Task notes (1)", compact.stdout)
+        self.assertIn("Chain notes (1)", compact.stdout)
+        self.assertIn("Project notes (1)", compact.stdout)
+        self.assertIn("2d6d7d7d  Fix billing discrepancy", compact.stdout)
+        self.assertNotIn(".task/jot/", compact.stdout)
+        self.assertNotIn("Events:", compact.stdout)
+
+        compact_json = self.run_jot("--json", "list")
+        self.assertEqual(compact_json.returncode, 0, compact_json.stderr)
+        compact_payload = json.loads(compact_json.stdout)
+        self.assertEqual(compact_payload["kinds"], ["chain-note", "project-note", "task-note"])
+        self.assertEqual(len(compact_payload["notes"]), 3)
 
     def test_report_recent_combines_notes_and_events(self) -> None:
         task = {

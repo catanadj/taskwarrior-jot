@@ -418,6 +418,10 @@ def _emit_note_like(command: str, payload: Mapping[str, Any]) -> None:
     post_save_action = payload.get("post_save_action") or {}
     if post_save_action.get("action") == "complete-task":
         _write_status(f"Completed task: {post_save_action.get('task_short_uuid')}")
+    elif post_save_action.get("action") == "delete-note":
+        _write_status("Moved note to trash", color="warning")
+        _emit_field("from", post_save_action.get("path"))
+        _emit_field("to", post_save_action.get("trash_path"))
 
 
 def _emit_append_like(command: str, payload: Mapping[str, Any]) -> None:
@@ -1037,6 +1041,9 @@ def _resource_status_color(status: str) -> str:
 
 
 def _emit_list(payload: Mapping[str, Any]) -> None:
+    if isinstance(payload.get("notes"), list):
+        output_notes.emit_compact_notes(payload, p=_note_output_primitives())
+        return
     _emit_show(payload)
     events = payload.get("events") or []
     sys.stdout.write("\n")

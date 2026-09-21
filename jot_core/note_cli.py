@@ -70,10 +70,18 @@ def run_project_list(ctx) -> CommandResult:
 
 
 def run_notes(ctx, args) -> CommandResult:
-    kinds = normalize_note_kinds(getattr(args, "kinds", None))
-    project = getattr(args, "project", None)
+    return _run_notes(ctx, args, command="notes")
+
+
+def run_all_notes(ctx) -> CommandResult:
+    return _run_notes(ctx, None, command="list")
+
+
+def _run_notes(ctx, args, *, command: str) -> CommandResult:
+    kinds = normalize_note_kinds(getattr(args, "kinds", None) if args is not None else None)
+    project = getattr(args, "project", None) if args is not None else None
     return CommandResult(
-        command="notes",
+        command=command,
         data=NotesCommandResult(
             kinds=tuple(sorted(kinds or {"task-note", "chain-note", "project-note"})),
             project=project,

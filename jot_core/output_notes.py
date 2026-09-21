@@ -60,6 +60,31 @@ def emit_notes(payload: Mapping[str, Any], *, p: NoteOutputPrimitives) -> None:
         sys.stdout.write("\n")
 
 
+def emit_compact_notes(payload: Mapping[str, Any], *, p: NoteOutputPrimitives) -> None:
+    items = payload.get("notes") or []
+    p.write_title("Notes", blank_after=True)
+    if not items:
+        sys.stdout.write("(none)\n")
+        return
+    groups = (
+        ("task-note", "Task notes"),
+        ("chain-note", "Chain notes"),
+        ("project-note", "Project notes"),
+    )
+    for kind, label in groups:
+        group = [item for item in items if str(item.get("kind") or "") == kind]
+        if not group:
+            continue
+        p.write_section_title(f"{label} ({len(group)})")
+        for item in group:
+            updated = str(item.get("updated") or "unknown").strip()
+            identifier = str(item.get("id") or "").strip()
+            title = str(item.get("title") or "").strip()
+            summary = "  ".join(part for part in (identifier, title) if part)
+            line = f"{updated}  {summary}" if summary else updated
+            sys.stdout.write(f"  {p.style(line, color='identity', bold=True)}\n")
+
+
 def emit_note_like(command: str, payload: Mapping[str, Any], *, p: NoteOutputPrimitives) -> None:
     action = "Opened" if payload.get("opened") else "Created"
     kind = {"note": "task note", "chain": "chain note", "project": "project note"}[command]

@@ -426,7 +426,7 @@ def build_parser(note_root: str | None = None) -> argparse.ArgumentParser:
         "note": "open or create the task note in your editor",
         "chain": "open or create the Nautical chain note in your editor",
         "show": "show note paths and Nautical summary for a task",
-        "list": "show task summary plus the current annotation event stream",
+        "list": "list notes, or show a task summary and annotation event stream",
         "export": "export task summary and events",
         "task-cat": "print the full task note without opening an editor",
         "chain-cat": "print the full chain note without opening an editor",
@@ -435,10 +435,17 @@ def build_parser(note_root: str | None = None) -> argparse.ArgumentParser:
     }
     for name, help_text in task_commands.items():
         sub = subparsers.add_parser(name, help=help_text, description=help_text[:1].upper() + help_text[1:] + ".")
-        sub.add_argument(
-            "task_ref",
-            help="task ID, full UUID, or unique short UUID",
-        )
+        if name == "list":
+            sub.add_argument(
+                "task_ref",
+                nargs="?",
+                help="task ID, full UUID, or unique short UUID; omit to list all notes",
+            )
+        else:
+            sub.add_argument(
+                "task_ref",
+                help="task ID, full UUID, or unique short UUID",
+            )
 
     project = subparsers.add_parser(
         "project",
@@ -1587,30 +1594,65 @@ def _merged_conflict_archive_path(config, secondary: Path) -> Path:
     return candidate
 
 
-def _offer_post_save_task_action(ctx, task) -> dict | None:
+def _offer_post_save_task_action(
+    ctx,
+    task=None,
+    *,
+    note_kind: str = "task",
+    project_name: str = "",
+) -> dict | None:
     if not ctx.config.editor_post_save_actions or not sys.stdin.isatty():
         return None
+    raw_task = getattr(task, "task", {})
+    task_completed = (
+        note_kind != "project"
+        and
+        isinstance(raw_task, dict)
+        and str(raw_task.get("status") or "").strip().casefold() == "completed"
+    )
 
     title = style_text("Post-save actions", role="title", bold=True, stream=sys.stderr)
-    task_label = style_text("Task", role="label", bold=True, stream=sys.stderr)
-    task_id = style_text(
-        task.task_short_uuid,
+    subject_label = "Project" if note_kind == "project" else "Task"
+    subject_value = project_name if note_kind == "project" else task.task_short_uuid
+    subject_label = style_text(subject_label, role="label", bold=True, stream=sys.stderr)
+    subject_id = style_text(
+        subject_value,
         role="identity",
         bold=True,
         stream=sys.stderr,
     )
-    complete_key = style_text("c", role="success", bold=True, stream=sys.stderr)
     enter_key = style_text("enter", role="muted", bold=True, stream=sys.stderr)
+    delete_key = style_text("d", role="warning", bold=True, stream=sys.stderr)
     action_label = style_text("Action", role="label", bold=True, stream=sys.stderr)
     sys.stderr.write(f"\n{title}\n")
-    sys.stderr.write(f"{task_label}: {task_id}  {task.description}\n")
-    sys.stderr.write(f"  {complete_key}  complete task\n")
+    description = "" if note_kind == "project" else f"  {task.description}"
+    sys.stderr.write(f"{subject_label}: {subject_id}{description}\n")
+    if not task_completed:
+        complete_key = style_text("c", role="success", bold=True, stream=sys.stderr)
+        sys.stderr.write(f"  {complete_key}  complete task\n")
+    sys.stderr.write(f"  {delete_key}  delete note\n")
     sys.stderr.write(f"  {enter_key}  do nothing\n")
     sys.stderr.write(f"{action_label}: ")
     sys.stderr.flush()
 
     choice = sys.stdin.readline().strip().casefold()
-    if choice not in {"c", "complete", "complete task", "done"}:
+    if choice in {"d", "delete", "delete note"}:
+        if note_kind == "task":
+            result = delete_task_note_storage(ctx.config, task)
+        elif note_kind == "chain":
+            result = delete_chain_note_storage(ctx.config, task)
+        elif note_kind == "project":
+            result = delete_project_note_storage(ctx.config, project_name)
+        else:
+            raise RuntimeError(f"unsupported note kind '{note_kind}'")
+        return {
+            "action": "delete-note",
+            "note_kind": note_kind,
+            "path": str(result.note_path),
+            "trash_path": str(result.trash_path),
+        }
+
+    if task_completed or choice not in {"c", "complete", "complete task", "done"}:
         return None
 
     ctx.taskwarrior.complete_task(task.task_uuid)
@@ -1639,7 +1681,7 @@ def _run_auto_note(ctx, task_ref: str) -> CommandResult:
         note = ensure_chain_note(ctx.config, task)
         _open_note_in_editor(ctx, note.note_path)
         finalize_chain_note_edit(ctx.config, task, note)
-        post_save_action = _offer_post_save_task_action(ctx, task)
+        post_save_action = _offer_post_save_task_action(ctx, task, note_kind="chain")
         return CommandResult(
             command="chain",
             data=NoteOpenResult(
@@ -1808,7 +1850,7 @@ def _run_chain(ctx, task_ref: str) -> CommandResult:
     note = ensure_chain_note(ctx.config, task)
     _open_note_in_editor(ctx, note.note_path)
     finalize_chain_note_edit(ctx.config, task, note)
-    post_save_action = _offer_post_save_task_action(ctx, task)
+    post_save_action = _offer_post_save_task_action(ctx, task, note_kind="chain")
     return CommandResult(
         command="chain",
         data=NoteOpenResult(
@@ -1824,12 +1866,18 @@ def _run_project(ctx, project_name: str) -> CommandResult:
     note = ensure_project_note(ctx.config, project_name)
     _open_note_in_editor(ctx, note.note_path)
     finalize_project_note_edit(ctx.config, project_name, note)
+    post_save_action = _offer_post_save_task_action(
+        ctx,
+        note_kind="project",
+        project_name=project_name,
+    )
     return CommandResult(
         command="project",
         data=NoteOpenResult(
             path=note.note_path,
             opened=note.existed,
             identity={"project": project_name},
+            post_save_action=post_save_action,
         ),
     )
 
@@ -1996,7 +2044,9 @@ def _run_add(ctx, task_ref: str, text_parts: list[str], event_type: str) -> Comm
     )
 
 
-def _run_list(ctx, task_ref: str) -> CommandResult:
+def _run_list(ctx, task_ref: str | None) -> CommandResult:
+    if not task_ref:
+        return _note_cli.run_all_notes(ctx)
     task = ctx.taskwarrior.resolve_task(task_ref)
     payload = _task_summary_payload(ctx, task)
     return CommandResult(
