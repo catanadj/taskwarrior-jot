@@ -1,5 +1,7 @@
 # jot
 
+![Taskwarrior Jot](taskwarrior-jot-banner.svg)
+
 Jot is a note-first companion for [Taskwarrior](https://taskwarrior.org/) and
 [Taskwarrior-Nautical](https://github.com/catanadj/taskwarrior-nautical). It keeps the context
 around your work close to the task: decisions, progress, links, files, and
