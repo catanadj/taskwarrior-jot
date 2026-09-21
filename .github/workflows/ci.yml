@@ -42,6 +42,9 @@ jobs:
           python tools/write_checksums.py dist
           (cd dist && sha256sum -c SHA256SUMS)
 
+      - name: Validate release metadata
+        run: python tools/check_release_metadata.py --ref "$GITHUB_REF_NAME"
+
       - name: Install wheel without optional UI dependencies
         run: python tools/check_install.py dist/*.whl
 
