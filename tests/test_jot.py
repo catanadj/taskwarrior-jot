@@ -1685,6 +1685,21 @@ class JsonEnvelopeTests(unittest.TestCase):
         self.assertIn("café", rendered)
         self.assertNotIn("\\u00e9", rendered)
 
+    def test_success_envelope_serializes_typed_integrity_reports(self) -> None:
+        report = IntegrityReport.from_mapping(
+            {
+                "schema": "jot.integrity",
+                "schema_version": 1,
+                "findings": [],
+                "counts": {"total": 0},
+            }
+        )
+        envelope = success_envelope("jot.integrity", report)
+
+        rendered = json.dumps(envelope)
+        self.assertEqual(envelope["data"]["counts"]["total"], 0)
+        self.assertNotIn("IntegrityReport", rendered)
+
     def test_json_flag_is_accepted_after_subcommand(self) -> None:
         args = build_parser().parse_args(["export", "42", "--json"])
         self.assertTrue(args.json)

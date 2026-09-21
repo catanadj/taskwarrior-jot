@@ -35,7 +35,7 @@ def success_envelope(
         "schema": str(schema),
         "schema_version": 1,
         "ok": True,
-        "data": data,
+        "data": serialize_payload(data),
         "warnings": [str(item) for item in warnings],
     }
 
