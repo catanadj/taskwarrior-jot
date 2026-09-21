@@ -2954,6 +2954,8 @@ class CliIntegrationTests(JotCliTestCase):
     def test_ambiguous_command_prefix_lists_matches(self) -> None:
         result = self.run_jot("pro")
         self.assertEqual(result.returncode, 2)
+        self.assertIn("usage: jot [options] COMMAND ...", result.stderr)
+        self.assertNotIn("{doctor,migrate", result.stderr)
         self.assertIn("ambiguous command 'pro'", result.stderr)
         self.assertIn("progress", result.stderr)
         self.assertIn("project", result.stderr)

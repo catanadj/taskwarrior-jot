@@ -146,6 +146,21 @@ class _JotArgumentParser(argparse.ArgumentParser):
             return _format_top_level_help(self)
         return super().format_help()
 
+    def format_usage(self) -> str:
+        if self._top_level:
+            return "usage: jot [options] COMMAND ...\n"
+        return super().format_usage()
+
+    def error(self, message: str) -> None:
+        if not self._top_level:
+            super().error(message)
+            return
+        usage = style_text(self.format_usage().rstrip(), role="muted", stream=sys.stderr)
+        label = style_text(f"{self.prog}: error:", role="error", bold=True, stream=sys.stderr)
+        detail = style_text(message, role="label", stream=sys.stderr)
+        self._print_message(f"{usage}\n{label} {detail}\n", sys.stderr)
+        self.exit(2)
+
 
 def _format_top_level_help(parser: argparse.ArgumentParser) -> str:
     """Render the root help as a compact, color-aware command catalog."""

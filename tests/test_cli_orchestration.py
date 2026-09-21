@@ -174,6 +174,25 @@ class CliOrchestrationTests(unittest.TestCase):
             configure_output(color_mode="auto")
         self.assertIn("\033[", colored_help)
 
+    def test_top_level_errors_use_compact_usage_and_colors(self) -> None:
+        parser = cli.build_parser(note_root=str(self.root))
+        stderr = io.StringIO()
+        try:
+            with mock.patch.dict("os.environ", {}, clear=True):
+                configure_output(color_mode="always")
+                with mock.patch("sys.stderr", stderr):
+                    with self.assertRaises(SystemExit) as raised:
+                        parser.error("ambiguous command 'pro': progress, project")
+        finally:
+            configure_output(color_mode="auto")
+
+        self.assertEqual(raised.exception.code, 2)
+        rendered = stderr.getvalue()
+        self.assertIn("usage: jot [options] COMMAND ...", rendered)
+        self.assertNotIn("{doctor,migrate", rendered)
+        self.assertIn("\033[", rendered)
+        self.assertIn("ambiguous command 'pro'", rendered)
+
     def test_completion_command_does_not_load_taskwarrior_context(self) -> None:
         output = io.StringIO()
         with mock.patch("sys.stdout", output), mock.patch(
