@@ -40,7 +40,7 @@ jobs:
           python -m build
           python tools/check_artifacts.py
           python tools/write_checksums.py dist
-          sha256sum -c dist/SHA256SUMS
+          (cd dist && sha256sum -c SHA256SUMS)
 
       - name: Install wheel without optional UI dependencies
         run: python tools/check_install.py dist/*.whl

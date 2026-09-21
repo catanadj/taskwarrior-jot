@@ -233,5 +233,13 @@ class TaskwarriorClient:
 
     def _command_prefix(self) -> list[str]:
         if self.taskdata or str(os.environ.get("TASKDATA") or "").strip():
-            return [f"rc.data.location={self.environment().data_path}"]
+            environment = self.environment()
+            prefix: list[str] = []
+            # Taskwarrior 2.x does not consistently honor TASKRC for an
+            # isolated config. Passing an existing rc file aligns 2.x and 3.x
+            # without inventing a config file.
+            if environment.rc_path.exists():
+                prefix.append(f"rc:{environment.rc_path}")
+            prefix.append(f"rc.data.location={environment.data_path}")
+            return prefix
         return []

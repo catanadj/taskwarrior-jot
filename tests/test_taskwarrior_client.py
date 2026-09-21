@@ -146,11 +146,26 @@ class TaskwarriorClientTests(unittest.TestCase):
         client = TaskwarriorClient(taskdata="/tmp/tasks")
         with mock.patch("jot_core.taskwarrior.TaskwarriorClient.environment") as environment:
             environment.return_value.data_path = "/effective/tasks"
+            environment.return_value.rc_path = Path("/missing/taskrc")
             self.assertEqual(client._command_prefix(), ["rc.data.location=/effective/tasks"])
         with mock.patch.dict("os.environ", {"TASKDATA": "/env/tasks"}):
             with mock.patch("jot_core.taskwarrior.TaskwarriorClient.environment") as environment:
                 environment.return_value.data_path = "/env/tasks"
+                environment.return_value.rc_path = Path("/missing/taskrc")
                 self.assertEqual(client._command_prefix(), ["rc.data.location=/env/tasks"])
+
+    def test_command_prefix_uses_existing_taskrc(self) -> None:
+        client = TaskwarriorClient(taskdata="/tmp/tasks")
+        with TemporaryDirectory() as directory:
+            taskrc = Path(directory) / "taskrc"
+            taskrc.touch()
+            with mock.patch("jot_core.taskwarrior.TaskwarriorClient.environment") as environment:
+                environment.return_value.data_path = "/effective/tasks"
+                environment.return_value.rc_path = taskrc
+                self.assertEqual(
+                    client._command_prefix(),
+                    [f"rc:{taskrc}", "rc.data.location=/effective/tasks"],
+                )
 
 
 if __name__ == "__main__":
