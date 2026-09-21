@@ -75,6 +75,7 @@ COMMAND_EXAMPLES = {
     "timew inherit": "jot timew inherit task 42",
     "timew show": "jot timew show 42",
     "tui": "jot tui",
+    "completion": "jot completion bash",
     "doctor": "jot doctor",
     "migrate": "jot migrate --dry-run",
     "paths": "jot paths",

@@ -15,6 +15,7 @@ from . import note_cli as _note_cli
 from .app import build_app_context
 from .command_help import build_command_catalog
 from .command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
+from .completion import SUPPORTED_SHELLS, render_completion
 from .config import ensure_app_dirs, load_config
 from .doctor import run_doctor, run_doctor_config_error, run_installation_doctor
 from .editor import colorize_diff, note_diff, open_in_editor
@@ -277,6 +278,12 @@ def build_parser(note_root: str | None = None) -> argparse.ArgumentParser:
         help="launch terminal UI",
         description="Launch the jot terminal user interface.",
     )
+    completion = subparsers.add_parser(
+        "completion",
+        help="print shell completion code",
+        description="Print dependency-free completion code for Bash, Zsh, or Fish.",
+    )
+    completion.add_argument("shell", choices=SUPPORTED_SHELLS, help="target shell")
     subparsers.add_parser(
         "project-list",
         help="list known project notes",
@@ -946,6 +953,10 @@ def main(argv: list[str] | None = None) -> int:
     except AmbiguousCommandPrefix as exc:
         parser.error(str(exc))
     args = parser.parse_args(argv)
+
+    if args.command == "completion":
+        sys.stdout.write(render_completion(args.shell, parser))
+        return 0
 
     if args.command == "doctor" and args.installation_only:
         if args.repair:

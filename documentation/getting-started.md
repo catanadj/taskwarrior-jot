@@ -85,6 +85,16 @@ jot show 42
 jot export 42 --json
 ```
 
+Enable shell completion when you use Jot frequently:
+
+```bash
+eval "$(jot completion bash)"
+```
+
+Use `jot completion zsh` or `jot completion fish` for the other supported
+shells. For a persistent setup, save the generated output in your shell's
+completion directory.
+
 Use the TUI when you want to browse tasks, projects, notes, and recent edits:
 
 ```bash

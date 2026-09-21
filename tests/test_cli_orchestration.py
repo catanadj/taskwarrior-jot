@@ -174,6 +174,16 @@ class CliOrchestrationTests(unittest.TestCase):
             configure_output(color_mode="auto")
         self.assertIn("\033[", colored_help)
 
+    def test_completion_command_does_not_load_taskwarrior_context(self) -> None:
+        output = io.StringIO()
+        with mock.patch("sys.stdout", output), mock.patch(
+            "jot_core.cli.build_app_context"
+        ) as build_context:
+            self.assertEqual(cli.main(["completion", "bash"]), 0)
+
+        self.assertIn("complete -F _jot_completions jot", output.getvalue())
+        build_context.assert_not_called()
+
     def test_timelog_orchestration_validates_and_routes_operations(self) -> None:
         pending_args = SimpleNamespace(timelog_command="pending")
         with mock.patch("jot_core.cli.list_time_sessions", return_value=[]):

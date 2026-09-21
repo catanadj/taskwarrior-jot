@@ -21,6 +21,7 @@ jot search TEXT                  Search notes and events
 jot recent                       Show recent edits
 jot export REF --json            Export structured context
 jot tui                          Start the terminal UI
+jot completion bash              Print Bash completion code
 jot paths                        Show effective paths
 jot doctor                      Check and repair the installation
 jot migrate                     Apply note migrations
