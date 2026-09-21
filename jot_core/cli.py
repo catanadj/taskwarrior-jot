@@ -14,7 +14,7 @@ from . import __version__
 from . import note_cli as _note_cli
 from .app import build_app_context
 from .command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
-from .config import ensure_app_dirs
+from .config import ensure_app_dirs, load_config
 from .doctor import run_doctor, run_doctor_config_error, run_installation_doctor
 from .editor import colorize_diff, note_diff, open_in_editor
 from .events import collect_event_text, format_event_text, validate_event_type
@@ -136,14 +136,19 @@ class _JotArgumentParser(argparse.ArgumentParser):
         return super().parse_args(args, namespace)
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser(note_root: str | None = None) -> argparse.ArgumentParser:
+    location = (
+        f"note files under {note_root}"
+        if note_root
+        else "note files under the active Taskwarrior data directory"
+    )
     parser = _JotArgumentParser(
         prog="jot",
         description=(
             "Note-first companion for Taskwarrior and Taskwarrior-Nautical. "
             "Taskwarrior annotations remain the visible event stream; durable "
-            "task, chain, and project context lives in note files under the active "
-            "Taskwarrior data directory; use `jot paths` to inspect the resolved location."
+            f"task, chain, and project context lives in {location}; use `jot paths` "
+            "to inspect the resolved location."
         ),
         epilog=(
             "Examples:\n"
@@ -891,7 +896,7 @@ def main(argv: list[str] | None = None) -> int:
         argv = sys.argv[1:]
     argv = _normalize_json_argv(list(argv))
     if not argv:
-        parser = build_parser()
+        parser = build_parser(note_root=_help_note_root())
         parser.print_help()
         return 0
     shorthand_ref, shorthand_json = _parse_task_shorthand(argv)
@@ -916,7 +921,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    parser = build_parser()
+    parser = build_parser(note_root=_help_note_root() if "-h" in argv or "--help" in argv else None)
     try:
         argv = expand_command_prefixes(parser, argv)
     except AmbiguousCommandPrefix as exc:
@@ -1119,6 +1124,14 @@ def main(argv: list[str] | None = None) -> int:
     if result.command == "migrate" and result.data.get("blocked"):
         return 1
     return 0
+
+
+def _help_note_root() -> str | None:
+    """Resolve the configured note root without making help a hard failure."""
+    try:
+        return str(load_config().root_dir)
+    except Exception:
+        return None
 
 
 def _parse_task_shorthand(argv: list[str]) -> tuple[str | None, bool]:

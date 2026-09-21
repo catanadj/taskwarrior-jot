@@ -137,10 +137,23 @@ class CliOrchestrationTests(unittest.TestCase):
 
     def test_no_arguments_prints_help_without_loading_context(self) -> None:
         output = io.StringIO()
-        with mock.patch("sys.stdout", output), mock.patch("jot_core.cli.build_app_context") as build_context:
+        with mock.patch("sys.stdout", output), mock.patch("jot_core.cli.build_app_context") as build_context, mock.patch(
+            "jot_core.cli.load_config", return_value=SimpleNamespace(root_dir=self.root)
+        ):
             self.assertEqual(cli.main([]), 0)
         self.assertIn("usage: jot", output.getvalue())
+        self.assertIn(str(self.root), output.getvalue())
         build_context.assert_not_called()
+
+    def test_help_shows_resolved_note_root(self) -> None:
+        output = io.StringIO()
+        with mock.patch("sys.stdout", output), mock.patch(
+            "jot_core.cli.load_config", return_value=SimpleNamespace(root_dir=self.root)
+        ):
+            with self.assertRaises(SystemExit) as raised:
+                cli.main(["--help"])
+        self.assertEqual(raised.exception.code, 0)
+        self.assertIn(f"note files under {self.root}", output.getvalue())
 
     def test_timelog_orchestration_validates_and_routes_operations(self) -> None:
         pending_args = SimpleNamespace(timelog_command="pending")
