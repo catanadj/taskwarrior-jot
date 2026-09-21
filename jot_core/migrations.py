@@ -6,11 +6,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .frontmatter import exclusive_file_lock, read_document, write_document
+from .frontmatter import atomic_write_text, exclusive_file_lock, read_document, write_document
 from .index import rebuild_index, save_index
 from .models import AppConfig, MigrationResult
 from .ops import append_op
 from .schema import NOTE_SCHEMA_VERSION, inspect_note_schema, inspect_note_schemas
+
+
+class MigrationError(RuntimeError):
+    def __init__(self, message: str, *, backup_path: Path) -> None:
+        super().__init__(f"{message}; backup preserved at {backup_path}")
+        self.backup_path = backup_path
 
 
 def migrate_notes(config: AppConfig, *, dry_run: bool = False) -> MigrationResult:
@@ -35,22 +41,30 @@ def migrate_notes(config: AppConfig, *, dry_run: bool = False) -> MigrationResul
         return MigrationResult.from_mapping(result)
 
     backup_root = _migration_backup_root(config)
-    for item in planned:
-        path = Path(str(item["path"]))
-        with exclusive_file_lock(path):
-            current = inspect_note_schema(path)
-            if current["status"] != "legacy":
-                raise RuntimeError(
-                    f"note changed while migration was running: {path} ({current['status']})"
-                )
-            metadata, body = read_document(path)
-            backup_path = backup_root / _relative_note_path(config, path)
-            backup_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, backup_path)
-            upgraded = OrderedDict([("schema_version", NOTE_SCHEMA_VERSION)])
-            upgraded.update((key, value) for key, value in metadata.items() if key != "schema_version")
-            write_document(path, upgraded, body)
-            result["migrated"] = int(result["migrated"]) + 1
+    backed_up: list[tuple[Path, Path]] = []
+    try:
+        for item in planned:
+            path = Path(str(item["path"]))
+            with exclusive_file_lock(path):
+                current = inspect_note_schema(path)
+                if current["status"] != "legacy":
+                    raise RuntimeError(
+                        f"note changed while migration was running: {path} ({current['status']})"
+                    )
+                metadata, body = read_document(path)
+                backup_path = backup_root / _relative_note_path(config, path)
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, backup_path)
+                backed_up.append((path, backup_path))
+                upgraded = OrderedDict([("schema_version", NOTE_SCHEMA_VERSION)])
+                upgraded.update((key, value) for key, value in metadata.items() if key != "schema_version")
+                write_document(path, upgraded, body)
+                result["migrated"] = int(result["migrated"]) + 1
+    except Exception as exc:
+        for path, backup_path in reversed(backed_up):
+            if backup_path.exists():
+                atomic_write_text(path, backup_path.read_text(encoding="utf-8"))
+        raise MigrationError(str(exc), backup_path=backup_root) from exc
 
     result["backup_path"] = str(backup_root)
     append_op(
@@ -62,6 +76,38 @@ def migrate_notes(config: AppConfig, *, dry_run: bool = False) -> MigrationResul
     )
     save_index(config, rebuild_index(config))
     return MigrationResult.from_mapping(result)
+
+
+def restore_migration_backup(config: AppConfig, backup_path: Path) -> dict[str, Any]:
+    backup_root = backup_path.expanduser().resolve()
+    backups_root = (config.root_dir / ".jot_backups").resolve()
+    if not backup_root.is_relative_to(backups_root):
+        raise RuntimeError(f"migration backup must be inside {backups_root}")
+    if not backup_root.is_dir():
+        raise RuntimeError(f"migration backup does not exist: {backup_root}")
+
+    restored = 0
+    for source in sorted(backup_root.rglob("*.md")):
+        relative = source.relative_to(backup_root)
+        target = config.root_dir / relative
+        atomic_write_text(target, source.read_text(encoding="utf-8"))
+        restored += 1
+    if not restored:
+        raise RuntimeError(f"migration backup contains no note files: {backup_root}")
+
+    append_op(config, "schema_restore", backup_path=str(backup_root), restored=restored)
+    save_index(config, rebuild_index(config))
+    return {
+        "schema_version": NOTE_SCHEMA_VERSION,
+        "dry_run": False,
+        "total": restored,
+        "planned": 0,
+        "migrated": 0,
+        "blocked": 0,
+        "backup_path": str(backup_root),
+        "items": [],
+        "restored": restored,
+    }
 
 
 def _migration_backup_root(config: AppConfig) -> Path:

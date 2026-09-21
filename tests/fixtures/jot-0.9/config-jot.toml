@@ -1,0 +1,22 @@
+[paths]
+root = "."
+tasks = "./tasks"
+chains = "./chains"
+projects = "./projects"
+templates = "./templates"
+
+[editor]
+command = "true"
+show_diff_on_save = true
+diff_color = "never"
+post_save_actions = true
+
+[display]
+color = "never"
+default_format = "text"
+
+[nautical]
+enabled = true
+
+[timewarrior]
+enabled = true

@@ -21,7 +21,7 @@ from .events import collect_event_text, format_event_text, validate_event_type
 from .frontmatter import atomic_write_text, exclusive_file_lock, parse_document, read_document
 from .index import rebuild_index, read_index_status, save_index
 from .integrity import reconcile_integrity, scan_integrity
-from .migrations import migrate_notes
+from .migrations import migrate_notes, restore_migration_backup
 from .models import (
     CommandResult,
     EventAddResult,
@@ -226,6 +226,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="show planned and blocked migrations without changing files",
+    )
+    migrate.add_argument(
+        "--restore",
+        metavar="BACKUP_PATH",
+        help="restore notes from a migration backup directory",
     )
     subparsers.add_parser(
         "paths",
@@ -940,9 +945,15 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "doctor":
             result = run_doctor(ctx.config, ctx.taskwarrior, repair=bool(args.repair))
         elif args.command == "migrate":
+            if args.dry_run and args.restore:
+                raise RuntimeError("choose either --dry-run or --restore")
             result = CommandResult(
                 command="migrate",
-                data=migrate_notes(ctx.config, dry_run=bool(args.dry_run)),
+                data=(
+                    restore_migration_backup(ctx.config, Path(args.restore))
+                    if args.restore
+                    else migrate_notes(ctx.config, dry_run=bool(args.dry_run))
+                ),
             )
         elif args.command == "paths":
             result = _run_paths(ctx)
