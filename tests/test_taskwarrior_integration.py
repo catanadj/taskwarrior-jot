@@ -7,6 +7,7 @@ import shutil
 import subprocess
 from tempfile import TemporaryDirectory
 import unittest
+from unittest import mock
 
 from jot_core.config import ensure_app_dirs
 from jot_core.models import AppConfig
@@ -42,6 +43,16 @@ class TaskwarriorIntegrationTests(unittest.TestCase):
             "TASKDATA": str(self.data),
             "TASKRC": str(self.taskrc),
         }
+        self.environment_patch = mock.patch.dict(
+            os.environ,
+            {
+                "HOME": str(self.home),
+                "TASKDATA": str(self.data),
+                "TASKRC": str(self.taskrc),
+            },
+        )
+        self.environment_patch.start()
+        self.addCleanup(self.environment_patch.stop)
         self.client = TaskwarriorClient(task_bin=str(TASK_BIN), taskdata=str(self.data))
 
     def _run_task(self, *arguments: str) -> subprocess.CompletedProcess[str]:
