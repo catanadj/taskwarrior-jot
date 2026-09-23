@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .date_filter import NoteDateFilter
 from .models import (
     CommandResult,
     NoteContentResult,
@@ -73,11 +74,17 @@ def run_notes(ctx, args) -> CommandResult:
     return _run_notes(ctx, args, command="notes")
 
 
-def run_all_notes(ctx) -> CommandResult:
-    return _run_notes(ctx, None, command="list")
+def run_all_notes(ctx, *, date_filter: NoteDateFilter | None = None) -> CommandResult:
+    return _run_notes(ctx, None, command="list", date_filter=date_filter)
 
 
-def _run_notes(ctx, args, *, command: str) -> CommandResult:
+def _run_notes(
+    ctx,
+    args,
+    *,
+    command: str,
+    date_filter: NoteDateFilter | None = None,
+) -> CommandResult:
     kinds = normalize_note_kinds(getattr(args, "kinds", None) if args is not None else None)
     project = getattr(args, "project", None) if args is not None else None
     return CommandResult(
@@ -85,7 +92,16 @@ def _run_notes(ctx, args, *, command: str) -> CommandResult:
         data=NotesCommandResult(
             kinds=tuple(sorted(kinds or {"task-note", "chain-note", "project-note"})),
             project=project,
-            notes=tuple(NoteSummary.from_mapping(item) for item in list_notes(ctx.config, kinds=kinds, project=project)),
+            notes=tuple(
+                NoteSummary.from_mapping(item)
+                for item in list_notes(
+                    ctx.config,
+                    kinds=kinds,
+                    project=project,
+                    date_filter=date_filter,
+                )
+            ),
+            date_filter=date_filter.to_payload() if date_filter else None,
         ),
     )
 

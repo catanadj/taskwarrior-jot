@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from .date_filter import NoteDateFilter
 from .frontmatter import read_document
 from .models import ActivityItem, AppConfig, ProjectRollup
 from .notes import find_project_note, list_note_resources
@@ -26,6 +27,7 @@ def list_notes(
     *,
     kinds: set[str] | None = None,
     project: str | None = None,
+    date_filter: NoteDateFilter | None = None,
 ) -> list[dict[str, Any]]:
     selected = set(kinds or {"task-note", "chain-note", "project-note"})
     project_filter = str(project or "").strip()
@@ -41,6 +43,8 @@ def list_notes(
             item for item in items
             if str(item.get("project") or "").casefold() == project_filter.casefold()
         ]
+    if date_filter:
+        items = [item for item in items if date_filter.matches(item.get("updated"))]
     items.sort(
         key=lambda item: (
             str(item.get("updated") or ""),

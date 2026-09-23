@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import difflib
+from datetime import datetime
 import os
 import shlex
 import shutil
@@ -9,7 +10,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .frontmatter import atomic_write_text, exclusive_file_lock
+from .frontmatter import atomic_write_text, exclusive_file_lock, parse_document, render_document
+from .templates import expand_text
+
 
 def split_editor_command(editor_command: str) -> list[str]:
     cmd = shlex.split(editor_command)
@@ -33,6 +36,8 @@ def open_in_editor(
     *,
     show_diff: bool = True,
     color_mode: str = "auto",
+    expand_on_save: bool = False,
+    confirm_expansion: bool = True,
 ) -> str:
     before = path.read_text(encoding="utf-8") if path.exists() else ""
     cmd = split_editor_command(editor_command)
@@ -54,6 +59,13 @@ def open_in_editor(
         if completed.returncode != 0:
             raise RuntimeError(f"editor exited with code {completed.returncode}")
         after = temporary_path.read_text(encoding="utf-8")
+        if expand_on_save:
+            after = expand_note_content(
+                path,
+                after,
+                confirm=confirm_expansion,
+                color_mode=color_mode,
+            )
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
@@ -78,6 +90,61 @@ def open_in_editor(
     if diff and show_diff:
         sys.stderr.write(colorize_diff(diff, color_mode=color_mode))
     return diff
+
+
+def expand_note_content(
+    path: Path,
+    content: str,
+    *,
+    confirm: bool,
+    color_mode: str = "auto",
+) -> str:
+    try:
+        metadata, body = parse_document(content)
+    except Exception:
+        sys.stderr.write("[jot] note expansion skipped: front matter could not be parsed\n")
+        return content
+    now = datetime.now().astimezone().replace(microsecond=0)
+    zone = now.tzname() or now.strftime("%z")
+    context = {
+        "date": now.strftime("%Y-%m-%d"),
+        "time": f"{now:%H:%M:%S} {zone}".strip(),
+        "datetime": f"{now:%Y-%m-%d %H:%M:%S} {zone}".strip(),
+        "timezone": zone,
+        **{
+            key: (".".join(value) if key == "project_path" and isinstance(value, list) else str(value or ""))
+            for key, value in metadata.items()
+            if key in {
+                "created", "updated", "task_short_uuid", "task_uuid", "description",
+                "project", "chain_id", "project_path", "link",
+            }
+        },
+    }
+    expansion = expand_text(body, context)
+    if expansion.text == body:
+        _warn_unknown_tokens(expansion.unknown_tokens)
+        return content
+    if confirm:
+        if not sys.stdin.isatty():
+            sys.stderr.write("[jot] note expansion skipped: confirmation requires an interactive terminal\n")
+            _warn_unknown_tokens(expansion.unknown_tokens)
+            return content
+        diff = note_diff(body, expansion.text, path=path)
+        sys.stderr.write("\nProposed note substitutions:\n")
+        sys.stderr.write(colorize_diff(diff, color_mode=color_mode))
+        sys.stderr.write("Apply substitutions? [y/N] ")
+        sys.stderr.flush()
+        if sys.stdin.readline().strip().casefold() not in {"y", "yes"}:
+            _warn_unknown_tokens(expansion.unknown_tokens)
+            return content
+    _warn_unknown_tokens(expansion.unknown_tokens)
+    return render_document(metadata, expansion.text)
+
+
+def _warn_unknown_tokens(tokens: tuple[str, ...]) -> None:
+    if tokens:
+        labels = ", ".join("{" + token + "}" for token in tokens)
+        sys.stderr.write(f"[jot] unknown placeholders left unchanged: {labels}\n")
 
 
 def note_diff(before: str, after: str, *, path: Path) -> str:

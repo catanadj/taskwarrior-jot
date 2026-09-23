@@ -11,7 +11,7 @@ from typing import Any
 from unittest import mock
 
 from jot_tui.app import build_tui
-from jot_core.frontmatter import write_document
+from jot_core.frontmatter import read_document, write_document
 from jot_core.models import AppConfig, ResolvedTask, TaskRef
 from jot_core.ops import append_op
 from jot_core.services import JotService
@@ -327,6 +327,115 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
                 await pilot.pause()
                 self.assertIn("Read book", str(app.query_one("#task-summary", Static).render()))
                 self.assertIn("Chapter 4 notes", str(app.query_one("#task-note-preview", Static).render()))
+
+    async def test_search_trash_preview_restores_and_refreshes_results(self) -> None:
+        with TemporaryDirectory(prefix="jot-tui-trash-search-") as temporary:
+            service = real_service_fixture(Path(temporary))
+            deleted = service.delete_task_note("2d6d7d7d")
+            app = build_tui(service, session_refresh_seconds=None)
+
+            async with app.run_test(size=(120, 40)) as pilot:
+                await pilot.pause()
+                app.query_one("#main-tabs", TabbedContent).active = "search-tab"
+                app.state.current_search_query = "Chapter 4"
+                await app._run_search_async("Chapter 4")
+
+                self.assertEqual(len(app.state.search_trash_rows), 1)
+                self.assertEqual(
+                    app.state.search_trash_rows[0]["original_path"],
+                    str(deleted.note_path),
+                )
+                app.query_one("#search-results-tabs", TabbedContent).active = "search-trash-pane"
+                await pilot.pause()
+                table = app.query_one("#search-trash-table", DataTable)
+                self.assertEqual(table.row_count, 1)
+                self.assertIn("Chapter 4", str(app.state.search_trash_rows[0]["match"]))
+                self.assertEqual(app.state.search_trash_rows[0]["description"], "Read book")
+                with mock.patch.object(app, "_open_search_trash_preview") as open_preview:
+                    app.on_data_table_row_selected(
+                        SimpleNamespace(data_table=table, cursor_row=0)
+                    )
+                    open_preview.assert_called_once_with(app.state.search_trash_rows[0])
+                app._open_search_trash_preview(app.state.search_trash_rows[0])
+                await pilot.pause()
+
+                self.assertIn("Chapter 4 notes", str(app.screen.query_one("#trash-preview-body", Static).render()))
+                await pilot.click("#trash-preview-close-btn")
+                await pilot.pause()
+                self.assertEqual(app.state.current_search_query, "Chapter 4")
+                self.assertEqual(table.row_count, 1)
+                self.assertEqual(table.cursor_row, 0)
+                app._open_search_trash_preview(app.state.search_trash_rows[0])
+                await pilot.pause()
+                await pilot.click("#trash-preview-restore-btn")
+                await pilot.pause()
+
+                self.assertTrue(Path(str(deleted.note_path)).exists())
+                self.assertEqual(app.state.search_trash_rows, [])
+                self.assertEqual(app.query_one("#search-trash-table", DataTable).row_count, 0)
+                self.assertEqual(app.query_one("#search-notes-table", DataTable).row_count, 1)
+                await app._run_search_async("no-such-note-match")
+                self.assertEqual(app.state.search_note_rows, [])
+                self.assertEqual(app.query_one("#search-notes-table", DataTable).row_count, 0)
+
+    async def test_search_details_show_titles_paths_counts_and_empty_states(self) -> None:
+        with TemporaryDirectory(prefix="jot-tui-search-details-") as temporary:
+            service = real_service_fixture(Path(temporary))
+            service.append_project_note("reading", "Chapter 4 project memo")
+            app = build_tui(service, session_refresh_seconds=None)
+
+            async with app.run_test(size=(80, 32)) as pilot:
+                await pilot.pause()
+                app.query_one("#main-tabs", TabbedContent).active = "search-tab"
+                app.state.current_search_query = "Chapter 4"
+                await app._run_search_async("Chapter 4")
+
+                notes_table = app.query_one("#search-notes-table", DataTable)
+                self.assertEqual(notes_table.row_count, 2)
+                self.assertEqual(str(notes_table.get_row_at(0)[1]), "reading")
+                self.assertIn("Search Notes (2)", str(app.query_one("#search-notes-title", Static).render()))
+                app._update_search_result_detail("notes", 0)
+                detail = str(app.query_one("#search-notes-detail", Static).render())
+                self.assertIn(str(service.config.projects_dir / "reading" / "index.md"), detail)
+                self.assertIn("Match type: content", detail)
+                self.assertIn("Chapter 4", detail)
+                notes_table.focus()
+                notes_table.move_cursor(row=0)
+                await pilot.press("down")
+                await pilot.pause()
+                self.assertIn(str(service.config.tasks_dir / "2d6d7d7d--read-book.md"), str(app.query_one("#search-notes-detail", Static).render()))
+
+                app.state.current_search_query = "no-such-result"
+                await app._run_search_async("no-such-result")
+                self.assertIn("Search Notes (0)", str(app.query_one("#search-notes-title", Static).render()))
+                self.assertIn("No matching notes", str(app.query_one("#search-notes-detail", Static).render()))
+                self.assertIn("No matching deleted notes", str(app.query_one("#search-trash-detail", Static).render()))
+                self.assertEqual(app.state.current_search_query, "no-such-result")
+
+    async def test_note_history_palette_previews_diff_and_restores_revision(self) -> None:
+        with TemporaryDirectory(prefix="jot-tui-history-") as temporary:
+            service = real_service_fixture(Path(temporary))
+            note_path = service.task_note_path_for_task_ref("2d6d7d7d")
+            metadata, body = read_document(Path(note_path))
+            metadata["kind"] = "task-note"
+            write_document(Path(note_path), metadata, body)
+            service.append_task_note("2d6d7d7d", "first history entry")
+            service.append_task_note("2d6d7d7d", "second history entry")
+            app = build_tui(service, session_refresh_seconds=None)
+
+            async with app.run_test(size=(120, 40)) as pilot:
+                await pilot.pause()
+                await app._open_note_history_async({"kind": "task", "task_ref": "2d6d7d7d"})
+                await pilot.pause()
+                self.assertGreater(app.screen.query_one("#palette-table", DataTable).row_count, 0)
+                await pilot.press("enter")
+                await pilot.pause()
+                self.assertIn("second history entry", str(app.screen.query_one("#history-diff-text", Static).render()))
+                await pilot.click("#history-diff-restore-btn")
+                await pilot.pause()
+                note = Path(service.task_note_path_for_task_ref("2d6d7d7d")).read_text(encoding="utf-8")
+                self.assertIn("first history entry", note)
+                self.assertNotIn("second history entry", note)
 
     async def test_real_service_timer_persists_start_and_stop(self) -> None:
         with TemporaryDirectory(prefix="jot-tui-real-") as temporary:

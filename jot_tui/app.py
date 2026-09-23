@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Mapping
 
+from jot_core.frontmatter import read_document
 from jot_core.services import JotService
 from jot_core.notes import preview_trash_path
 from jot_tui.palette import PaletteEntry, filter_palette_entries
@@ -119,6 +120,8 @@ def tui_context_action_entries(
     entries = [
         PaletteEntry("edit-note", "Edit/open note", "Open the active note in your editor."),
     ]
+    if has_note:
+        entries.append(PaletteEntry("note-history", "Note history", "Review past revisions and restore one."))
     if scope == "task":
         entries.append(
             PaletteEntry("add-task", "Add to task heading", "Prompt for heading and text, then append a timestamped task entry.")
@@ -218,7 +221,7 @@ def build_tui(
 
     # Keep the palette workflow independent from the main application state.
     CommandPaletteModal = build_command_palette_modal()
-    AddToHeadingModal, AttachResourceModal = build_note_modals()
+    AddToHeadingModal, AttachResourceModal, TrashNotePreviewModal, NoteHistoryDiffModal = build_note_modals()
     TimeSessionStartModal, ConfirmTimeSessionModal, TimeEntryModal, ConfirmTimeDeleteModal, TimeTrashModal = build_time_modals(tui_time_input_value, tui_default_time_range)
     ProgressModal = build_progress_modal(NEW_PROGRESS_TRACK, initial_progress_track, resolve_progress_track)
     ConfirmDeleteModal, ResourcePickerModal = build_common_modals()
@@ -250,6 +253,12 @@ def build_tui(
         }
         #search-bar { height: auto; }
         #search-input { margin: 0 1 0 0; width: 1fr; }
+        #search-notes-detail, #search-trash-detail, #search-events-detail {
+            height: 6;
+            border: round $panel;
+            padding: 0 1;
+            overflow: auto;
+        }
         #time-pane { padding: 0 1; }
         #time-controls { height: auto; margin: 0 0 1 0; }
         #time-filter-controls, #time-action-controls { height: auto; }
@@ -266,7 +275,8 @@ def build_tui(
         #time-details-block { height: 3fr; border: round $panel; }
         #time-day-table, #time-project-table, #time-task-table, #time-details-table { height: 1fr; }
         #context-hints { padding: 0 1; color: $text-muted; }
-        #recent-table, #tasks-table, #projects-table, #notes-table, #search-notes-table, #search-events-table { height: 1fr; }
+        #recent-table, #tasks-table, #projects-table, #notes-table, #search-notes-table, #search-trash-table, #search-events-table { height: 1fr; }
+        #search-results-tabs { height: 1fr; }
         """
 
         BINDINGS = [
@@ -402,6 +412,11 @@ def build_tui(
                 short_uuid = str(self.state.search_event_rows[row_index].get("task_short_uuid") or "").strip()
                 if short_uuid:
                     self._open_task_workspace(short_uuid)
+                return
+            if table_id == "search-trash-table":
+                if row_index >= len(self.state.search_trash_rows):
+                    return
+                self._open_search_trash_preview(self.state.search_trash_rows[row_index])
                 return
             if table_id == "search-notes-table":
                 if row_index >= len(self.state.search_note_rows):
@@ -690,6 +705,100 @@ def build_tui(
                 return
             asyncio.create_task(self._execute_palette_command_async(str(payload.get("id") or "")))
 
+        async def _open_note_history_async(self, target: dict[str, Any]) -> None:
+            kind, ref = self._note_history_target(target)
+            try:
+                history = await asyncio.to_thread(self.svc.note_history, kind, ref)
+            except Exception as exc:
+                self.notify(f"Could not load note history: {exc}", severity="error")
+                return
+            revisions = list(history.get("revisions") or [])
+            if not revisions:
+                self.notify("No earlier revisions for this note", severity="information")
+                return
+            entries = [
+                PaletteEntry(
+                    str(item.get("revision_id") or ""),
+                    str(item.get("created_at") or "Unknown time"),
+                    f"Revision {str(item.get('revision_id') or '')[-12:]}",
+                )
+                for item in revisions
+            ]
+            self.push_screen(
+                CommandPaletteModal(entries, title="Note history", placeholder="Filter revisions"),
+                lambda selected: self._on_note_revision_selected(target, selected),
+            )
+
+        def _note_history_target(self, target: dict[str, Any]) -> tuple[str, str]:
+            kind = str(target.get("kind") or "")
+            ref = str(target.get("project") or "") if kind == "project" else str(target.get("task_ref") or "")
+            if not kind or not ref:
+                raise RuntimeError("selected note has no history target")
+            return kind, ref
+
+        def _on_note_revision_selected(
+            self,
+            target: dict[str, Any],
+            selected: dict[str, Any] | None,
+        ) -> None:
+            if selected:
+                asyncio.create_task(
+                    self._open_note_history_diff_async(target, str(selected.get("id") or ""))
+                )
+
+        async def _open_note_history_diff_async(self, target: dict[str, Any], revision_id: str) -> None:
+            try:
+                kind, ref = self._note_history_target(target)
+                result = await asyncio.to_thread(self.svc.note_history_diff, kind, ref, revision_id)
+            except Exception as exc:
+                self.notify(f"Could not load revision diff: {exc}", severity="error")
+                return
+            self.push_screen(
+                NoteHistoryDiffModal(revision_id=revision_id, diff=str(result.get("diff") or "")),
+                lambda restore: self._on_note_history_restore_selected(
+                    target,
+                    revision_id,
+                    str(result.get("current_digest") or ""),
+                    restore,
+                ),
+            )
+
+        def _on_note_history_restore_selected(
+            self,
+            target: dict[str, Any],
+            revision_id: str,
+            current_digest: str,
+            restore: bool,
+        ) -> None:
+            if restore:
+                asyncio.create_task(
+                    self._restore_note_history_async(target, revision_id, current_digest)
+                )
+
+        async def _restore_note_history_async(
+            self,
+            target: dict[str, Any],
+            revision_id: str,
+            current_digest: str,
+        ) -> None:
+            try:
+                kind, ref = self._note_history_target(target)
+                result = await asyncio.to_thread(
+                    self.svc.restore_note_history,
+                    kind,
+                    ref,
+                    revision_id,
+                    expected_current_digest=current_digest,
+                )
+            except Exception as exc:
+                self.notify(f"Could not restore note revision: {exc}", severity="error")
+                return
+            self.notify(
+                f"Restored revision {revision_id}; current version saved as {result.get('preserved_revision_id')}",
+                severity="information",
+            )
+            await self._refresh_after_resource_change_async()
+
         def _on_add_to_payload(self, kind: str, payload: dict[str, Any] | None) -> None:
             if not payload:
                 return
@@ -769,7 +878,12 @@ def build_tui(
             self.state.current_search_query = query
             if not query:
                 self.query_one("#search-notes-table", DataTable).clear()
+                self.query_one("#search-trash-table", DataTable).clear()
                 self.query_one("#search-events-table", DataTable).clear()
+                self.state.search_note_rows = []
+                self.state.search_trash_rows = []
+                self.state.search_event_rows = []
+                self._update_search_results_summary()
                 return
             self._run_search(query)
 
@@ -851,6 +965,11 @@ def build_tui(
             asyncio.create_task(self._refresh_time_async())
 
         def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+            if event.data_table.id == "search-trash-table":
+                row_index = event.cursor_row
+                if 0 <= row_index < len(self.state.search_trash_rows):
+                    self._open_search_trash_preview(self.state.search_trash_rows[row_index])
+                return
             if event.data_table.id == "time-sessions-table":
                 row_index = event.cursor_row
                 if row_index < 0 or row_index >= len(self.state.time_session_rows):
@@ -901,6 +1020,15 @@ def build_tui(
                 if row_index < 0 or row_index >= len(self.state.note_rows):
                     return
                 self._open_note_inventory_row(self.state.note_rows[row_index])
+
+        def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+            table_kind = {
+                "search-notes-table": "notes",
+                "search-trash-table": "trash",
+                "search-events-table": "events",
+            }.get(str(event.data_table.id or ""))
+            if table_kind:
+                self._update_search_result_detail(table_kind, event.cursor_row)
 
         async def _refresh_recent_async(self) -> None:
             table = self.query_one("#recent-table", DataTable)
@@ -1266,23 +1394,47 @@ def build_tui(
 
         async def _run_search_async(self, query: str) -> None:
             notes_table = self.query_one("#search-notes-table", DataTable)
+            trash_table = self.query_one("#search-trash-table", DataTable)
             events_table = self.query_one("#search-events-table", DataTable)
             notes_table.clear()
+            trash_table.clear()
             events_table.clear()
             try:
                 data = await asyncio.to_thread(self.svc.search, query)
             except Exception as exc:
                 self.state.search_note_rows = []
+                self.state.search_trash_rows = []
                 self.state.search_event_rows = []
+                self._update_search_results_summary()
                 self.notify(f"Search failed: {exc}", severity="error")
                 return
             self.state.search_note_rows = list(data.get("notes", []))
+            self.state.search_trash_rows = list(data.get("trash", []))
             self.state.search_event_rows = list(data.get("events", []))
             for item in self.state.search_note_rows:
+                title = (
+                    str(item.get("description") or "").strip()
+                    or str(item.get("project") or "").strip()
+                    or str(item.get("chain_id") or "").strip()
+                    or str(item.get("task_short_uuid") or "").strip()
+                )
                 notes_table.add_row(
                     str(item.get("kind") or ""),
-                    str(item.get("path") or ""),
+                    title,
                     str(item.get("match") or ""),
+                )
+            for item in self.state.search_trash_rows:
+                title = (
+                    str(item.get("description") or "").strip()
+                    or str(item.get("project") or "").strip()
+                    or str(item.get("chain_id") or "").strip()
+                    or str(item.get("task_short_uuid") or "").strip()
+                )
+                trash_table.add_row(
+                    str(item.get("kind") or ""),
+                    title,
+                    str(item.get("match") or ""),
+                    str(item.get("original_path") or ""),
                 )
             for item in self.state.search_event_rows:
                 events_table.add_row(
@@ -1290,6 +1442,86 @@ def build_tui(
                     str(item.get("annotation") or ""),
                     str(item.get("ts") or ""),
                 )
+            self._update_search_results_summary()
+
+        def _update_search_results_summary(self) -> None:
+            counts = {
+                "notes": len(self.state.search_note_rows),
+                "trash": len(self.state.search_trash_rows),
+                "events": len(self.state.search_event_rows),
+            }
+            for kind, count in counts.items():
+                label = {"notes": "Search Notes", "trash": "Deleted Notes", "events": "Search Events"}[kind]
+                self.query_one(f"#search-{kind}-title", Static).update(f"{label} ({count})")
+                self._update_search_result_detail(kind, 0 if count else -1)
+
+        def _update_search_result_detail(self, kind: str, row_index: int) -> None:
+            rows = {
+                "notes": self.state.search_note_rows,
+                "trash": self.state.search_trash_rows,
+                "events": self.state.search_event_rows,
+            }[kind]
+            detail = self.query_one(f"#search-{kind}-detail", Static)
+            if not self.state.current_search_query:
+                detail.update(f"Enter a search query to find {('deleted ' if kind == 'trash' else '')}{kind}.")
+                return
+            if not rows:
+                detail.update(f"No matching {'deleted notes' if kind == 'trash' else kind}.")
+                return
+            if row_index < 0 or row_index >= len(rows):
+                detail.update("Select a result to see its details.")
+                return
+            item = rows[row_index]
+            if kind == "notes":
+                detail.update(
+                    f"{item.get('description') or item.get('project') or item.get('chain_id') or item.get('task_short_uuid') or 'Note'}\n"
+                    f"Match type: {item.get('match_type') or 'content'}\n"
+                    f"Path: {item.get('path') or '(unknown)'}\n"
+                    f"Match: {item.get('match') or ''}"
+                )
+            elif kind == "trash":
+                detail.update(
+                    f"{item.get('description') or item.get('project') or item.get('chain_id') or item.get('task_short_uuid') or 'Deleted note'}\n"
+                    f"Match type: {item.get('match_type') or 'content'}\n"
+                    f"Original: {item.get('original_path') or '(unknown)'}\n"
+                    f"Deleted: {item.get('deleted_at') or 'unknown'}\n"
+                    f"Match: {item.get('match') or ''}"
+                )
+            else:
+                detail.update(
+                    f"Task: {item.get('task_short_uuid') or '(unknown)'}\n"
+                    "Match type: event\n"
+                    f"When: {item.get('ts') or 'unknown'}\n"
+                    f"{item.get('annotation') or ''}"
+                )
+
+        def _open_search_trash_preview(self, item: dict[str, Any]) -> None:
+            try:
+                _metadata, body = read_document(Path(str(item.get("path") or "")))
+            except Exception as exc:
+                self.notify(f"Could not preview trashed note: {exc}", severity="error")
+                return
+            self.push_screen(
+                TrashNotePreviewModal(item, body),
+                lambda selected: self._on_search_trash_preview_result(selected),
+            )
+
+        def _on_search_trash_preview_result(self, item: dict[str, Any] | None) -> None:
+            if item is not None:
+                asyncio.create_task(self._restore_search_trash_async(item))
+
+        async def _restore_search_trash_async(self, item: dict[str, Any]) -> None:
+            try:
+                result = await asyncio.to_thread(
+                    self.svc.restore_note_trash,
+                    str(item.get("path") or ""),
+                )
+            except Exception as exc:
+                self.notify(f"Restore failed: {exc}", severity="error")
+                return
+            self.notify(f"Restored note to {result.path}", severity="information")
+            if self.state.current_search_query:
+                await self._run_search_async(self.state.current_search_query)
 
         async def _refresh_current_context_async(self) -> None:
             main_tab = self.query_one("#main-tabs", TabbedContent).active
@@ -1393,6 +1625,11 @@ def build_tui(
                 return
             if command_id == "edit-note":
                 self.action_edit_selected_task_note()
+                return
+            if command_id == "note-history":
+                target = self._active_note_target()
+                if target:
+                    await self._open_note_history_async(target)
                 return
             if command_id == "delete-note":
                 self.action_delete_selected_note()
@@ -1675,6 +1912,8 @@ def build_tui(
                 f"Added under {result.get('heading')} ({result.get('heading_match')})",
                 severity="information",
             )
+            for token in result.get("warnings") or []:
+                self.notify(f"Unknown placeholder left unchanged: {{{token}}}", severity="warning")
             await self._refresh_recent_async()
             await self._refresh_tasks_async()
             await self._refresh_projects_async()
@@ -1833,6 +2072,7 @@ def build_tui(
                 PaletteEntry("refresh-all", "Refresh all", "Reload tasks, projects, and recent activity"),
                 PaletteEntry("open-selected", "Open selected row", "Jump into the selected task, project, or recent item"),
                 PaletteEntry("edit-note", "Edit active note", "Open the active note in your editor; saved changes show a diff", bool(self._active_note_target())),
+                PaletteEntry("note-history", "Note history", "Review past revisions and restore one", bool(self._active_note_target())),
                 PaletteEntry("delete-note", "Delete active note", "Show a confirmation, then move the active note to trash", bool(self._active_note_target())),
                 PaletteEntry("attach-resource", "Attach resource", "Prompt for a file path or URL and store it on the active note", bool(self._active_note_target())),
                 PaletteEntry("open-resource", "Open note resource", "Show resources on the active note and open the selected one", bool(self._active_note_target())),
@@ -1884,7 +2124,7 @@ def build_tui(
             )
             valid: set[str] = set()
             if target is not None:
-                valid.update({"edit-note", "delete-note", "attach-resource"})
+                valid.update({"edit-note", "note-history", "delete-note", "attach-resource"})
                 if has_resources:
                     valid.update({"open-resource", "detach-resource"})
             if progress_targets:

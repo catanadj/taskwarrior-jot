@@ -10,12 +10,22 @@ from typing import Any
 from .editor import open_in_editor
 from .contracts import ProgressRequest, ResourceRequest, normalize_note_kind, normalize_progress_operation
 from .frontmatter import read_document
+from .history import (
+    list_note_revisions,
+    note_content_digest,
+    note_revision_preview,
+    restore_note_revision,
+)
 from .models import (
     ActivityItem,
     AppConfig,
     AgentContext,
     DeletedTimelogItem,
     NoteSummary,
+    NoteHistoryResult,
+    NoteHistoryDiffResult,
+    NoteHistoryRestoreResult,
+    NoteRevisionSummary,
     NoteAppendCommandResult,
     NoteDeleteResult,
     HeadingCommandResult,
@@ -37,6 +47,7 @@ from .models import (
     TaskSummaryResult,
     TaskCompletionResult,
     TaskWorkspace,
+    TrashItem,
 )
 from .nautical import nautical_summary
 from .notes import (
@@ -96,6 +107,7 @@ from .timelog import (
     stop_all_time_sessions,
     stop_time_session,
 )
+from .trash import list_trash, restore_trash_item
 
 
 @dataclass(slots=True)
@@ -115,6 +127,69 @@ class JotService:
             NoteSummary.from_mapping(item)
             for item in list_notes(self.config, kinds=kinds, project=project or None)
         ]
+
+    def note_history(self, kind: str, ref: str) -> NoteHistoryResult:
+        note_kind, path = self._history_note_path(kind, ref)
+        revisions = tuple(
+            NoteRevisionSummary(item.revision_id, item.created_at, item.digest)
+            for item in list_note_revisions(path)
+        )
+        return NoteHistoryResult(note_kind, path, revisions)
+
+    def note_history_diff(self, kind: str, ref: str, revision_id: str) -> NoteHistoryDiffResult:
+        note_kind, path = self._history_note_path(kind, ref)
+        diff, current_digest = note_revision_preview(path, revision_id)
+        return NoteHistoryDiffResult(
+            note_kind,
+            path,
+            revision_id,
+            diff,
+            current_digest,
+        )
+
+    def restore_note_history(
+        self,
+        kind: str,
+        ref: str,
+        revision_id: str,
+        *,
+        expected_current_digest: str = "",
+    ) -> NoteHistoryRestoreResult:
+        note_kind, path = self._history_note_path(kind, ref)
+        current_content = path.read_text(encoding="utf-8")
+        restore_note_revision(
+            path,
+            revision_id,
+            expected_current_digest=expected_current_digest or note_content_digest(path),
+        )
+        preserved = next(
+            (
+                item.revision_id
+                for item in list_note_revisions(path)
+                if item.content == current_content
+            ),
+            "",
+        )
+        return NoteHistoryRestoreResult(note_kind, path, revision_id, preserved)
+
+    def _history_note_path(self, kind: str, ref: str) -> tuple[str, Path]:
+        normalized = str(kind or "").strip().casefold()
+        if normalized == "task":
+            task = self.taskwarrior.resolve_task(ref)
+            path = find_task_note(self.config, task)
+            note_kind = "task-note"
+        elif normalized == "chain":
+            task = self.taskwarrior.resolve_task(ref)
+            path = find_chain_note(self.config, task)
+            note_kind = "chain-note"
+        elif normalized == "project":
+            path = find_project_note(self.config, ref)
+            note_kind = "project-note"
+        else:
+            raise RuntimeError("note history kind must be task, chain, or project")
+        if path is None:
+            raise RuntimeError(f"{normalized} note does not exist for {ref}")
+        return note_kind, path
 
     def project_tree_rows(self, limit: int = 1000) -> list[ProjectTreeRow]:
         items = self.taskwarrior.list_tasks(limit=limit, status="pending")
@@ -213,6 +288,19 @@ class JotService:
 
     def search(self, query: str) -> SearchResults:
         return search_all(self.config, query)
+
+    def restore_note_trash(self, trash_path: str) -> TrashItem:
+        selected_path = Path(trash_path).resolve()
+        trash_root = self.config.trash_dir.resolve()
+        if not selected_path.is_relative_to(trash_root):
+            raise RuntimeError("trash note path is outside the configured trash directory")
+        item = next(
+            (entry for entry in list_trash(self.config) if Path(entry.trash_path).resolve() == selected_path),
+            None,
+        )
+        if item is None:
+            raise RuntimeError("trash note is no longer available; refresh the search results")
+        return restore_trash_item(self.config, item.id)
 
     def timelog_report(self, period: str = "week", *, details: bool = True) -> TimelogReport:
         return report_time_logs(self.config, period=period, details=details)
@@ -501,6 +589,8 @@ class JotService:
             self.config.editor_command,
             show_diff=self.config.editor_show_diff_on_save,
             color_mode=self.config.editor_diff_color,
+            expand_on_save=True,
+            confirm_expansion=self.config.templates_confirm_expansion_on_save,
         )
 
     def task_ref_for_chain_id(self, chain_id: str) -> str:
@@ -534,6 +624,7 @@ class JotService:
             timestamp=result.timestamp,
             entry=result.entry,
             identity={"task_short_uuid": task.task_short_uuid},
+            warnings=result.warnings,
         )
 
     def add_to_chain_heading(
@@ -566,6 +657,7 @@ class JotService:
                 "task_short_uuid": task.task_short_uuid,
                 "chain_id": str(task.task.get("chainID") or "").strip() or None,
             },
+            warnings=result.warnings,
         )
 
     def add_to_project_heading(
@@ -594,6 +686,7 @@ class JotService:
             timestamp=result.timestamp,
             entry=result.entry,
             identity={"project": project_name},
+            warnings=result.warnings,
         )
 
     def delete_task_note(self, task_ref: str) -> NoteDeleteResult:
@@ -614,6 +707,7 @@ class JotService:
             path=result.note_path,
             opened=result.existed,
             identity={"task_short_uuid": task.task_short_uuid},
+            warnings=result.warnings,
         )
 
     def append_chain_note(self, task_ref: str, text: str) -> NoteAppendCommandResult:
@@ -623,6 +717,7 @@ class JotService:
             path=result.note_path,
             opened=result.existed,
             identity={"task_short_uuid": task.task_short_uuid},
+            warnings=result.warnings,
         )
 
     def append_project_note(self, project_name: str, text: str) -> NoteAppendCommandResult:
@@ -631,6 +726,7 @@ class JotService:
             path=result.note_path,
             opened=result.existed,
             identity={"project": project_name},
+            warnings=result.warnings,
         )
 
     def attach_resource(

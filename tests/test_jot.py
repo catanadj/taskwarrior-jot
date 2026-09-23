@@ -635,7 +635,12 @@ class TypedTaskModelTests(unittest.TestCase):
             path=Path("task.md"),
             opened=True,
             identity={"task_short_uuid": "12345678"},
-            post_save_action="complete",
+            post_save_action={
+                "action": "complete-task",
+                "task_uuid": "12345678-full",
+                "task_short_uuid": "12345678",
+                "description": "Read book",
+            },
         )
         appended = NoteAppendCommandResult(
             path=Path("task.md"), opened=False, identity={"project": "work"}
@@ -646,7 +651,7 @@ class TypedTaskModelTests(unittest.TestCase):
             identity={"task_short_uuid": "12345678"},
         )
         event = EventAddResult(task_short_uuid="12345678", annotation="[note] x", event_type="note")
-        self.assertEqual(opened["post_save_action"], "complete")
+        self.assertEqual(opened["post_save_action"]["action"], "complete-task")
         self.assertFalse(appended["opened"])
         self.assertEqual(deleted["trash_path"], ".jot_trash/task.md")
         self.assertEqual(event["event_type"], "note")
@@ -3547,7 +3552,7 @@ class CliIntegrationTests(JotCliTestCase):
 
         task_note = list((self.home / ".task" / "jot" / "tasks").glob("*.md"))[0].read_text(encoding="utf-8")
         self.assertIn("# TASK 2d6d7d7d", task_note)
-        self.assertRegex(task_note, r"Created on \d{4}-\d{2}-\d{2} at \d{2}:\d{2}:\d{2}Z")
+        self.assertRegex(task_note, r"Created on \d{4}-\d{2}-\d{2} at \d{2}:\d{2}:\d{2} .+")
         self.assertIn("kind: task-note", task_note)
         self.assertIn('custom: "2d6d7d7d"', task_note)
         self.assertNotIn("kind: bad-kind", task_note)
@@ -3559,6 +3564,69 @@ class CliIntegrationTests(JotCliTestCase):
             self.home / ".task" / "jot" / "projects" / "finance" / "audit" / "index.md"
         ).read_text(encoding="utf-8")
         self.assertIn("# PROJECT finance.audit", project_note)
+
+    def test_user_text_expands_for_task_chain_and_project_notes(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Read the field guide",
+            "project": "study.nature",
+            "tags": [],
+            "chainID": "a4bf5egh",
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        text = "{task_short_uuid}|{description}|{project}|{chain_id}|{date}|{time}|{missing}|\\{date}"
+
+        for command, target, expected_context in (
+            (("note-append", "1"), self.home / ".task/jot/tasks", "2d6d7d7d|Read the field guide|study.nature|a4bf5egh|"),
+            (("chain-append", "1"), self.home / ".task/jot/chains", "2d6d7d7d|Read the field guide|study.nature|a4bf5egh|"),
+            (("project-append", "study.nature"), self.home / ".task/jot/projects/study/nature", "|study.nature|study.nature||"),
+        ):
+            result = self.run_jot(*command, text)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            note = next(target.glob("*.md")).read_text(encoding="utf-8")
+            self.assertIn(expected_context, note)
+            self.assertIn("{missing}|{date}", note)
+            self.assertIn("Unknown placeholder left unchanged: {missing}", result.stdout)
+
+    def test_note_history_lists_diffs_and_restores_with_recoverable_current_version(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Read history",
+            "project": "study",
+            "tags": [],
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+        self.run_jot("note-append", "1", "first entry")
+        self.run_jot("note-append", "1", "second entry")
+
+        listed = self.run_jot("--json", "history", "list", "task", "1")
+        self.assertEqual(listed.returncode, 0, listed.stderr)
+        revisions = json.loads(listed.stdout)["revisions"]
+        self.assertGreaterEqual(len(revisions), 2)
+        revision_id = revisions[0]["revision_id"]
+
+        diff = self.run_jot("history", "diff", "task", "1", revision_id)
+        self.assertEqual(diff.returncode, 0, diff.stderr)
+        self.assertIn("first entry", diff.stdout)
+        self.assertIn("second entry", diff.stdout)
+
+        rejected = self.run_jot("history", "restore", "task", "1", revision_id)
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("requires --yes", rejected.stderr)
+
+        restored = self.run_jot("--json", "history", "restore", "task", "1", revision_id, "--yes")
+        self.assertEqual(restored.returncode, 0, restored.stderr)
+        restore_payload = json.loads(restored.stdout)
+        note = next((self.home / ".task/jot/tasks").glob("*.md")).read_text(encoding="utf-8")
+        self.assertIn("first entry", note)
+        self.assertNotIn("second entry", note)
+        self.assertTrue(restore_payload["preserved_revision_id"])
+        preserved_diff = self.run_jot(
+            "history", "diff", "task", "1", restore_payload["preserved_revision_id"]
+        )
+        self.assertIn("-second entry", preserved_diff.stdout)
 
     def test_empty_template_falls_back_to_builtin_body(self) -> None:
         task = {
@@ -3941,12 +4009,13 @@ class CliIntegrationTests(JotCliTestCase):
             "--heading",
             "next stps",
             "--text",
-            "call vendor monday",
+            "call vendor {task_short_uuid} on {date}; {not_a_token}",
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         note_text = list((self.home / ".task" / "jot" / "tasks").glob("*.md"))[0].read_text(encoding="utf-8")
         self.assertIn("## Next steps", note_text)
-        self.assertRegex(note_text, r"- \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [^\]]+\] call vendor monday")
+        self.assertRegex(note_text, r"- \[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} [^\]]+\] call vendor 2d6d7d7d on \d{4}-\d{2}-\d{2}; \{not_a_token\}")
+        self.assertIn("Unknown placeholder left unchanged: {not_a_token}", result.stdout)
 
     def test_add_to_chain_heading_exact_can_fail_cleanly(self) -> None:
         task = {
@@ -3971,6 +4040,35 @@ class CliIntegrationTests(JotCliTestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("heading not found", result.stderr)
+
+    def test_add_to_expands_context_for_chain_and_project_notes(self) -> None:
+        task = {
+            "uuid": "2d6d7d7d-1111-2222-3333-444444444444",
+            "description": "Read the field guide",
+            "project": "study.nature",
+            "tags": [],
+            "chainID": "a4bf5egh",
+            "annotations": [],
+        }
+        self.write_state({"version": "2.6.2", "single": [task], "1": [task]})
+
+        chain_result = self.run_jot(
+            "add-to", "chain", "1", "--heading", "Purpose", "--text",
+            "{task_short_uuid}|{chain_id}|{project}",
+        )
+        self.assertEqual(chain_result.returncode, 0, chain_result.stderr)
+        chain_note = next((self.home / ".task/jot/chains").glob("*.md")).read_text(encoding="utf-8")
+        self.assertIn("2d6d7d7d|a4bf5egh|study.nature", chain_note)
+
+        project_result = self.run_jot(
+            "add-to", "project", "study.nature", "--heading", "Purpose", "--text",
+            "{project}|{project_path}|{task_short_uuid}",
+        )
+        self.assertEqual(project_result.returncode, 0, project_result.stderr)
+        project_note = (
+            self.home / ".task/jot/projects/study/nature/index.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("study.nature|study.nature|", project_note)
 
     def test_add_to_project_heading_can_create_missing_heading(self) -> None:
         self.run_jot("project-append", "finance.audit", "baseline entry")
@@ -4639,6 +4737,7 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(text_result.returncode, 0, text_result.stderr)
         self.assertIn("Notes:", text_result.stdout)
         self.assertIn("Events:", text_result.stdout)
+        self.assertIn("(content)", text_result.stdout)
 
         json_result = self.run_jot("--json", "search", "vendor")
         self.assertEqual(json_result.returncode, 0, json_result.stderr)
@@ -5123,6 +5222,31 @@ class CliIntegrationTests(JotCliTestCase):
         compact_payload = json.loads(compact_json.stdout)
         self.assertEqual(compact_payload["kinds"], ["chain-note", "project-note", "task-note"])
         self.assertEqual(len(compact_payload["notes"]), 3)
+
+        latest_update = max(
+            str(read_document(Path(item["path"]))[0].get("updated") or "")
+            for item in compact_payload["notes"]
+        )
+        local_date = datetime.fromisoformat(latest_update.replace("Z", "+00:00")).astimezone().date().isoformat()
+        date_range = f":{local_date}..{local_date}"
+        filtered_json = self.run_jot("--json", "list", date_range)
+        self.assertEqual(filtered_json.returncode, 0, filtered_json.stderr)
+        filtered_payload = json.loads(filtered_json.stdout)
+        self.assertEqual(len(filtered_payload["notes"]), 3)
+        self.assertEqual(filtered_payload["date_filter"]["start"], local_date)
+        self.assertEqual(filtered_payload["date_filter"]["end"], local_date)
+
+        filtered_text = self.run_jot("list", date_range)
+        self.assertEqual(filtered_text.returncode, 0, filtered_text.stderr)
+        self.assertIn(f"{local_date} through {local_date}", filtered_text.stdout)
+
+        last_year = self.run_jot("--json", "list", ":lastyear")
+        self.assertEqual(last_year.returncode, 0, last_year.stderr)
+        self.assertEqual(json.loads(last_year.stdout)["notes"], [])
+
+        invalid_filter = self.run_jot("list", ":2026-09-30..2026-09-01")
+        self.assertEqual(invalid_filter.returncode, 1)
+        self.assertIn("start date must not be after end date", invalid_filter.stderr)
 
     def test_report_recent_combines_notes_and_events(self) -> None:
         task = {

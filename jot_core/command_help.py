@@ -37,6 +37,9 @@ COMMAND_EXAMPLES = {
     "project-delete": "jot project-delete Finances.Expense",
     "project-list": "jot project-list",
     "notes": "jot notes --kind task",
+    "history list": "jot history list task 42",
+    "history diff": "jot history diff task 42 20260923T101530000000Z-0123456789ab",
+    "history restore": "jot history restore task 42 20260923T101530000000Z-0123456789ab",
     "project-report": "jot project-report Finances.Expense --limit 10",
     "project-show": "jot project-show Finances.Expense",
     "add-to": 'jot add-to task 42 --heading "Next steps" --text "Call vendor"',
@@ -176,7 +179,7 @@ def _command_category(path: tuple[str, ...]) -> str:
         return "Projects"
     if name in {"attach", "resources", "open-resource", "detach-resource"}:
         return "Resources"
-    if name in {"add-to", "headings", "section", "progress", "open", "edit", "cat", "notes", "timelog", "timew"}:
+    if name in {"add-to", "headings", "section", "progress", "open", "edit", "cat", "notes", "history", "timelog", "timew"}:
         return "Notes"
     if name in {"search", "report", "recent"}:
         return "Search & Reports"
