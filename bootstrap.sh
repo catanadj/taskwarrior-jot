@@ -4,7 +4,7 @@
 set -euo pipefail
 
 REPOSITORY="${JOT_REPOSITORY:-https://github.com/catanadj/taskwarrior-jot}"
-VERSION="${JOT_VERSION:-v1.0.2}"
+VERSION="${JOT_VERSION:-v1.0.3}"
 ARCHIVE_URL="${JOT_ARCHIVE_URL:-}"
 CHECKSUM="${JOT_SHA256:-}"
 CHECKSUM_URL="${JOT_CHECKSUM_URL:-}"
@@ -22,7 +22,7 @@ Usage: bootstrap.sh [options]
 Download and install a Jot release.
 
 Options:
-  --version REF         Release tag or branch (default: v1.0.2)
+  --version REF         Release tag or branch (default: v1.0.3)
   --prefix DIR          Installation prefix (default: ~/.local)
   --taskdata PATH       Taskwarrior data directory (default: TASKDATA or ~/.task)
   --archive-url URL     Archive URL override, useful for mirrors and testing
