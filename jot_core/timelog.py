@@ -735,6 +735,8 @@ def _read_time_log_records(config) -> list[dict[str, Any]]:
         if not root.exists():
             continue
         for note_path in sorted(root.rglob("*.md")):
+            if ".jot_history" in note_path.parts:
+                continue
             _metadata, body = read_document(note_path)
             for match in TIME_LOG_DATA_RE.finditer(body):
                 try:
@@ -763,6 +765,8 @@ def _find_time_log_location(config, key: str) -> dict[str, Any]:
         if not root.exists():
             continue
         for note_path in sorted(root.rglob("*.md")):
+            if ".jot_history" in note_path.parts:
+                continue
             _metadata, body = read_document(note_path)
             for line_index, line in enumerate(body.splitlines()):
                 match = TIME_LOG_DATA_RE.search(line)

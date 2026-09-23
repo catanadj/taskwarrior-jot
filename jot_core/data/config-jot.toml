@@ -11,6 +11,9 @@ show_diff_on_save = true
 diff_color = "auto"
 post_save_actions = true
 
+[templates]
+confirm_expansion_on_save = true
+
 [display]
 color = "auto"
 default_format = "text"

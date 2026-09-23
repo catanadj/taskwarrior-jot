@@ -63,6 +63,14 @@ def emit_notes(payload: Mapping[str, Any], *, p: NoteOutputPrimitives) -> None:
 def emit_compact_notes(payload: Mapping[str, Any], *, p: NoteOutputPrimitives) -> None:
     items = payload.get("notes") or []
     p.write_title("Notes", blank_after=True)
+    date_filter = payload.get("date_filter") or {}
+    if date_filter:
+        p.emit_field(
+            "updated",
+            f"{date_filter.get('start')} through {date_filter.get('end')} "
+            f"({date_filter.get('timezone') or 'local time'})",
+            indent=0,
+        )
     if not items:
         sys.stdout.write("(none)\n")
         return
@@ -92,6 +100,19 @@ def emit_note_like(command: str, payload: Mapping[str, Any], *, p: NoteOutputPri
     post_save = payload.get("post_save_action") or {}
     if post_save.get("action") == "complete-task":
         p.write_status(f"Completed task: {post_save.get('task_short_uuid')}")
+    elif post_save.get("action") == "delete-note":
+        deleted_kind = {
+            "task": "task note",
+            "chain": "chain note",
+            "project": "project note",
+        }.get(str(post_save.get("note_kind") or ""), "note")
+        p.write_status(f"Moved {deleted_kind} to trash", color="warning")
+        p.emit_field("from", post_save.get("path") or payload.get("path"), indent=0)
+        p.emit_field("to", post_save.get("trash_path"), indent=0)
+        p.write_status(
+            "Restore with `jot trash-list`, then `jot trash-restore ID`.",
+            color="muted",
+        )
 
 
 def emit_append_like(command: str, payload: Mapping[str, Any], *, p: NoteOutputPrimitives) -> None:

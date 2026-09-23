@@ -9,6 +9,7 @@ import shutil
 import sys
 import textwrap
 from pathlib import Path
+from typing import Literal
 
 from . import __version__
 from . import note_cli as _note_cli
@@ -17,6 +18,7 @@ from .command_help import build_command_catalog
 from .command_prefix import AmbiguousCommandPrefix, expand_command_prefixes
 from .completion import SUPPORTED_SHELLS, render_completion
 from .config import ensure_app_dirs, load_config
+from .date_filter import DATE_FILTER_HELP, parse_list_date_filter
 from .doctor import run_doctor, run_doctor_config_error, run_installation_doctor
 from .editor import colorize_diff, note_diff, open_in_editor
 from .events import collect_event_text, format_event_text, validate_event_type
@@ -32,6 +34,7 @@ from .models import (
     NoteContentResult,
     NoteHeadingsResult,
     NoteOpenResult,
+    PostSaveAction,
     NoteSectionResult,
     NoteSummary,
     NotesCommandResult,
@@ -331,6 +334,25 @@ def build_parser(note_root: str | None = None) -> argparse.ArgumentParser:
         description="Restore a trashed note by the ID shown by trash-list.",
     )
     trash_restore.add_argument("trash_id", type=int, help="ID shown by trash-list")
+    history = subparsers.add_parser(
+        "history",
+        help="list, diff, or restore note revisions",
+        description="Inspect previous revisions of task, chain, or project notes.",
+    )
+    history_subparsers = history.add_subparsers(dest="history_action", required=True)
+    history_list = history_subparsers.add_parser("list", help="list note revisions")
+    history_diff = history_subparsers.add_parser("diff", help="diff a revision against the current note")
+    history_restore = history_subparsers.add_parser("restore", help="show a revision diff and restore it")
+    for history_parser in (history_list, history_diff, history_restore):
+        history_parser.add_argument("kind", choices=("task", "chain", "project"))
+        history_parser.add_argument("note_ref", help="Taskwarrior reference or project name")
+    history_diff.add_argument("revision_id")
+    history_restore.add_argument("revision_id")
+    history_restore.add_argument(
+        "--yes",
+        action="store_true",
+        help="confirm restore without an interactive prompt",
+    )
     cleanup = subparsers.add_parser(
         "cleanup",
         help="permanently remove old items from jot trash",
@@ -439,7 +461,10 @@ def build_parser(note_root: str | None = None) -> argparse.ArgumentParser:
             sub.add_argument(
                 "task_ref",
                 nargs="?",
-                help="task ID, full UUID, or unique short UUID; omit to list all notes",
+                help=(
+                    "task ID/UUID for its summary, or a note date filter "
+                    f"({DATE_FILTER_HELP}); omit to list all notes"
+                ),
             )
         else:
             sub.add_argument(
@@ -1030,6 +1055,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _run_trash_list(ctx)
         elif args.command == "trash-restore":
             result = _run_trash_restore(ctx, args.trash_id)
+        elif args.command == "history":
+            result = _run_history(ctx, args)
         elif args.command == "cleanup":
             result = CommandResult(
                 command="cleanup",
@@ -1207,6 +1234,8 @@ def _open_note_in_editor(ctx, path) -> None:
         ctx.config.editor_command,
         show_diff=ctx.config.editor_show_diff_on_save,
         color_mode=ctx.config.editor_diff_color,
+        expand_on_save=True,
+        confirm_expansion=ctx.config.templates_confirm_expansion_on_save,
     )
 
 
@@ -1598,9 +1627,9 @@ def _offer_post_save_task_action(
     ctx,
     task=None,
     *,
-    note_kind: str = "task",
+    note_kind: Literal["task", "chain", "project"] = "task",
     project_name: str = "",
-) -> dict | None:
+) -> PostSaveAction | None:
     if not ctx.config.editor_post_save_actions or not sys.stdin.isatty():
         return None
     raw_task = getattr(task, "task", {})
@@ -1673,6 +1702,35 @@ def _run_trash_list(ctx) -> CommandResult:
 
 def _run_trash_restore(ctx, trash_id: int) -> CommandResult:
     return CommandResult(command="trash-restore", data=restore_trash_item(ctx.config, trash_id))
+
+
+def _run_history(ctx, args) -> CommandResult:
+    service = JotService(config=ctx.config, taskwarrior=ctx.taskwarrior)
+    if args.history_action == "list":
+        return CommandResult(command="history-list", data=service.note_history(args.kind, args.note_ref))
+    if args.history_action == "diff":
+        return CommandResult(
+            command="history-diff",
+            data=service.note_history_diff(args.kind, args.note_ref, args.revision_id),
+        )
+    preview = service.note_history_diff(args.kind, args.note_ref, args.revision_id)
+    sys.stderr.write(colorize_diff(preview.diff, color_mode=ctx.config.editor_diff_color))
+    if not args.yes:
+        if not sys.stdin.isatty():
+            raise RuntimeError("history restore requires --yes when stdin is not interactive")
+        sys.stderr.write("Restore this revision? The current note will be saved as a revision first. [y/N] ")
+        sys.stderr.flush()
+        if sys.stdin.readline().strip().casefold() not in {"y", "yes"}:
+            return CommandResult(command="history-restore", data={"restored": False})
+    return CommandResult(
+        command="history-restore",
+        data=service.restore_note_history(
+            args.kind,
+            args.note_ref,
+            args.revision_id,
+            expected_current_digest=preview.current_digest,
+        ),
+    )
 
 
 def _run_auto_note(ctx, task_ref: str) -> CommandResult:
@@ -2045,6 +2103,9 @@ def _run_add(ctx, task_ref: str, text_parts: list[str], event_type: str) -> Comm
 
 
 def _run_list(ctx, task_ref: str | None) -> CommandResult:
+    date_filter = parse_list_date_filter(task_ref)
+    if date_filter is not None:
+        return _note_cli.run_all_notes(ctx, date_filter=date_filter)
     if not task_ref:
         return _note_cli.run_all_notes(ctx)
     task = ctx.taskwarrior.resolve_task(task_ref)

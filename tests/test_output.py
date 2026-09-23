@@ -119,6 +119,32 @@ class OutputEmitterTests(unittest.TestCase):
         self.assertIn("Query", search)
         self.assertIn("chapter 2", search)
 
+    def test_post_save_delete_action_shows_trash_location_and_restore_hint(self) -> None:
+        expected_labels = {
+            "note": ("task", "task note"),
+            "chain": ("chain", "chain note"),
+            "project": ("project", "project note"),
+        }
+        for command, (note_kind, label) in expected_labels.items():
+            with self.subTest(command=command):
+                output = self.emit(
+                    command,
+                    {
+                        "path": f"/tmp/{command}.md",
+                        "opened": True,
+                        "post_save_action": {
+                            "action": "delete-note",
+                            "note_kind": note_kind,
+                            "path": f"/tmp/{command}.md",
+                            "trash_path": f"/tmp/.jot_trash/{command}.md",
+                        },
+                    },
+                )
+                self.assertIn(f"Moved {label} to trash", output)
+                self.assertIn(f"/tmp/.jot_trash/{command}.md", output)
+                self.assertIn("jot trash-list", output)
+                self.assertIn("jot trash-restore", output)
+
     def test_timelog_emitters_cover_status_variants_and_csv(self) -> None:
         self.assertIn(
             "Time log skipped",

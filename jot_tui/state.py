@@ -14,6 +14,7 @@ class TuiState:
     project_rows: list[dict[str, Any]] = field(default_factory=list)
     note_rows: list[dict[str, Any]] = field(default_factory=list)
     search_note_rows: list[dict[str, Any]] = field(default_factory=list)
+    search_trash_rows: list[dict[str, Any]] = field(default_factory=list)
     search_event_rows: list[dict[str, Any]] = field(default_factory=list)
     time_session_rows: list[dict[str, Any]] = field(default_factory=list)
     time_rows: list[dict[str, Any]] = field(default_factory=list)

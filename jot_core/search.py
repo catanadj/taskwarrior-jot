@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
+import re
 from typing import Any
 
 from .frontmatter import read_document
@@ -9,6 +11,8 @@ from .models import AppConfig, SearchResults
 from .ops import read_ops
 
 ALLOWED_KINDS = {"task-note", "chain-note", "project-note", "event"}
+HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$")
+MATCH_RANK = {"title": 0, "heading": 1, "content": 2, "event": 0}
 
 
 def search_all(
@@ -25,18 +29,17 @@ def search_all(
     selected = set(kinds or ALLOWED_KINDS)
     task_metadata = _task_note_metadata(config)
 
-    return SearchResults.from_mapping({
-        "notes": _search_notes(config, needle, selected, project=project, chain_id=chain_id),
-        "trash": _search_trash_notes(config, needle, selected, project=project, chain_id=chain_id),
-        "events": _search_events(
-            config,
-            needle,
-            selected,
-            project=project,
-            chain_id=chain_id,
-            task_metadata=task_metadata,
-        ),
-    })
+    notes = _search_notes(config, needle, selected, project=project, chain_id=chain_id)
+    trash = _search_trash_notes(config, needle, selected, project=project, chain_id=chain_id)
+    events = _search_events(
+        config,
+        needle,
+        selected,
+        project=project,
+        chain_id=chain_id,
+        task_metadata=task_metadata,
+    )
+    return SearchResults.from_mapping({"notes": notes, "trash": trash, "events": events})
 
 
 def _search_notes(
@@ -63,21 +66,24 @@ def _search_notes(
                 continue
             if chain_id and note_chain_id != chain_id:
                 continue
-            haystacks = [
-                str(metadata.get("description") or ""),
-                project_name,
-                note_chain_id,
-                str(body or ""),
-                path.name,
-            ]
-            combined = "\n".join(haystacks).lower()
-            if needle not in combined:
+            match_type, excerpt = _classify_match(
+                needle,
+                description=str(metadata.get("description") or ""),
+                project=project_name,
+                chain_id=note_chain_id,
+                task_short_uuid=str(metadata.get("task_short_uuid") or ""),
+                body=str(body or ""),
+                identity=path.name,
+            )
+            if not match_type:
                 continue
             item = {
                 "kind": kind,
                 "path": str(path),
                 "description": str(metadata.get("description") or ""),
-                "match": _excerpt(str(body or ""), needle),
+                "match": excerpt,
+                "match_type": match_type,
+                "updated": str(metadata.get("updated") or ""),
             }
             task_short_uuid = str(metadata.get("task_short_uuid") or "").strip()
             if project_name:
@@ -87,7 +93,7 @@ def _search_notes(
             if task_short_uuid:
                 item["task_short_uuid"] = task_short_uuid
             hits.append(item)
-    return hits
+    return _rank_note_hits(hits)
 
 
 def _search_trash_notes(
@@ -116,15 +122,16 @@ def _search_trash_notes(
             continue
         if chain_id and note_chain_id != chain_id:
             continue
-        haystacks = [
-            str(metadata.get("description") or ""),
-            project_name,
-            note_chain_id,
-            str(body or ""),
-            path.name,
-            original_path,
-        ]
-        if needle not in "\n".join(haystacks).lower():
+        match_type, excerpt = _classify_match(
+            needle,
+            description=str(metadata.get("description") or ""),
+            project=project_name,
+            chain_id=note_chain_id,
+            task_short_uuid=str(manifest.get("task_short_uuid") or metadata.get("task_short_uuid") or ""),
+            body=str(body or ""),
+            identity=f"{path.name} {original_path}",
+        )
+        if not match_type:
             continue
         item: dict[str, Any] = {
             "kind": kind,
@@ -132,8 +139,12 @@ def _search_trash_notes(
             "original_path": original_path,
             "deleted_at": str(manifest.get("deleted_at") or ""),
             "description": str(metadata.get("description") or ""),
-            "match": _excerpt(str(body or ""), needle),
+            "match": excerpt,
+            "match_type": match_type,
+            "updated": str(metadata.get("updated") or ""),
         }
+        item["_rank"] = MATCH_RANK[match_type]
+        item["_sort_time"] = _timestamp_value(str(manifest.get("deleted_at") or metadata.get("updated") or ""))
         for key, value in (
             ("project", project_name),
             ("chain_id", note_chain_id),
@@ -142,7 +153,7 @@ def _search_trash_notes(
             if value:
                 item[key] = value
         hits.append(item)
-    return hits
+    return _sort_ranked_hits(hits)
 
 
 def _read_trash_manifest(note_path: Path) -> dict[str, Any]:
@@ -199,13 +210,79 @@ def _search_events(
             "task_short_uuid": short_uuid,
             "ts": str(item.get("ts") or ""),
             "annotation": annotation,
+            "match": _excerpt(annotation, needle),
+            "match_type": "event",
         }
         if event_project:
             event["project"] = event_project
         if event_chain_id:
             event["chain_id"] = event_chain_id
         hits.append(event)
+    hits.sort(
+        key=lambda item: (
+            -_timestamp_value(str(item.get("ts") or "")),
+            str(item.get("task_short_uuid") or "").casefold(),
+            str(item.get("annotation") or "").casefold(),
+        )
+    )
     return hits
+
+
+def _classify_match(
+    needle: str,
+    *,
+    description: str,
+    project: str,
+    chain_id: str,
+    task_short_uuid: str,
+    body: str,
+    identity: str,
+) -> tuple[str, str]:
+    for title in (description, project):
+        if needle in title.casefold():
+            return "title", _excerpt(title, needle)
+    for line in body.splitlines():
+        heading = HEADING_RE.match(line.strip())
+        if heading and needle in heading.group(1).casefold():
+            return "heading", _excerpt(heading.group(1), needle)
+    if needle in body.casefold():
+        return "content", _excerpt(body, needle)
+    identity_text = " ".join((chain_id, task_short_uuid, identity))
+    if needle in identity_text.casefold():
+        return "content", _excerpt(identity_text, needle)
+    return "", ""
+
+
+def _rank_note_hits(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    for item in hits:
+        item["_rank"] = MATCH_RANK[str(item.get("match_type") or "content")]
+        item["_sort_time"] = _timestamp_value(str(item.get("updated") or ""))
+    return _sort_ranked_hits(hits)
+
+
+def _sort_ranked_hits(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    hits.sort(
+        key=lambda item: (
+            int(item.pop("_rank", 2)),
+            -float(item.pop("_sort_time", 0.0)),
+            str(item.get("path") or "").casefold(),
+            str(item.get("kind") or "").casefold(),
+        )
+    )
+    return hits
+
+
+def _timestamp_value(raw: str) -> float:
+    value = str(raw or "").strip()
+    if not value:
+        return 0.0
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.astimezone()
+        return parsed.timestamp()
+    except (ValueError, OverflowError, OSError):
+        return 0.0
 
 
 def _task_note_metadata(config: AppConfig) -> dict[str, dict[str, str]]:

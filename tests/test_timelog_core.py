@@ -111,6 +111,30 @@ class TimelogCoreTests(unittest.TestCase):
             self.assertEqual(report.entry_count, 1)
             self.assertEqual(len(report.entries), 1)
 
+    def test_timelog_report_ignores_archived_note_revisions(self) -> None:
+        with TemporaryDirectory(prefix="jot-timelog-history-") as temporary:
+            config = self._config(Path(temporary))
+            ensure_app_dirs(config)
+            task = self._task()
+            add_time_log(
+                config,
+                task,
+                started_at="2026-09-19T10:00:00Z",
+                stopped_at="2026-09-19T10:30:00Z",
+                scope="task",
+            )
+            add_time_log(
+                config,
+                task,
+                started_at="2026-09-19T11:00:00Z",
+                stopped_at="2026-09-19T11:45:00Z",
+                scope="task",
+            )
+
+            report = report_time_logs(config, period="all", details=True)
+            self.assertEqual(report.entry_count, 2)
+            self.assertEqual(report.total_minutes, 75)
+
     def test_concurrent_timelog_writes_preserve_every_interval(self) -> None:
         with TemporaryDirectory(prefix="jot-timelog-concurrent-") as temporary:
             config = self._config(Path(temporary))

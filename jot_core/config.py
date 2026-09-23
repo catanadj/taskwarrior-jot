@@ -19,6 +19,7 @@ TASKRC_HOOKS_RE = re.compile(r"^\s*(?:rc\.)?hooks\.location\s*=\s*(.*?)\s*$")
 CONFIG_KEYS = {
     "paths": {"root", "tasks", "chains", "projects", "templates"},
     "editor": {"command", "show_diff_on_save", "diff_color", "post_save_actions"},
+    "templates": {"confirm_expansion_on_save"},
     "display": {"color", "default_format"},
     "nautical": {"enabled"},
     "timewarrior": {"enabled"},
@@ -278,6 +279,7 @@ def load_config() -> AppConfig:
 
     paths_cfg = _config_section(data, "paths")
     editor_cfg = _config_section(data, "editor")
+    templates_cfg = _config_section(data, "templates")
     display_cfg = _config_section(data, "display")
     nautical_cfg = _config_section(data, "nautical")
     timewarrior_cfg = _config_section(data, "timewarrior")
@@ -302,6 +304,11 @@ def load_config() -> AppConfig:
     )
     editor_post_save_actions = _config_bool(
         editor_cfg.get("post_save_actions"), True, key="editor.post_save_actions"
+    )
+    templates_confirm_expansion_on_save = _config_bool(
+        templates_cfg.get("confirm_expansion_on_save"),
+        True,
+        key="templates.confirm_expansion_on_save",
     )
     color_mode = _config_choice(
         display_cfg.get("color"),
@@ -340,6 +347,7 @@ def load_config() -> AppConfig:
         default_format=default_format,
         nautical_enabled=nautical_enabled,
         timewarrior_enabled=timewarrior_enabled,
+        templates_confirm_expansion_on_save=templates_confirm_expansion_on_save,
         ops_max_entries=ops_max_entries,
         ops_keep_entries=ops_keep_entries,
     )

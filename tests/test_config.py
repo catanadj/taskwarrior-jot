@@ -27,6 +27,9 @@ show_diff_on_save = false
 diff_color = "never"
 post_save_actions = false
 
+[templates]
+confirm_expansion_on_save = false
+
 [display]
 color = "always"
 default_format = "json"
@@ -61,6 +64,7 @@ keep_entries = 10
             self.assertFalse(config.editor_show_diff_on_save)
             self.assertEqual(config.editor_diff_color, "never")
             self.assertFalse(config.editor_post_save_actions)
+            self.assertFalse(config.templates_confirm_expansion_on_save)
             self.assertEqual(config.color_mode, "always")
             self.assertEqual(config.default_format, "json")
             self.assertFalse(config.nautical_enabled)
@@ -97,6 +101,13 @@ keep_entries = 10
                     encoding="utf-8",
                 )
                 with self.assertRaisesRegex(RuntimeError, "timewarrior.enabled"):
+                    load_config()
+
+                config_path.write_text(
+                    "[templates]\nconfirm_expansion_on_save = 'sometimes'\n",
+                    encoding="utf-8",
+                )
+                with self.assertRaisesRegex(RuntimeError, "templates.confirm_expansion_on_save"):
                     load_config()
 
 

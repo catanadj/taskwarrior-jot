@@ -14,6 +14,10 @@ The main areas are:
 - **Search**: search active notes, deleted notes, and events
 - **Time**: inspect and manage time intervals and reports
 
+Search results are split into Notes, Trash, and Events tabs. The tables show a
+short title and matching text; selecting a row shows its full location and
+match details. Open a Trash result to preview the note and restore it.
+
 Useful keys include:
 
 | Key | Action |
@@ -27,6 +31,10 @@ Useful keys include:
 | `m` | Open context actions |
 | `/` | Search |
 | `q` | Quit |
+
+Choose **Note history** from the context actions to select a saved revision,
+review its diff against the current note, and explicitly restore it. The
+current version is kept as another revision.
 
 The TUI is optional. The CLI remains fully usable without the `textual`
 package.

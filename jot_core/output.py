@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping
 
 from .models import CommandResult
+from .editor import colorize_diff
 from . import output_notes
 from .output_serialization import error_envelope, serialize_payload, success_envelope
 from .progress_output import emit_progress
@@ -178,6 +179,21 @@ def emit_result(result: CommandResult[Any], *, json_mode: bool = False) -> None:
         return
     if command in {"note-append", "chain-append", "project-append"}:
         _emit_append_like(command, payload)
+        return
+    if command == "history-list":
+        _emit_history_list(payload)
+        return
+    if command == "history-diff":
+        diff = str(payload.get("diff") or "")
+        sys.stdout.write(colorize_diff(diff, color_mode=_COLOR_MODE) if diff else "(no differences)\n")
+        return
+    if command == "history-restore":
+        if not payload.get("restored", True):
+            _write_status("Restore cancelled", color="muted")
+            return
+        _write_status(f"Restored note revision {payload.get('revision_id')}")
+        _emit_field("note", payload.get("path"))
+        _emit_field("current version saved as", payload.get("preserved_revision_id"))
         return
     if command == "list":
         _emit_list(payload)
@@ -433,6 +449,20 @@ def _emit_append_like(command: str, payload: Mapping[str, Any]) -> None:
     }[command]
     prefix = "Created and appended to" if created else "Appended to"
     _write_status(f"{prefix} {kind}: {payload['path']}")
+    _emit_expansion_warnings(payload)
+
+
+def _emit_history_list(payload: Mapping[str, Any]) -> None:
+    revisions = payload.get("revisions") or []
+    kind = str(payload.get("note_kind") or "note")
+    _write_title(f"History: {kind}", blank_after=True)
+    _emit_field("path", payload.get("path"))
+    if not revisions:
+        sys.stdout.write("\n(no revisions yet)\n")
+        return
+    for item in revisions:
+        revision_id = _style(str(item.get("revision_id") or ""), color="identity", bold=True)
+        sys.stdout.write(f"{revision_id}  {item.get('created_at') or ''}\n")
 
 
 def _emit_delete(command: str, payload: Mapping[str, Any]) -> None:
@@ -563,6 +593,12 @@ def _emit_add_to(payload: Mapping[str, Any]) -> None:
     _emit_field("match", match, indent=0)
     _emit_field("path", path, indent=0)
     _emit_field("entry", entry, indent=0)
+    _emit_expansion_warnings(payload)
+
+
+def _emit_expansion_warnings(payload: Mapping[str, Any]) -> None:
+    for token in payload.get("warnings") or []:
+        _write_status(f"Unknown placeholder left unchanged: {{{token}}}", color="warning")
 
 
 def _emit_timelog_ingest(payload: Mapping[str, Any]) -> None:
@@ -1120,7 +1156,8 @@ def _emit_search(payload: Mapping[str, Any]) -> None:
         for item in note_hits:
             kind = _style(f"[{item.get('kind')}]", color="identity", bold=True)
             path = _style(str(item.get("path") or ""), color="path")
-            sys.stdout.write(f"  {kind} {path}\n")
+            match_type = _style(f"({item.get('match_type') or 'content'})", color="muted")
+            sys.stdout.write(f"  {kind} {match_type} {path}\n")
             match = item.get("match") or ""
             if match:
                 sys.stdout.write(f"    {match}\n")
@@ -1131,7 +1168,8 @@ def _emit_search(payload: Mapping[str, Any]) -> None:
         for item in trash_hits:
             kind = _style(f"[{item.get('kind')}]")
             path = _style(str(item.get("path") or ""), color="path")
-            sys.stdout.write(f"  {kind} {path}\n")
+            match_type = _style(f"({item.get('match_type') or 'content'})", color="muted")
+            sys.stdout.write(f"  {kind} {match_type} {path}\n")
             original_path = str(item.get("original_path") or "").strip()
             if original_path:
                 sys.stdout.write(f"    original: {original_path}\n")

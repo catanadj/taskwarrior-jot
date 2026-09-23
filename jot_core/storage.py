@@ -293,6 +293,7 @@ def add_to_task_heading_storage(
         result.match,
         result.timestamp,
         result.entry,
+        result.warnings,
     )
 
 
@@ -332,6 +333,7 @@ def add_to_chain_heading_storage(
         result.match,
         result.timestamp,
         result.entry,
+        result.warnings,
     )
 
 
@@ -369,6 +371,7 @@ def add_to_project_heading_storage(
         result.match,
         result.timestamp,
         result.entry,
+        result.warnings,
     )
 
 

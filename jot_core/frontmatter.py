@@ -32,7 +32,9 @@ def write_document(path: Path, metadata: FrontMatter, body: str) -> None:
 def atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     existing_mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
+    previous_text = path.read_text(encoding="utf-8") if path.is_file() else ""
     temporary_path: Path | None = None
+    revision_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
             mode="w",
@@ -47,8 +49,22 @@ def atomic_write_text(path: Path, text: str) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.chmod(temporary_path, existing_mode)
-        os.replace(temporary_path, path)
+        if previous_text:
+            from .history import prune_note_history, record_note_revision
+
+            revision_path = record_note_revision(path, previous_text, text)
+        try:
+            os.replace(temporary_path, path)
+        except Exception:
+            if revision_path is not None:
+                revision_path.unlink(missing_ok=True)
+            raise
         temporary_path = None
+        if previous_text:
+            try:
+                prune_note_history(path)
+            except OSError:
+                pass
         _fsync_directory(path.parent)
     finally:
         if temporary_path is not None:

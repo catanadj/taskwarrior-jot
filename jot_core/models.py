@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Generic, Iterator, Mapping, TypeAlias, TypedDict, TypeVar
+from typing import Any, Generic, Iterator, Literal, Mapping, TypeAlias, TypedDict, TypeVar
 
 
 JsonScalar: TypeAlias = None | bool | int | float | str
@@ -1498,13 +1498,34 @@ class NotesCommandResult(PayloadModel):
     kinds: tuple[str, ...]
     project: str | None
     notes: tuple["NoteSummary", ...]
+    date_filter: Mapping[str, str] | None = None
 
     def to_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "kinds": list(self.kinds),
             "project": self.project,
             "notes": [item.to_payload() for item in self.notes],
         }
+        if self.date_filter is not None:
+            payload["date_filter"] = dict(self.date_filter)
+        return payload
+
+
+class CompleteTaskPostSaveAction(TypedDict):
+    action: Literal["complete-task"]
+    task_uuid: str
+    task_short_uuid: str
+    description: str
+
+
+class DeleteNotePostSaveAction(TypedDict):
+    action: Literal["delete-note"]
+    note_kind: Literal["task", "chain", "project"]
+    path: str
+    trash_path: str
+
+
+PostSaveAction: TypeAlias = CompleteTaskPostSaveAction | DeleteNotePostSaveAction
 
 
 @dataclass(frozen=True, slots=True)
@@ -1512,7 +1533,7 @@ class NoteOpenResult(PayloadModel):
     path: Path
     opened: bool
     identity: Mapping[str, Any]
-    post_save_action: str | None = None
+    post_save_action: PostSaveAction | None = None
 
     def to_payload(self) -> dict[str, Any]:
         payload = {"path": str(self.path), "opened": self.opened, **dict(self.identity)}
@@ -1526,9 +1547,13 @@ class NoteAppendCommandResult(PayloadModel):
     path: Path
     opened: bool
     identity: Mapping[str, Any]
+    warnings: tuple[str, ...] = ()
 
     def to_payload(self) -> dict[str, Any]:
-        return {"path": str(self.path), "opened": self.opened, **dict(self.identity)}
+        payload = {"path": str(self.path), "opened": self.opened, **dict(self.identity)}
+        if self.warnings:
+            payload["warnings"] = list(self.warnings)
+        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -1539,6 +1564,68 @@ class NoteDeleteCommandResult(PayloadModel):
 
     def to_payload(self) -> dict[str, Any]:
         return {"path": str(self.path), "trash_path": str(self.trash_path), **dict(self.identity)}
+
+
+@dataclass(frozen=True, slots=True)
+class NoteRevisionSummary(PayloadModel):
+    revision_id: str
+    created_at: str
+    digest: str
+
+    def to_payload(self) -> dict[str, str]:
+        return {
+            "revision_id": self.revision_id,
+            "created_at": self.created_at,
+            "digest": self.digest,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class NoteHistoryResult(PayloadModel):
+    note_kind: str
+    path: Path
+    revisions: tuple[NoteRevisionSummary, ...]
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "note_kind": self.note_kind,
+            "path": str(self.path),
+            "revisions": [item.to_payload() for item in self.revisions],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class NoteHistoryDiffResult(PayloadModel):
+    note_kind: str
+    path: Path
+    revision_id: str
+    diff: str
+    current_digest: str
+
+    def to_payload(self) -> dict[str, str]:
+        return {
+            "note_kind": self.note_kind,
+            "path": str(self.path),
+            "revision_id": self.revision_id,
+            "diff": self.diff,
+            "current_digest": self.current_digest,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class NoteHistoryRestoreResult(PayloadModel):
+    note_kind: str
+    path: Path
+    revision_id: str
+    preserved_revision_id: str
+
+    def to_payload(self) -> dict[str, str]:
+        return {
+            "note_kind": self.note_kind,
+            "path": str(self.path),
+            "revision_id": self.revision_id,
+            "preserved_revision_id": self.preserved_revision_id,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -1640,6 +1727,7 @@ class HeadingMutationResult(PayloadModel):
     heading_match: str
     timestamp: str
     entry: str
+    warnings: tuple[str, ...] = ()
 
     @classmethod
     def from_mapping(cls, item: Mapping[str, Any]) -> "HeadingMutationResult":
@@ -1650,10 +1738,11 @@ class HeadingMutationResult(PayloadModel):
             heading_match=str(item.get("heading_match") or "").strip(),
             timestamp=str(item.get("timestamp") or "").strip(),
             entry=str(item.get("entry") or ""),
+            warnings=tuple(str(value) for value in item.get("warnings", ()) or ()),
         )
 
     def to_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "note_path": str(self.note_path),
             "opened": self.opened,
             "heading": self.heading,
@@ -1661,6 +1750,9 @@ class HeadingMutationResult(PayloadModel):
             "timestamp": self.timestamp,
             "entry": self.entry,
         }
+        if self.warnings:
+            payload["warnings"] = list(self.warnings)
+        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -1673,9 +1765,10 @@ class HeadingCommandResult(PayloadModel):
     timestamp: str
     entry: str
     identity: Mapping[str, Any] = field(repr=False, default_factory=dict)
+    warnings: tuple[str, ...] = ()
 
     def to_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "note_kind": self.note_kind,
             **dict(self.identity),
             "path": str(self.path),
@@ -1685,6 +1778,9 @@ class HeadingCommandResult(PayloadModel):
             "timestamp": self.timestamp,
             "entry": self.entry,
         }
+        if self.warnings:
+            payload["warnings"] = list(self.warnings)
+        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -2050,6 +2146,7 @@ class AppConfig:
     default_format: str
     nautical_enabled: bool
     timewarrior_enabled: bool
+    templates_confirm_expansion_on_save: bool = True
     ops_max_entries: int = 10000
     ops_keep_entries: int = 5000
 
@@ -2065,6 +2162,7 @@ class NoteAppendStorageResult:
     note_path: Path
     existed: bool
     appended_text: str
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

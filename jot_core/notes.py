@@ -15,7 +15,7 @@ from .nautical import chain_id_for_task
 from .ops import iso_now
 from .resources import format_resource_line, parse_resource_bullets
 from .schema import NOTE_SCHEMA_VERSION
-from .templates import apply_template
+from .templates import TextExpansion, apply_template, expand_text
 
 
 SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -42,6 +42,7 @@ class HeadingInsertResult:
     match: str
     timestamp: str
     entry: str
+    warnings: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -183,25 +184,56 @@ def _touch_updated_unlocked(path: Path) -> None:
 def append_to_task_note(config: AppConfig, task: ResolvedTask, text: str) -> NoteAppendStorageResult:
     note = ensure_task_note(config, task)
     with exclusive_file_lock(note.note_path):
-        _append_text(note.note_path, text)
+        metadata, _body = read_document(note.note_path)
+        expanded = _expand_note_text(text, metadata)
+        _append_text(note.note_path, expanded.text)
         _touch_updated_unlocked(note.note_path)
-    return NoteAppendStorageResult(note_path=note.note_path, existed=note.existed, appended_text=text)
+    return NoteAppendStorageResult(
+        note_path=note.note_path,
+        existed=note.existed,
+        appended_text=expanded.text,
+        warnings=expanded.unknown_tokens,
+    )
 
 
 def append_to_chain_note(config: AppConfig, task: ResolvedTask, text: str) -> NoteAppendStorageResult:
     note = ensure_chain_note(config, task)
     with exclusive_file_lock(note.note_path):
-        _append_text(note.note_path, text)
+        metadata, _body = read_document(note.note_path)
+        expanded = _expand_note_text(
+            text,
+            metadata,
+            values={
+                "task_short_uuid": task.task_short_uuid,
+                "task_uuid": task.task_uuid,
+                "description": task.description,
+                "project": task.project,
+                "chain_id": chain_id_for_task(task.task) or "",
+            },
+        )
+        _append_text(note.note_path, expanded.text)
         _touch_updated_unlocked(note.note_path)
-    return NoteAppendStorageResult(note_path=note.note_path, existed=note.existed, appended_text=text)
+    return NoteAppendStorageResult(
+        note_path=note.note_path,
+        existed=note.existed,
+        appended_text=expanded.text,
+        warnings=expanded.unknown_tokens,
+    )
 
 
 def append_to_project_note(config: AppConfig, project_name: str, text: str) -> NoteAppendStorageResult:
     note = ensure_project_note(config, project_name)
     with exclusive_file_lock(note.note_path):
-        _append_text(note.note_path, text)
+        metadata, _body = read_document(note.note_path)
+        expanded = _expand_note_text(text, metadata)
+        _append_text(note.note_path, expanded.text)
         _touch_updated_unlocked(note.note_path)
-    return NoteAppendStorageResult(note_path=note.note_path, existed=note.existed, appended_text=text)
+    return NoteAppendStorageResult(
+        note_path=note.note_path,
+        existed=note.existed,
+        appended_text=expanded.text,
+        warnings=expanded.unknown_tokens,
+    )
 
 
 def delete_task_note(config: AppConfig, task: ResolvedTask) -> NoteDeleteStorageResult:
@@ -262,6 +294,13 @@ def add_to_task_heading(
         text,
         create_heading=create_heading,
         exact=exact,
+        values={
+            "task_short_uuid": task.task_short_uuid,
+            "task_uuid": task.task_uuid,
+            "description": task.description,
+            "project": task.project,
+            "chain_id": chain_id_for_task(task.task) or "",
+        },
     )
 
 
@@ -280,6 +319,13 @@ def add_to_chain_heading(
         text,
         create_heading=create_heading,
         exact=exact,
+        values={
+            "task_short_uuid": task.task_short_uuid,
+            "task_uuid": task.task_uuid,
+            "description": task.description,
+            "project": task.project,
+            "chain_id": chain_id_for_task(task.task) or "",
+        },
     )
 
 
@@ -307,6 +353,7 @@ def append_under_heading_once(
             create_heading=create_heading,
             exact=exact,
             compact=compact,
+            expand_user_text=False,
         )
         _touch_updated_unlocked(note_path)
         return result
@@ -337,6 +384,7 @@ def _add_to_heading(
     *,
     create_heading: bool,
     exact: bool,
+    values: dict[str, str] | None = None,
 ) -> HeadingInsertResult:
     with exclusive_file_lock(note.note_path):
         result = _append_under_heading(
@@ -345,6 +393,7 @@ def _add_to_heading(
             text,
             create_heading=create_heading,
             exact=exact,
+            context_values=values,
         )
         _touch_updated_unlocked(note.note_path)
     return HeadingInsertResult(note_path=note.note_path, existed=note.existed, **result)
@@ -655,12 +704,15 @@ def _build_project_note_document(config: AppConfig, project_name: str) -> tuple[
 
 def _template_context(created: str, **values: str) -> dict[str, str]:
     dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+    local = dt.astimezone()
+    zone = local.tzname() or local.strftime("%z")
     context: dict[str, str] = {
         "created": created,
         "updated": created,
-        "date": dt.strftime("%Y-%m-%d"),
-        "time": dt.strftime("%H:%M:%SZ"),
-        "datetime": created,
+        "date": local.strftime("%Y-%m-%d"),
+        "time": f"{local:%H:%M:%S} {zone}".strip(),
+        "datetime": f"{local:%Y-%m-%d %H:%M:%S} {zone}".strip(),
+        "timezone": zone,
     }
     context.update({key: str(value or "") for key, value in values.items()})
     return context
@@ -676,6 +728,35 @@ def _append_text(path: Path, text: str) -> None:
         normalized += "\n\n"
     normalized += chunk
     write_document(path, metadata, normalized)
+
+
+def _expand_note_text(
+    text: str,
+    metadata: dict[str, object],
+    *,
+    local: datetime | None = None,
+    values: dict[str, str] | None = None,
+) -> TextExpansion:
+    local = (local or datetime.now().astimezone()).replace(microsecond=0)
+    zone = local.tzname() or local.strftime("%z")
+    context = {
+        "date": local.strftime("%Y-%m-%d"),
+        "time": f"{local:%H:%M:%S} {zone}".strip(),
+        "datetime": f"{local:%Y-%m-%d %H:%M:%S} {zone}".strip(),
+        "timezone": zone,
+        "created": str(metadata.get("created") or ""),
+        "updated": str(metadata.get("updated") or ""),
+        "task_short_uuid": str(metadata.get("task_short_uuid") or ""),
+        "task_uuid": str(metadata.get("task_uuid") or ""),
+        "description": str(metadata.get("description") or metadata.get("project") or ""),
+        "project": str(metadata.get("project") or ""),
+        "chain_id": str(metadata.get("chain_id") or ""),
+        "project_path": ".".join(metadata.get("project_path") or [])
+        if isinstance(metadata.get("project_path"), list)
+        else str(metadata.get("project_path") or ""),
+    }
+    context.update({key: str(value or "") for key, value in (values or {}).items()})
+    return expand_text(text, context)
 
 
 def _trash_note_path(config: AppConfig, note_path: Path) -> Path:
@@ -730,7 +811,9 @@ def _append_under_heading(
     create_heading: bool,
     exact: bool,
     compact: bool = False,
-) -> dict[str, str]:
+    context_values: dict[str, str] | None = None,
+    expand_user_text: bool = True,
+) -> dict[str, object]:
     metadata, body = read_document(path)
     chunk = text.strip()
     if not chunk:
@@ -753,7 +836,14 @@ def _append_under_heading(
         if selected is None:
             raise RuntimeError(f"failed to create heading '{query}'")
 
-    timestamp = _local_note_timestamp()
+    local = datetime.now().astimezone().replace(microsecond=0)
+    timestamp = _format_local_timestamp(local)
+    expanded = (
+        _expand_note_text(chunk, metadata, local=local, values=context_values)
+        if expand_user_text
+        else TextExpansion(chunk)
+    )
+    chunk = expanded.text
     entry = f"- [{timestamp}] {chunk}"
     lines = _insert_entry(lines, selected, entry, compact=compact)
     write_document(path, metadata, "\n".join(lines))
@@ -762,11 +852,16 @@ def _append_under_heading(
         "match": str(match),
         "timestamp": timestamp,
         "entry": entry,
+        "warnings": expanded.unknown_tokens,
     }
 
 
 def _local_note_timestamp() -> str:
     local = datetime.now().astimezone().replace(microsecond=0)
+    return _format_local_timestamp(local)
+
+
+def _format_local_timestamp(local: datetime) -> str:
     zone = local.tzname() or local.strftime("%z")
     return f"{local:%Y-%m-%d %H:%M:%S} {zone}".strip()
 
