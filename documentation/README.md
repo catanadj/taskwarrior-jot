@@ -1,7 +1,6 @@
 # Jot Documentation
 
-Jot is a practical notebook for Taskwarrior. Use it when a task needs more
-than a status, due date, and description.
+Jot is a practical notebook for Taskwarrior. Use it to store all the task context.
 
 ## Start Here
 
