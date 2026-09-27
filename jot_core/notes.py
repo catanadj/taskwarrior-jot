@@ -16,6 +16,7 @@ from .ops import iso_now
 from .resources import format_resource_line, parse_resource_bullets
 from .schema import NOTE_SCHEMA_VERSION
 from .templates import TextExpansion, apply_template, expand_text
+from .time_format import format_local_iso_datetime
 
 
 SLUG_RE = re.compile(r"[^a-z0-9]+")
@@ -706,12 +707,14 @@ def _template_context(created: str, **values: str) -> dict[str, str]:
     dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
     local = dt.astimezone()
     zone = local.tzname() or local.strftime("%z")
+    local_datetime = format_local_iso_datetime(local)
     context: dict[str, str] = {
         "created": created,
         "updated": created,
         "date": local.strftime("%Y-%m-%d"),
         "time": f"{local:%H:%M:%S} {zone}".strip(),
-        "datetime": f"{local:%Y-%m-%d %H:%M:%S} {zone}".strip(),
+        "datetime": local_datetime,
+        "now": local_datetime,
         "timezone": zone,
     }
     context.update({key: str(value or "") for key, value in values.items()})
@@ -739,10 +742,12 @@ def _expand_note_text(
 ) -> TextExpansion:
     local = (local or datetime.now().astimezone()).replace(microsecond=0)
     zone = local.tzname() or local.strftime("%z")
+    local_datetime = format_local_iso_datetime(local)
     context = {
         "date": local.strftime("%Y-%m-%d"),
         "time": f"{local:%H:%M:%S} {zone}".strip(),
-        "datetime": f"{local:%Y-%m-%d %H:%M:%S} {zone}".strip(),
+        "datetime": local_datetime,
+        "now": local_datetime,
         "timezone": zone,
         "created": str(metadata.get("created") or ""),
         "updated": str(metadata.get("updated") or ""),

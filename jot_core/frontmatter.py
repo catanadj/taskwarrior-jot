@@ -304,6 +304,8 @@ def update_metadata(path: Path, updates: dict[str, Any]) -> None:
 
 
 def _parse_scalar(value: str) -> Any:
+    if value in {'""', "''"}:
+        return ""
     if value == "null":
         return None
     return value
@@ -312,6 +314,8 @@ def _parse_scalar(value: str) -> Any:
 def _render_scalar(value: Any) -> str:
     if value is None:
         return "null"
+    if value == "":
+        return '""'
     return str(value)
 
 

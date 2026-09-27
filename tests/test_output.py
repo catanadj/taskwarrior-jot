@@ -3,6 +3,8 @@ from __future__ import annotations
 import csv
 import io
 import json
+import os
+import time
 import unittest
 from contextlib import redirect_stdout
 from dataclasses import dataclass
@@ -77,6 +79,37 @@ class OutputEmitterTests(unittest.TestCase):
         with mock.patch("jot_core.output_notes.emit_project_list", return_value=None) as render:
             emit_result(CommandResult(command="project-list", data={"projects": []}))
         render.assert_called_once()
+
+    def test_compact_note_list_renders_updated_timestamp_in_local_timezone(self) -> None:
+        configure_output(color_mode="always")
+        with mock.patch.dict(os.environ, {"TZ": "Etc/GMT-3"}):
+            os.environ.pop("NO_COLOR", None)
+            time.tzset()
+            output = self.emit(
+                "list",
+                {
+                    "notes": [
+                        {
+                            "kind": "chain-note",
+                            "id": "chain123",
+                            "title": "Daily exercise",
+                            "updated": "2026-09-23T12:34:26Z",
+                        }
+                    ],
+                    "date_filter": {
+                        "start": "2026-09-23",
+                        "end": "2026-09-23",
+                        "timezone": "Etc/GMT-3",
+                    },
+                },
+            )
+        time.tzset()
+
+        self.assertIn("2026-09-23T15:34:26+03", output)
+        self.assertNotIn("2026-09-23T12:34:26Z", output)
+        self.assertIn("\033[38;5;244m2026-09-23T15:34:26+03\033[0m", output)
+        self.assertIn("\033[1;38;5;220mchain123\033[0m", output)
+        self.assertIn("\033[38;5;45mDaily exercise\033[0m", output)
 
     def test_note_mutation_resource_and_search_emitters(self) -> None:
         self.assertIn(

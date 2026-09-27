@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .frontmatter import atomic_write_text, exclusive_file_lock, parse_document, render_document
 from .templates import expand_text
+from .time_format import format_local_iso_datetime
 
 
 def split_editor_command(editor_command: str) -> list[str]:
@@ -106,10 +107,12 @@ def expand_note_content(
         return content
     now = datetime.now().astimezone().replace(microsecond=0)
     zone = now.tzname() or now.strftime("%z")
+    local_datetime = format_local_iso_datetime(now)
     context = {
         "date": now.strftime("%Y-%m-%d"),
         "time": f"{now:%H:%M:%S} {zone}".strip(),
-        "datetime": f"{now:%Y-%m-%d %H:%M:%S} {zone}".strip(),
+        "datetime": local_datetime,
+        "now": local_datetime,
         "timezone": zone,
         **{
             key: (".".join(value) if key == "project_path" and isinstance(value, list) else str(value or ""))

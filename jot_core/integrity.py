@@ -30,6 +30,8 @@ def scan_integrity(config: AppConfig, taskwarrior: TaskwarriorClient) -> Integri
             "tags": list(task.tags),
         }
         actual = {key: metadata.get(key) for key in expected}
+        if actual["project"] in (None, []):
+            actual["project"] = ""
         if actual != expected:
             findings.append({"kind": "stale-metadata", "path": str(path), "task_uuid": task_uuid, "expected": expected, "actual": actual})
 

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import time
+from datetime import datetime, timedelta, timezone
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -7,6 +10,7 @@ from unittest import mock
 
 from jot_core.editor import expand_note_content
 from jot_core.frontmatter import parse_document, render_document
+from jot_core.notes import _expand_note_text
 from jot_core.templates import expand_text
 
 
@@ -28,6 +32,47 @@ class TextExpansionTests(unittest.TestCase):
 
         self.assertEqual(result.text, "Keep {date} and {{time}}")
         self.assertEqual(result.unknown_tokens, ())
+
+    def test_datetime_and_now_use_the_same_compact_local_iso_timestamp(self) -> None:
+        with mock.patch.dict(os.environ, {"TZ": "Etc/GMT-3"}):
+            time.tzset()
+            result = _expand_note_text(
+                "{datetime}|{now}",
+                {},
+                local=datetime(
+                    2026,
+                    9,
+                    23,
+                    11,
+                    25,
+                    57,
+                    tzinfo=timezone(timedelta(hours=3)),
+                ),
+            )
+        time.tzset()
+
+        self.assertEqual(
+            result.text,
+            "2026-09-23T11:25:57+03|2026-09-23T11:25:57+03",
+        )
+        self.assertEqual(result.unknown_tokens, ())
+
+    def test_datetime_preserves_nonzero_timezone_offset_minutes(self) -> None:
+        result = _expand_note_text(
+            "{now}",
+            {},
+            local=datetime(
+                2026,
+                9,
+                23,
+                11,
+                25,
+                57,
+                tzinfo=timezone(timedelta(hours=3, minutes=30)),
+            ),
+        )
+
+        self.assertEqual(result.text, "2026-09-23T11:25:57+03:30")
 
     def test_editor_expansion_requires_confirmation_and_decline_preserves_note(self) -> None:
         with TemporaryDirectory(prefix="jot-expand-") as tempdir:

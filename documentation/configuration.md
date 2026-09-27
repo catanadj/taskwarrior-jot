@@ -33,6 +33,17 @@ Keep this file in the Jot data directory when moving or backing up an
 installation. Do not hard-code `~/.task` in scripts; use `TASKDATA`,
 Taskwarrior's `data.location`, or the path reported by `jot paths`.
 
+## Editor
+
+After an interactive note edit, Jot offers post-save actions such as completing
+the task or deleting the note. This prompt is enabled by default. Disable it
+with:
+
+```toml
+[editor]
+post_save_actions = false
+```
+
 ## Templates
 
 Templates live under:
@@ -43,7 +54,8 @@ Templates live under:
 
 Available files are `task-note.md`, `chain-note.md`, and `project-note.md`.
 Useful expansions include `{description}`, `{project}`, `{chain_id}`, `{date}`,
-`{time}`, and `{datetime}`.
+`{time}`, `{datetime}`, and `{now}`. `{now}` is a concise alias for
+`{datetime}`.
 
 ## Output
 

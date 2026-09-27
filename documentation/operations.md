@@ -14,6 +14,10 @@ jot integrity
 reports metadata or index drift without changing files. Use
 `jot reconcile --dry-run` before applying a repair.
 
+If the index is stale, run `jot rebuild-index` and then `jot doctor` again.
+Rebuilding uses the configured note folders as the source of truth; operation
+history supplements note timestamps but does not recreate missing notes.
+
 ## Back Up Before an Upgrade
 
 Jot stores its notes, index, operation log, configuration, and trash below the

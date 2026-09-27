@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
@@ -49,6 +50,65 @@ class IntegrityTests(unittest.TestCase):
             self.assertIn("missing-task-uuid", kinds)
             self.assertIn("invalid-index", kinds)
             self.assertEqual(report.counts["total"], 2)
+
+    def test_scan_treats_legacy_blank_project_as_unassigned(self) -> None:
+        with TemporaryDirectory(prefix="jot-integrity-empty-project-") as temporary:
+            root = Path(temporary)
+            config = self._config(root)
+            config.tasks_dir.mkdir(parents=True)
+            task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+            (config.tasks_dir / "task.md").write_text(
+                "---\n"
+                "kind: task-note\n"
+                f"task_uuid: {task_uuid}\n"
+                "description: Unassigned task\n"
+                "project:\n"
+                "tags:\n"
+                "---\n\nTask notes\n",
+                encoding="utf-8",
+            )
+            client = SimpleNamespace(
+                resolve_task=lambda _ref: ResolvedTask(
+                    ref=TaskRef(raw=task_uuid),
+                    task_uuid=task_uuid,
+                    task_short_uuid=task_uuid[:8],
+                    description="Unassigned task",
+                    project="",
+                    tags=[],
+                    task={"uuid": task_uuid},
+                )
+            )
+
+            report = scan_integrity(config, client)
+
+            self.assertNotIn("stale-metadata", {finding.kind for finding in report.findings})
+
+    def test_scan_does_not_report_short_key_alias_as_index_collision(self) -> None:
+        with TemporaryDirectory(prefix="jot-integrity-index-alias-") as temporary:
+            root = Path(temporary)
+            config = self._config(root)
+            task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+            entry = {
+                "task_short_uuid": "2d6d7d7d",
+                "task_uuid": task_uuid,
+                "note_path": "tasks/task.md",
+            }
+            (root / "index.json").write_text(
+                json.dumps(
+                    {
+                        "version": 1,
+                        "updated": "2026-09-23T12:00:00Z",
+                        "tasks": {task_uuid: entry, "2d6d7d7d": entry},
+                        "chains": {},
+                        "projects": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = scan_integrity(config, SimpleNamespace())
+
+            self.assertNotIn("index-collision", {finding.kind for finding in report.findings})
 
     def test_reconcile_dry_run_then_apply_repairs_stale_metadata(self) -> None:
         with TemporaryDirectory(prefix="jot-integrity-") as temporary:

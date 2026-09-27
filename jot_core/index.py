@@ -62,15 +62,18 @@ def migrate_index_keys(data: dict[str, Any]) -> tuple[dict[str, Any], list[dict[
         short_uuid = str(value.get("task_short_uuid") or legacy_key).strip()
         key = canonical_task_uuid(value.get("task_uuid"), short_uuid)
         if key in migrated["tasks"]:
-            collisions.append(
-                {
-                    "canonical_uuid": key,
-                    "keys": [
-                        str(migrated["tasks"][key].get("task_short_uuid") or key),
-                        short_uuid,
-                    ],
-                }
-            )
+            prior = migrated["tasks"][key]
+            if prior != value:
+                collisions.append(
+                    {
+                        "canonical_uuid": key,
+                        "keys": [
+                            str(prior.get("task_short_uuid") or key),
+                            short_uuid,
+                        ],
+                    }
+                )
+            continue
         migrated["tasks"][key] = dict(value)
     return migrated, collisions
 
@@ -79,19 +82,30 @@ def _task_entry(data: dict[str, Any], task_uuid: str, short_uuid: str) -> tuple[
     canonical = canonical_task_uuid(task_uuid, short_uuid)
     if canonical in data["tasks"]:
         return canonical, data["tasks"][canonical]
-    if short_uuid in data["tasks"]:
-        return short_uuid, data["tasks"][short_uuid]
+    if short_uuid:
+        for key, entry in data["tasks"].items():
+            entry_uuid = str(entry.get("task_uuid") or "").strip()
+            if (key == short_uuid or entry.get("task_short_uuid") == short_uuid) and (
+                not entry_uuid or entry_uuid == task_uuid
+            ):
+                return key, entry
     return canonical, {}
 
 
 def _store_task(data: dict[str, Any], key: str, entry: dict[str, Any]) -> None:
-    """Store canonical identity and a non-colliding legacy lookup alias."""
-    data["tasks"][key] = entry
+    """Store each task once, under its canonical identity."""
+    canonical = canonical_task_uuid(entry.get("task_uuid"), entry.get("task_short_uuid") or key)
     short_uuid = str(entry.get("task_short_uuid") or "").strip()
-    if short_uuid and short_uuid != key:
-        prior = data["tasks"].get(short_uuid)
-        if prior is None or prior.get("task_uuid") == entry.get("task_uuid"):
-            data["tasks"][short_uuid] = entry
+    task_uuid = str(entry.get("task_uuid") or "").strip()
+    if short_uuid:
+        for existing_key, existing in list(data["tasks"].items()):
+            if existing_key == canonical:
+                continue
+            existing_short = str(existing.get("task_short_uuid") or existing_key).strip()
+            existing_uuid = str(existing.get("task_uuid") or "").strip()
+            if existing_short == short_uuid and (not existing_uuid or existing_uuid == task_uuid):
+                data["tasks"].pop(existing_key, None)
+    data["tasks"][canonical] = entry
 
 
 def index_path(config: AppConfig) -> Path:
@@ -115,6 +129,9 @@ def _load_or_rebuild_index_unlocked(config: AppConfig) -> tuple[IndexData, bool]
             with path.open("r", encoding="utf-8") as handle:
                 data = json.load(handle)
             if _valid_index_shape(data):
+                migrated, collisions = migrate_index_keys(data)
+                if not collisions and migrated["tasks"] != data.get("tasks", {}):
+                    return cast(IndexData, migrated), True
                 return cast(IndexData, data), False
             recovery_reason = "invalid index structure"
         except Exception as exc:
@@ -172,7 +189,7 @@ def read_index_status(config: AppConfig) -> dict[str, Any]:
         "valid": True,
         "updated": str(data.get("updated") or "").strip() or None,
         "counts": {
-            "tasks": len(data.get("tasks", {})),
+            "tasks": len(migrate_index_keys(data)[0].get("tasks", {})),
             "chains": len(data.get("chains", {})),
             "projects": len(data.get("projects", {})),
         },
@@ -332,16 +349,7 @@ def _merge_op(data: dict[str, Any], config: AppConfig, item: dict[str, Any]) -> 
     project = str(item.get("project") or "").strip() or None
     path = str(item.get("path") or "").strip() or None
 
-    if op == "task_note_delete" and short_uuid:
-        for key, value in list(data["tasks"].items()):
-            if key == short_uuid or str(value.get("task_short_uuid") or "") == short_uuid:
-                data["tasks"].pop(key, None)
-        return
-    if op == "chain_note_delete" and chain_id:
-        data["chains"].pop(chain_id, None)
-        return
-    if op == "project_note_delete" and project:
-        data["projects"].pop(project, None)
+    if op in {"task_note_delete", "chain_note_delete", "project_note_delete"}:
         return
     if op == "trash_restore" and path:
         _merge_restore_op(data, config, item, path, ts)
@@ -349,47 +357,44 @@ def _merge_op(data: dict[str, Any], config: AppConfig, item: dict[str, Any]) -> 
 
     if short_uuid:
         key, existing = _task_entry(data, task_uuid or "", short_uuid)
-        merged = {
-            "task_short_uuid": short_uuid,
-            "task_uuid": task_uuid or existing.get("task_uuid"),
-            "note_path": existing.get("note_path"),
-            "chain_id": chain_id or existing.get("chain_id"),
-            "last_note_at": existing.get("last_note_at"),
-            "last_event_at": existing.get("last_event_at"),
-        }
-        if op.startswith("task_note_"):
-            merged["last_note_at"] = ts or merged["last_note_at"]
-            if path:
-                merged["note_path"] = _relative_note_path(config, Path(path))
-        elif op == "event_add":
-            merged["last_event_at"] = ts or merged["last_event_at"]
-        _store_task(data, key, merged)
+        if existing.get("note_path"):
+            merged = {
+                "task_short_uuid": short_uuid,
+                "task_uuid": task_uuid or existing.get("task_uuid"),
+                "note_path": existing.get("note_path"),
+                "chain_id": chain_id or existing.get("chain_id"),
+                "last_note_at": existing.get("last_note_at"),
+                "last_event_at": existing.get("last_event_at"),
+            }
+            if op.startswith("task_note_"):
+                merged["last_note_at"] = ts or merged["last_note_at"]
+            elif op == "event_add":
+                merged["last_event_at"] = ts or merged["last_event_at"]
+            _store_task(data, key, merged)
 
     if chain_id:
-        existing_chain = data["chains"].get(chain_id, {})
-        merged_chain = {
-            "chain_id": chain_id,
-            "note_path": existing_chain.get("note_path"),
-            "last_note_at": existing_chain.get("last_note_at"),
-        }
-        if op.startswith("chain_note_"):
-            merged_chain["last_note_at"] = ts or merged_chain["last_note_at"]
-            if path:
-                merged_chain["note_path"] = _relative_note_path(config, Path(path))
-        data["chains"][chain_id] = merged_chain
+        existing_chain = data["chains"].get(chain_id)
+        if existing_chain is not None:
+            merged_chain = {
+                "chain_id": chain_id,
+                "note_path": existing_chain.get("note_path"),
+                "last_note_at": existing_chain.get("last_note_at"),
+            }
+            if op.startswith("chain_note_"):
+                merged_chain["last_note_at"] = ts or merged_chain["last_note_at"]
+            data["chains"][chain_id] = merged_chain
 
     if project:
-        existing_project = data["projects"].get(project, {})
-        merged_project = {
-            "project": project,
-            "note_path": existing_project.get("note_path"),
-            "last_note_at": existing_project.get("last_note_at"),
-        }
-        if op.startswith("project_note_"):
-            merged_project["last_note_at"] = ts or merged_project.get("last_note_at")
-            if path:
-                merged_project["note_path"] = _relative_note_path(config, Path(path))
-        data["projects"][project] = merged_project
+        existing_project = data["projects"].get(project)
+        if existing_project is not None:
+            merged_project = {
+                "project": project,
+                "note_path": existing_project.get("note_path"),
+                "last_note_at": existing_project.get("last_note_at"),
+            }
+            if op.startswith("project_note_"):
+                merged_project["last_note_at"] = ts or merged_project.get("last_note_at")
+            data["projects"][project] = merged_project
 
 
 def _merge_restore_op(
@@ -404,27 +409,32 @@ def _merge_restore_op(
     task_uuid = str(item.get("task_uuid") or "").strip() or None
     chain_id = str(item.get("chain_id") or "").strip()
     project = str(item.get("project") or "").strip()
-    rel_path = _relative_note_path(config, Path(path))
     if kind == "task-note" and short_uuid:
         key, existing = _task_entry(data, task_uuid, short_uuid)
+        if not existing.get("note_path"):
+            return
         _store_task(data, key, {
             "task_short_uuid": short_uuid,
             "task_uuid": task_uuid or existing.get("task_uuid"),
-            "note_path": rel_path,
+            "note_path": existing.get("note_path"),
             "chain_id": chain_id or existing.get("chain_id"),
             "last_note_at": ts or existing.get("last_note_at"),
             "last_event_at": existing.get("last_event_at"),
         })
     elif kind == "chain-note" and chain_id:
+        if chain_id not in data["chains"]:
+            return
         data["chains"][chain_id] = {
             "chain_id": chain_id,
-            "note_path": rel_path,
+            "note_path": data["chains"][chain_id].get("note_path"),
             "last_note_at": ts,
         }
     elif kind == "project-note" and project:
+        if project not in data["projects"]:
+            return
         data["projects"][project] = {
             "project": project,
-            "note_path": rel_path,
+            "note_path": data["projects"][project].get("note_path"),
             "last_note_at": ts,
         }
 

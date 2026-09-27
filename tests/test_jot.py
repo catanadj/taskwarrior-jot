@@ -906,6 +906,15 @@ class FrontMatterTests(unittest.TestCase):
         self.assertEqual(metadata, reparsed)
         self.assertEqual(body, rebody)
 
+    def test_round_trip_preserves_empty_string_scalars(self) -> None:
+        rendered = render_document(OrderedDict([("project", "")]), "note")
+
+        metadata, body = parse_document(rendered)
+
+        self.assertEqual(metadata["project"], "")
+        self.assertIn('project: ""', rendered)
+        self.assertEqual(body, "\nnote\n")
+
     def test_unterminated_front_matter_is_rejected(self) -> None:
         source = "---\nkind: task-note\n\n# Body that must not be discarded\n"
         with self.assertRaisesRegex(RuntimeError, "unterminated front matter"):
@@ -3460,8 +3469,9 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("updated:", note_text)
 
         index_data = json.loads((self.home / ".task" / "jot" / "index.json").read_text(encoding="utf-8"))
-        self.assertEqual(index_data["tasks"]["2d6d7d7d"]["chain_id"], "a4bf5egh")
-        self.assertTrue(index_data["tasks"]["2d6d7d7d"]["note_path"].startswith("tasks/"))
+        task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+        self.assertEqual(index_data["tasks"][task_uuid]["chain_id"], "a4bf5egh")
+        self.assertTrue(index_data["tasks"][task_uuid]["note_path"].startswith("tasks/"))
 
         ops_lines = (self.home / ".task" / "jot" / "ops.jsonl").read_text(encoding="utf-8").strip().splitlines()
         self.assertEqual(len(ops_lines), 1)
@@ -4618,7 +4628,8 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertIn("piped note", listed.stdout)
 
         index_data = json.loads((self.home / ".task" / "jot" / "index.json").read_text(encoding="utf-8"))
-        self.assertIsNotNone(index_data["tasks"]["2d6d7d7d"]["last_event_at"])
+        task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+        self.assertIsNotNone(index_data["tasks"][task_uuid]["last_event_at"])
 
     def test_export_json_contract(self) -> None:
         task = {
@@ -4995,8 +5006,9 @@ class CliIntegrationTests(JotCliTestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
         rebuilt = json.loads((jot_root / "index.json").read_text(encoding="utf-8"))
-        self.assertIn("2d6d7d7d", rebuilt["tasks"])
-        self.assertEqual(rebuilt["tasks"]["2d6d7d7d"]["chain_id"], "a4bf5egh")
+        task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+        self.assertIn(task_uuid, rebuilt["tasks"])
+        self.assertEqual(rebuilt["tasks"][task_uuid]["chain_id"], "a4bf5egh")
 
     def test_rebuild_index_command_reports_counts(self) -> None:
         jot_root = self.home / ".task" / "jot"
@@ -5009,6 +5021,7 @@ class CliIntegrationTests(JotCliTestCase):
                 """\
                 ---
                 kind: task-note
+                task_uuid: 2d6d7d7d-1111-2222-3333-444444444444
                 task_short_uuid: 2d6d7d7d
                 description: Fix billing discrepancy
                 project: finance.audit
@@ -5347,6 +5360,22 @@ class CliIntegrationTests(JotCliTestCase):
 
 
 class CanonicalIndexTests(unittest.TestCase):
+    def test_migrate_index_keys_accepts_canonical_and_short_alias_for_one_task(self) -> None:
+        task_uuid = "abcdef12-3456-7890-abcd-ef1234567890"
+        entry = {"task_short_uuid": "abcdef12", "task_uuid": task_uuid}
+        source = {
+            "version": 1,
+            "updated": "old",
+            "tasks": {task_uuid: entry, "abcdef12": entry},
+            "chains": {},
+            "projects": {},
+        }
+
+        migrated, collisions = migrate_index_keys(source)
+
+        self.assertEqual(set(migrated["tasks"]), {task_uuid})
+        self.assertEqual(collisions, [])
+
     def test_migrate_index_keys_uses_full_uuid_and_reports_short_collisions(self) -> None:
         source = {
             "version": 1,

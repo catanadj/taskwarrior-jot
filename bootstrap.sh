@@ -4,7 +4,7 @@
 set -euo pipefail
 
 REPOSITORY="${JOT_REPOSITORY:-https://github.com/catanadj/taskwarrior-jot}"
-VERSION="${JOT_VERSION:-v1.0.3}"
+VERSION="${JOT_VERSION:-v1.0.4}"
 ARCHIVE_URL="${JOT_ARCHIVE_URL:-}"
 CHECKSUM="${JOT_SHA256:-}"
 CHECKSUM_URL="${JOT_CHECKSUM_URL:-}"

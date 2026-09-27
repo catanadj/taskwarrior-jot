@@ -9,9 +9,12 @@ from unittest import mock
 from jot_core.doctor import (
     _directory_check,
     _editor_check,
+    _index_check,
     _timewarrior_check,
     run_doctor,
 )
+from jot_core.frontmatter import write_document
+from jot_core.index import rebuild_index, save_index
 from jot_core.models import AppConfig
 
 
@@ -77,6 +80,28 @@ class DoctorTests(unittest.TestCase):
             check = _timewarrior_check(SimpleNamespace(timewarrior_enabled=True))
         self.assertFalse(check.ok)
         self.assertEqual(check.severity, "warning")
+
+    def test_index_check_accepts_rebuilt_full_and_short_task_keys(self) -> None:
+        with TemporaryDirectory(prefix="jot-doctor-index-alias-") as temporary:
+            root = Path(temporary)
+            config = self._config(root)
+            config.tasks_dir.mkdir(parents=True)
+            task_uuid = "2d6d7d7d-1111-2222-3333-444444444444"
+            write_document(
+                config.tasks_dir / "2d6d7d7d--task.md",
+                {
+                    "kind": "task-note",
+                    "task_uuid": task_uuid,
+                    "task_short_uuid": "2d6d7d7d",
+                },
+                "note",
+            )
+            save_index(config, rebuild_index(config))
+
+            check = _index_check(config)
+
+            self.assertTrue(check.ok, check.detail)
+            self.assertIn("stale=False", check.detail)
 
 
 if __name__ == "__main__":

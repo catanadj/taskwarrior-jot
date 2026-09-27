@@ -41,11 +41,13 @@ inclusive local date range in `:YYYY-MM-DD..YYYY-MM-DD` form. It filters notes
 by their last updated timestamp. A positional task reference still shows the
 task summary, as in `jot list 42`.
 
-Note templates and text entry support `{date}`, `{time}`, `{datetime}`,
+Note templates and text entry support `{date}`, `{time}`, `{datetime}`, `{now}`,
 `{timezone}`, `{task_short_uuid}`, `{task_uuid}`, `{description}`, `{project}`,
 `{chain_id}`, `{project_path}`, `{link}`, `{created}`, and `{updated}`. Date and
-time use the local timezone at the time text is entered; task identifiers use
-the short UUID where intended for user-facing text. Unknown placeholders stay
+time use the local timezone at the time text is entered. `{now}` is a concise
+alias for `{datetime}`; both use local ISO format (`YYYY-MM-DDTHH:MM:SS+03`,
+or `+03:30` when the offset has minutes). Task identifiers use the short UUID
+where intended for user-facing text. Unknown placeholders stay
 literal and produce a warning. Prefix a placeholder with `\\` to keep it
 literal, for example `\\{date}`. After editing a note, Jot shows the proposed
 substitutions and asks before applying them. Set

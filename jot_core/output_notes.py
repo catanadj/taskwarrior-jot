@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Callable, Mapping
+
+from .time_format import format_local_iso_datetime
 
 
 @dataclass(frozen=True)
@@ -85,12 +88,25 @@ def emit_compact_notes(payload: Mapping[str, Any], *, p: NoteOutputPrimitives) -
             continue
         p.write_section_title(f"{label} ({len(group)})")
         for item in group:
-            updated = str(item.get("updated") or "unknown").strip()
+            updated = _format_local_timestamp(str(item.get("updated") or "").strip())
             identifier = str(item.get("id") or "").strip()
             title = str(item.get("title") or "").strip()
-            summary = "  ".join(part for part in (identifier, title) if part)
-            line = f"{updated}  {summary}" if summary else updated
-            sys.stdout.write(f"  {p.style(line, color='identity', bold=True)}\n")
+            parts = [p.style(updated, color="muted")]
+            if identifier:
+                parts.append(p.style(identifier, color="identity", bold=True))
+            if title:
+                parts.append(p.style(title, color="title"))
+            sys.stdout.write(f"  {'  '.join(parts)}\n")
+
+
+def _format_local_timestamp(value: str) -> str:
+    if not value:
+        return "unknown"
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
+    return format_local_iso_datetime(parsed.astimezone())
 
 
 def emit_note_like(command: str, payload: Mapping[str, Any], *, p: NoteOutputPrimitives) -> None:
