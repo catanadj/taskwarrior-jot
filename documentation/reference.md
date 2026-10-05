@@ -36,10 +36,12 @@ Most read and inspection commands accept `--json`. Command names and common
 subcommands support unambiguous partial matching, for example `jot prog t 42
 sh`.
 
-`jot list` accepts `:day`, `:week`, `:month`, `:year`, `:lastyear`, or an
-inclusive local date range in `:YYYY-MM-DD..YYYY-MM-DD` form. It filters notes
-by their last updated timestamp. A positional task reference still shows the
-task summary, as in `jot list 42`.
+`jot list` accepts `:yesterday`, `:day`, `:week`, `:month`, `:quarter`,
+`:year`, `:lastweek`, `:lastmonth`, `:lastquarter`, `:lastyear`, or an
+inclusive local date range in `:YYYY-MM-DD..YYYY-MM-DD` form. Named periods use
+local calendar dates; weeks run Monday through Sunday and quarters follow the
+calendar year. The filter matches notes by their last updated timestamp. A
+positional task reference still shows the task summary, as in `jot list 42`.
 
 Note templates and text entry support `{date}`, `{time}`, `{datetime}`, `{now}`,
 `{timezone}`, `{task_short_uuid}`, `{task_uuid}`, `{description}`, `{project}`,
