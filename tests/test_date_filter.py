@@ -14,6 +14,7 @@ class ListDateFilterTests(unittest.TestCase):
         today = date(2026, 9, 23)
         expected = {
             ":yesterday": (date(2026, 9, 22), date(2026, 9, 22)),
+            ":today": (date(2026, 9, 23), date(2026, 9, 23)),
             ":day": (date(2026, 9, 23), date(2026, 9, 23)),
             ":week": (date(2026, 9, 21), date(2026, 9, 27)),
             ":month": (date(2026, 9, 1), date(2026, 9, 30)),
@@ -66,14 +67,14 @@ class ListDateFilterTests(unittest.TestCase):
             time.tzset()
 
     def test_invalid_periods_and_date_ranges_are_rejected(self) -> None:
-        for value in (":today", ":2026-09-30..2026-09-01", ":2026-02-30..2026-03-01", ":2026-09-01-2026-09-30"):
+        for value in (":tomorrow", ":2026-09-30..2026-09-01", ":2026-02-30..2026-03-01", ":2026-09-01-2026-09-30"):
             with self.subTest(value=value), self.assertRaises(RuntimeError):
                 parse_list_date_filter(value, today=date(2026, 9, 23))
 
         with self.assertRaises(RuntimeError) as raised:
-            parse_list_date_filter(":today", today=date(2026, 9, 23))
+            parse_list_date_filter(":tomorrow", today=date(2026, 9, 23))
         for selector in (
-            ":yesterday", ":day", ":week", ":month", ":quarter", ":year",
+            ":yesterday", ":today", ":day", ":week", ":month", ":quarter", ":year",
             ":lastweek", ":lastmonth", ":lastquarter", ":lastyear",
         ):
             self.assertIn(selector, str(raised.exception))

@@ -7,7 +7,7 @@ import re
 
 DATE_RANGE_RE = re.compile(r"^:?(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$")
 DATE_FILTER_HELP = (
-    "use :yesterday, :day, :week, :month, :quarter, :year, :lastweek, "
+    "use :yesterday, :today, :day, :week, :month, :quarter, :year, :lastweek, "
     ":lastmonth, :lastquarter, :lastyear, or :YYYY-MM-DD..YYYY-MM-DD"
 )
 
@@ -53,7 +53,7 @@ def parse_list_date_filter(
     period_end: date
     if raw == ":yesterday":
         period_start = period_end = local_today - timedelta(days=1)
-    elif raw == ":day":
+    elif raw in {":today", ":day"}:
         period_start = period_end = local_today
     elif raw == ":week":
         period_start = local_today - timedelta(days=local_today.weekday())
