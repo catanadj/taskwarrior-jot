@@ -20,6 +20,8 @@ class TuiState:
     time_rows: list[dict[str, Any]] = field(default_factory=list)
     time_period: str = "week"
     current_search_query: str = ""
+    search_include_title: bool = True
+    search_include_content: bool = True
     note_filter_kind: str = ""
     note_filter_project: str = ""
     task_filter_project: str = ""

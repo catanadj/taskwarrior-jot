@@ -117,6 +117,50 @@ class SearchRankingTests(unittest.TestCase):
         self.assertEqual([Path(item.path).name for item in results.trash], ["old.md", "new.md"])
         self.assertEqual([item.raw["ts"] for item in results.events], ["2026-01-01T00:00:00Z", "2025-01-01T00:00:00Z"])
 
+    def test_interactive_search_can_fuzzy_match_titles_without_matching_content(self) -> None:
+        write_document(
+            self.config.tasks_dir / "task.md",
+            {"kind": "task-note", "description": "Orchid care", "task_short_uuid": "abc12345"},
+            "Details about watering",
+        )
+        write_document(
+            self.config.tasks_dir / "body.md",
+            {"kind": "task-note", "description": "Other note"},
+            "Orchid care details",
+        )
+
+        results = search_all(
+            self.config,
+            "orhid",
+            title=True,
+            content=False,
+            fuzzy_title=True,
+        )
+
+        self.assertEqual([Path(item.path).name for item in results.notes], ["task.md"])
+        self.assertEqual(results.notes[0].raw["match_type"], "title")
+
+    def test_interactive_content_scope_includes_headings_ids_and_events_not_titles(self) -> None:
+        write_document(
+            self.config.tasks_dir / "task.md",
+            {"kind": "task-note", "description": "Orchid care", "task_short_uuid": "abc12345"},
+            "## Watering schedule\nReview weekly",
+        )
+        (self.config.root_dir / "ops.jsonl").write_text(
+            json.dumps({"op": "event_add", "task_short_uuid": "abc12345", "annotation": "Watering done"}) + "\n",
+            encoding="utf-8",
+        )
+
+        title_only = search_all(self.config, "orchid", title=False, content=True)
+        content_results = search_all(self.config, "watering", title=False, content=True)
+        identity_results = search_all(self.config, "abc12345", title=False, content=True)
+
+        self.assertEqual(title_only.notes, ())
+        self.assertEqual(len(content_results.notes), 1)
+        self.assertEqual(content_results.notes[0].raw["match_type"], "heading")
+        self.assertEqual(len(content_results.events), 1)
+        self.assertEqual(len(identity_results.notes), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

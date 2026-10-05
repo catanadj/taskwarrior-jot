@@ -286,8 +286,21 @@ class JotService:
             item["progress"] = " | ".join(summaries) or "-"
         return [TaskSummary.from_mapping(item) for item in items]
 
-    def search(self, query: str) -> SearchResults:
-        return search_all(self.config, query)
+    def search(
+        self,
+        query: str,
+        *,
+        title: bool = True,
+        content: bool = True,
+        fuzzy_title: bool = False,
+    ) -> SearchResults:
+        return search_all(
+            self.config,
+            query,
+            title=title,
+            content=content,
+            fuzzy_title=fuzzy_title,
+        )
 
     def restore_note_trash(self, trash_path: str) -> TrashItem:
         selected_path = Path(trash_path).resolve()

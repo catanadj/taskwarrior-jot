@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-import importlib.util
 from pathlib import Path
 import shutil
 import subprocess
@@ -16,6 +15,7 @@ from .models import AppConfig, CommandResult, DoctorCheck, DoctorReport
 from .ops import ops_log_path, read_ops
 from .schema import inspect_note_schemas
 from .taskwarrior import TaskwarriorClient
+from .tui_compat import tui_dependency_status
 from .trash import list_trash, repair_trash
 
 
@@ -284,13 +284,13 @@ def _editor_check(editor_command: str) -> DoctorCheck:
 
 
 def _tui_check() -> DoctorCheck:
-    if importlib.util.find_spec("textual") is None:
-        return DoctorCheck(
-            name="tui",
-            ok=True,
-            detail="optional dependency missing; CLI available, install textual to use `jot tui`",
-        )
-    return DoctorCheck(name="tui", ok=True, detail="textual available")
+    status = tui_dependency_status()
+    return DoctorCheck(
+        name="tui",
+        ok=status.compatible,
+        detail=status.detail,
+        severity="warning" if not status.ready else "error",
+    )
 
 
 def _timewarrior_check(config: AppConfig) -> DoctorCheck:

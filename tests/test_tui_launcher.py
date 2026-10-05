@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 from jot_tui import launcher
@@ -19,6 +20,13 @@ class TuiLauncherTests(unittest.TestCase):
                 self.assertEqual(launcher.main(["tui"]), 0)
         tui.assert_called_once_with()
 
+        with mock.patch.object(launcher.sys.stdin, "isatty", return_value=True), mock.patch.object(
+            launcher.sys.stdout, "isatty", return_value=True
+        ), mock.patch("jot_tui.launcher._run_tui", return_value=0) as tui:
+            with mock.patch("jot_tui.launcher.expand_command_prefixes", return_value=["search"]):
+                self.assertEqual(launcher.main(["search"]), 0)
+        tui.assert_called_once_with(initial_tab="search-tab")
+
         with mock.patch("jot_tui.launcher.core_cli.main", return_value=2) as cli:
             with mock.patch("jot_tui.launcher.expand_command_prefixes", return_value=["show", "42"]):
                 self.assertEqual(launcher.main(["show", "42"]), 2)
@@ -30,6 +38,14 @@ class TuiLauncherTests(unittest.TestCase):
         ), mock.patch("jot_tui.launcher.core_cli.main", return_value=0) as cli:
             self.assertEqual(launcher.main([]), 0)
         cli.assert_called_once_with([])
+
+    def test_main_keeps_bare_search_noninteractive(self) -> None:
+        with mock.patch.object(launcher.sys.stdin, "isatty", return_value=False), mock.patch.object(
+            launcher.sys.stdout, "isatty", return_value=False
+        ), mock.patch("jot_tui.launcher.core_cli.main", return_value=2) as cli:
+            with mock.patch("jot_tui.launcher.expand_command_prefixes", return_value=["search"]):
+                self.assertEqual(launcher.main(["search"]), 2)
+        cli.assert_called_once_with(["search"])
 
     def test_main_falls_back_to_cli_for_ambiguous_prefix(self) -> None:
         with mock.patch(
@@ -52,21 +68,39 @@ class TuiLauncherTests(unittest.TestCase):
         context = mock.Mock()
         context.config.color_mode = "never"
         service = mock.Mock()
-        with mock.patch("jot_tui.launcher.build_app_context", return_value=context), mock.patch(
-            "jot_tui.launcher.ensure_app_dirs"
-        ) as ensure, mock.patch("jot_tui.launcher.configure_output") as configure, mock.patch(
-            "jot_tui.launcher.JotService", return_value=service
-        ), mock.patch("jot_tui.app.run_tui", return_value=4) as run_tui:
+        ready = SimpleNamespace(ready=True, detail="Textual and Rich available")
+        with mock.patch("jot_tui.launcher.tui_dependency_status", return_value=ready), mock.patch(
+            "jot_tui.launcher.build_app_context", return_value=context
+        ), mock.patch("jot_tui.launcher.ensure_app_dirs") as ensure, mock.patch(
+            "jot_tui.launcher.configure_output"
+        ) as configure, mock.patch("jot_tui.launcher.JotService", return_value=service), mock.patch(
+            "jot_tui.app.run_tui", return_value=4
+        ) as run_tui:
             self.assertEqual(launcher._run_tui(), 4)
         ensure.assert_called_once_with(context.config)
         configure.assert_called_once_with(color_mode="never")
         run_tui.assert_called_once()
 
-        with mock.patch("jot_tui.launcher.build_app_context", side_effect=RuntimeError("broken")), mock.patch(
+        with mock.patch("jot_tui.launcher.tui_dependency_status", return_value=ready), mock.patch(
+            "jot_tui.launcher.build_app_context", side_effect=RuntimeError("broken")
+        ), mock.patch("jot_tui.launcher.warn") as warn:
+            self.assertEqual(launcher._run_tui(), 1)
+        warn.assert_called_once()
+
+    def test_tui_runner_stops_before_launch_on_incompatible_dependencies(self) -> None:
+        with mock.patch(
+            "jot_tui.launcher.tui_dependency_status",
+            return_value=SimpleNamespace(
+                ready=False,
+                detail="incompatible Textual/Rich; upgrade Rich",
+            ),
+        ), mock.patch("jot_tui.launcher.build_app_context") as build_context, mock.patch(
             "jot_tui.launcher.warn"
         ) as warn:
             self.assertEqual(launcher._run_tui(), 1)
-        warn.assert_called_once()
+
+        build_context.assert_not_called()
+        warn.assert_called_once_with("incompatible Textual/Rich; upgrade Rich")
 
 
 if __name__ == "__main__":

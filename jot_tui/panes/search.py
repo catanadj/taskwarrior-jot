@@ -5,11 +5,13 @@ from __future__ import annotations
 
 def compose_search_pane():
     from textual.containers import Horizontal, Vertical
-    from textual.widgets import DataTable, Input, Static, TabbedContent, TabPane
+    from textual.widgets import Checkbox, DataTable, Input, Static, TabbedContent, TabPane
 
     with Vertical():
         with Horizontal(id="search-bar"):
-            yield Input(placeholder="Search notes/events and press Enter", id="search-input")
+            yield Input(placeholder="Type to search titles and note content", id="search-input")
+            yield Checkbox("Title", value=True, id="search-title-toggle")
+            yield Checkbox("Content", value=True, id="search-content-toggle")
         with TabbedContent(initial="search-notes-pane", id="search-results-tabs"):
             with TabPane("Notes", id="search-notes-pane"):
                 notes = DataTable(id="search-notes-table", cursor_type="row")

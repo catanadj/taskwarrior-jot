@@ -8,6 +8,7 @@ from jot_core.command_prefix import AmbiguousCommandPrefix, expand_command_prefi
 from jot_core.config import ensure_app_dirs
 from jot_core.output import configure_output, warn
 from jot_core.services import JotService
+from jot_core.tui_compat import tui_dependency_status
 from jot_core import cli as core_cli
 
 
@@ -26,6 +27,10 @@ def main(argv: list[str] | None = None) -> int:
         return core_cli.main(args)
     if expanded and expanded[0] == "tui":
         return _run_tui()
+    if expanded == ["search"]:
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            return _run_tui(initial_tab="search-tab")
+        return core_cli.main(args)
     return core_cli.main(args)
 
 
@@ -38,14 +43,21 @@ def _run_command_browser() -> int:
         return core_cli.main([])
 
 
-def _run_tui() -> int:
+def _run_tui(*, initial_tab: str = "browse-tab") -> int:
+    status = tui_dependency_status()
+    if not status.ready:
+        warn(status.detail)
+        return 1
     try:
         from .app import run_tui
 
         ctx = build_app_context()
         ensure_app_dirs(ctx.config)
         configure_output(color_mode=ctx.config.color_mode)
-        return run_tui(JotService(config=ctx.config, taskwarrior=ctx.taskwarrior))
+        return run_tui(
+            JotService(config=ctx.config, taskwarrior=ctx.taskwarrior),
+            initial_tab=initial_tab,
+        )
     except Exception as exc:
         warn(f"failed to load TUI: {exc}")
         return 1

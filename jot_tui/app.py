@@ -207,6 +207,7 @@ def build_tui(
     service: JotService,
     *,
     session_refresh_seconds: float | None = 60,
+    initial_tab: str = "browse-tab",
 ) -> Any:
     try:
         from textual.app import App, ComposeResult
@@ -303,6 +304,9 @@ def build_tui(
             self.state = TuiState()
             self.svc = svc
             self.session_refresh_seconds = session_refresh_seconds
+            self.initial_tab = initial_tab
+            self._search_timer = None
+            self._search_generation = 0
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=True)
@@ -321,6 +325,7 @@ def build_tui(
             yield Footer()
 
         async def on_mount(self) -> None:
+            self.query_one("#main-tabs", TabbedContent).active = self.initial_tab
             await self._refresh_recent_async()
             await self._refresh_tasks_async()
             await self._refresh_projects_async()
@@ -332,6 +337,8 @@ def build_tui(
                     self._refresh_time_sessions_async,
                 )
             self._update_action_hints()
+            if self.initial_tab == "search-tab":
+                self.query_one("#search-input", Input).focus()
 
         async def action_refresh(self) -> None:
             await self._refresh_recent_async()
@@ -874,6 +881,9 @@ def build_tui(
         def on_input_submitted(self, event: Input.Submitted) -> None:
             if event.input.id != "search-input":
                 return
+            if self._search_timer is not None:
+                self._search_timer.stop()
+                self._search_timer = None
             query = event.value.strip()
             self.state.current_search_query = query
             if not query:
@@ -888,6 +898,12 @@ def build_tui(
             self._run_search(query)
 
         def on_input_changed(self, event: Input.Changed) -> None:
+            if event.input.id == "search-input":
+                query = event.value.strip()
+                self.state.current_search_query = query
+                self._search_generation += 1
+                self._schedule_search(query, self._search_generation)
+                return
             if event.input.id == "notes-filter-kind":
                 self.state.note_filter_kind = event.value.strip()
                 asyncio.create_task(self._refresh_notes_async())
@@ -905,6 +921,12 @@ def build_tui(
                 self._render_tasks_table()
 
         def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+            if event.checkbox.id in {"search-title-toggle", "search-content-toggle"}:
+                self.state.search_include_title = bool(self.query_one("#search-title-toggle", Checkbox).value)
+                self.state.search_include_content = bool(self.query_one("#search-content-toggle", Checkbox).value)
+                self._search_generation += 1
+                self._schedule_search(self.state.current_search_query, self._search_generation)
+                return
             if event.checkbox.id != "task-filter-notes":
                 return
             self.state.task_filter_notes_only = bool(event.value)
@@ -1351,8 +1373,28 @@ def build_tui(
                     str(item.get("display_range") or ""),
                 )
 
-        def _run_search(self, query: str) -> None:
-            asyncio.create_task(self._run_search_async(query))
+        def _run_search(self, query: str, *, generation: int | None = None) -> None:
+            asyncio.create_task(self._run_search_async(query, generation=generation))
+
+        def _schedule_search(self, query: str, generation: int) -> None:
+            if self._search_timer is not None:
+                self._search_timer.stop()
+            if not query:
+                self._clear_search_results()
+                self._search_timer = None
+                return
+            self._search_timer = self.set_timer(
+                0.25,
+                lambda: self._run_search(query, generation=generation),
+            )
+
+        def _clear_search_results(self) -> None:
+            for table_id in ("search-notes-table", "search-trash-table", "search-events-table"):
+                self.query_one(f"#{table_id}", DataTable).clear()
+            self.state.search_note_rows = []
+            self.state.search_trash_rows = []
+            self.state.search_event_rows = []
+            self._update_search_results_summary()
 
         def _render_tasks_table(self) -> None:
             table = self.query_one("#tasks-table", DataTable)
@@ -1392,7 +1434,10 @@ def build_tui(
                 return False
             return True
 
-        async def _run_search_async(self, query: str) -> None:
+        async def _run_search_async(self, query: str, *, generation: int | None = None) -> None:
+            if generation is None:
+                self._search_generation += 1
+                generation = self._search_generation
             notes_table = self.query_one("#search-notes-table", DataTable)
             trash_table = self.query_one("#search-trash-table", DataTable)
             events_table = self.query_one("#search-events-table", DataTable)
@@ -1400,13 +1445,23 @@ def build_tui(
             trash_table.clear()
             events_table.clear()
             try:
-                data = await asyncio.to_thread(self.svc.search, query)
+                data = await asyncio.to_thread(
+                    self.svc.search,
+                    query,
+                    title=self.state.search_include_title,
+                    content=self.state.search_include_content,
+                    fuzzy_title=True,
+                )
             except Exception as exc:
+                if generation != self._search_generation:
+                    return
                 self.state.search_note_rows = []
                 self.state.search_trash_rows = []
                 self.state.search_event_rows = []
                 self._update_search_results_summary()
                 self.notify(f"Search failed: {exc}", severity="error")
+                return
+            if generation != self._search_generation or query != self.state.current_search_query:
                 return
             self.state.search_note_rows = list(data.get("notes", []))
             self.state.search_trash_rows = list(data.get("trash", []))
@@ -2516,7 +2571,7 @@ def build_tui(
     return JotTUI(service)
 
 
-def run_tui(service: JotService) -> int:
-    app = build_tui(service)
+def run_tui(service: JotService, *, initial_tab: str = "browse-tab") -> int:
+    app = build_tui(service, initial_tab=initial_tab)
     app.run()
     return 0

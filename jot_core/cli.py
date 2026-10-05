@@ -930,7 +930,11 @@ def build_parser(note_root: str | None = None) -> argparse.ArgumentParser:
         help="search note files and logged events",
         description="Search task notes, chain notes, project notes, and the logged event stream.",
     )
-    search.add_argument("query", help="case-insensitive search text")
+    search.add_argument(
+        "query",
+        nargs="?",
+        help="case-insensitive search text; omit to search interactively in a terminal",
+    )
     search.add_argument(
         "--kind",
         action="append",
@@ -1001,6 +1005,10 @@ def main(argv: list[str] | None = None) -> int:
     except AmbiguousCommandPrefix as exc:
         parser.error(str(exc))
     args = parser.parse_args(argv)
+
+    if args.command == "search" and not args.query:
+        warn("search needs a query outside the TUI; run `jot search TEXT` or use an interactive terminal")
+        return 2
 
     if args.command == "completion":
         sys.stdout.write(render_completion(args.shell, parser))
@@ -2340,6 +2348,8 @@ def _run_search(
     raw_project: str | None,
     raw_chain_id: str | None,
 ) -> CommandResult:
+    if not str(query or "").strip():
+        raise RuntimeError("search needs a query; run `jot search` in a terminal to search interactively")
     kinds = normalize_kinds(raw_kinds)
     project = normalize_project(raw_project)
     chain_id = normalize_chain_id(raw_chain_id)

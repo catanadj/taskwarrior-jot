@@ -21,7 +21,8 @@ The installer places `jot` in `~/.local/bin` and stores notes below the active
 Taskwarrior data directory. It respects `TASKDATA`, `TASKRC`, and Taskwarrior
 configuration.
 
-Python 3.11 or newer is required. The optional TUI requires `textual`.
+Python 3.11 or newer is required. The optional TUI requires compatible `textual`
+and `rich` packages; `jot doctor` checks that the installed pair can render.
 
 ## Start Using It
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from difflib import SequenceMatcher
 from pathlib import Path
 import re
 from typing import Any
@@ -22,6 +23,9 @@ def search_all(
     kinds: set[str] | None = None,
     project: str | None = None,
     chain_id: str | None = None,
+    title: bool = True,
+    content: bool = True,
+    fuzzy_title: bool = False,
 ) -> SearchResults:
     needle = str(query or "").strip().lower()
     if not needle:
@@ -29,8 +33,14 @@ def search_all(
     selected = set(kinds or ALLOWED_KINDS)
     task_metadata = _task_note_metadata(config)
 
-    notes = _search_notes(config, needle, selected, project=project, chain_id=chain_id)
-    trash = _search_trash_notes(config, needle, selected, project=project, chain_id=chain_id)
+    notes = _search_notes(
+        config, needle, selected, project=project, chain_id=chain_id,
+        title=title, content=content, fuzzy_title=fuzzy_title,
+    )
+    trash = _search_trash_notes(
+        config, needle, selected, project=project, chain_id=chain_id,
+        title=title, content=content, fuzzy_title=fuzzy_title,
+    )
     events = _search_events(
         config,
         needle,
@@ -38,6 +48,7 @@ def search_all(
         project=project,
         chain_id=chain_id,
         task_metadata=task_metadata,
+        content=content,
     )
     return SearchResults.from_mapping({"notes": notes, "trash": trash, "events": events})
 
@@ -49,6 +60,9 @@ def _search_notes(
     *,
     project: str | None,
     chain_id: str | None,
+    title: bool,
+    content: bool,
+    fuzzy_title: bool,
 ) -> list[dict[str, Any]]:
     hits: list[dict[str, Any]] = []
     for base, pattern, kind in (
@@ -74,6 +88,9 @@ def _search_notes(
                 task_short_uuid=str(metadata.get("task_short_uuid") or ""),
                 body=str(body or ""),
                 identity=path.name,
+                title=title,
+                content=content,
+                fuzzy_title=fuzzy_title,
             )
             if not match_type:
                 continue
@@ -103,6 +120,9 @@ def _search_trash_notes(
     *,
     project: str | None,
     chain_id: str | None,
+    title: bool,
+    content: bool,
+    fuzzy_title: bool,
 ) -> list[dict[str, Any]]:
     hits: list[dict[str, Any]] = []
     if not config.trash_dir.exists():
@@ -130,6 +150,9 @@ def _search_trash_notes(
             task_short_uuid=str(manifest.get("task_short_uuid") or metadata.get("task_short_uuid") or ""),
             body=str(body or ""),
             identity=f"{path.name} {original_path}",
+            title=title,
+            content=content,
+            fuzzy_title=fuzzy_title,
         )
         if not match_type:
             continue
@@ -187,8 +210,9 @@ def _search_events(
     project: str | None,
     chain_id: str | None,
     task_metadata: dict[str, dict[str, str]],
+    content: bool,
 ) -> list[dict[str, Any]]:
-    if "event" not in kinds:
+    if "event" not in kinds or not content:
         return []
     hits: list[dict[str, Any]] = []
     for item in read_ops(config):
@@ -237,10 +261,16 @@ def _classify_match(
     task_short_uuid: str,
     body: str,
     identity: str,
+    title: bool = True,
+    content: bool = True,
+    fuzzy_title: bool = False,
 ) -> tuple[str, str]:
-    for title in (description, project):
-        if needle in title.casefold():
-            return "title", _excerpt(title, needle)
+    if title:
+        for value in (description, project):
+            if needle in value.casefold() or (fuzzy_title and _fuzzy_title_match(needle, value)):
+                return "title", _excerpt(value, needle)
+    if not content:
+        return "", ""
     for line in body.splitlines():
         heading = HEADING_RE.match(line.strip())
         if heading and needle in heading.group(1).casefold():
@@ -251,6 +281,17 @@ def _classify_match(
     if needle in identity_text.casefold():
         return "content", _excerpt(identity_text, needle)
     return "", ""
+
+
+def _fuzzy_title_match(needle: str, value: str) -> bool:
+    query_words = re.findall(r"[\w-]+", needle)
+    if not query_words or any(len(word) < 3 for word in query_words):
+        return False
+    words = re.findall(r"[\w-]+", value.casefold())
+    return all(
+        max((SequenceMatcher(None, query_word, word).ratio() for word in words), default=0.0) >= 0.72
+        for query_word in query_words
+    )
 
 
 def _rank_note_hits(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:

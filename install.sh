@@ -297,10 +297,10 @@ for name in task-note.md chain-note.md project-note.md; do
   fi
 done
 
-if python3 -c 'import textual' >/dev/null 2>&1; then
-  TUI_NOTE="TUI available: textual is installed"
+if TUI_STATUS="$(PYTHONPATH="$ACTIVE_DIR${PYTHONPATH:+:$PYTHONPATH}" python3 -m jot_core.tui_compat 2>&1)"; then
+  TUI_NOTE="TUI available: $TUI_STATUS"
 else
-  TUI_NOTE="TUI unavailable: install the optional 'textual' Python package to use 'jot tui'"
+  TUI_NOTE="TUI unavailable: $TUI_STATUS"
 fi
 
 cat <<EOF

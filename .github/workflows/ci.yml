@@ -88,9 +88,11 @@ jobs:
       matrix:
         include:
           - textual: "0.50.1"
-            rich: "13.3.3"
+            rich: "13.3.5"
           - textual: "6.1.0"
             rich: "13.9.4"
+          - textual: "6.1.0"
+            rich: "15.0.0"
 
     steps:
       - name: Check out repository
@@ -159,9 +161,11 @@ jobs:
       - name: Verify installer layout
         run: |
           root=$(mktemp -d)
-          HOME="$root/home" TASKDATA="$root/taskdata" PREFIX="$root/prefix" \
+          install_output=$(HOME="$root/home" TASKDATA="$root/taskdata" PREFIX="$root/prefix" \
             XDG_CONFIG_HOME="$root/config" XDG_DATA_HOME="$root/data" \
-            ./install.sh --no-timelog-hook
+            ./install.sh --no-timelog-hook)
+          printf '%s\n' "$install_output"
+          grep -Fq 'TUI unavailable: optional Textual/Rich dependencies missing' <<<"$install_output"
           test -x "$root/prefix/bin/jot"
           HOME="$root/home" TASKDATA="$root/taskdata" PREFIX="$root/prefix" \
             "$root/prefix/bin/jot" --version

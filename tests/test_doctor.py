@@ -11,6 +11,7 @@ from jot_core.doctor import (
     _editor_check,
     _index_check,
     _timewarrior_check,
+    _tui_check,
     run_doctor,
 )
 from jot_core.frontmatter import write_document
@@ -80,6 +81,21 @@ class DoctorTests(unittest.TestCase):
             check = _timewarrior_check(SimpleNamespace(timewarrior_enabled=True))
         self.assertFalse(check.ok)
         self.assertEqual(check.severity, "warning")
+
+    def test_tui_check_reports_dependency_incompatibility_as_warning(self) -> None:
+        with mock.patch(
+            "jot_core.doctor.tui_dependency_status",
+            return_value=SimpleNamespace(
+                compatible=False,
+                ready=False,
+                detail="Textual 6.1.0 / Rich 13.3.1: missing Rich API",
+            ),
+        ):
+            check = _tui_check()
+
+        self.assertFalse(check.ok)
+        self.assertEqual(check.severity, "warning")
+        self.assertIn("Rich 13.3.1", check.detail)
 
     def test_index_check_accepts_rebuilt_full_and_short_task_keys(self) -> None:
         with TemporaryDirectory(prefix="jot-doctor-index-alias-") as temporary:

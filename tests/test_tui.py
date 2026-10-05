@@ -18,9 +18,9 @@ from jot_core.services import JotService
 from jot_core.taskwarrior import TaskwarriorClient
 
 try:
-    from textual.widgets import Button, DataTable, Input, Static, TabbedContent
+    from textual.widgets import Button, Checkbox, DataTable, Input, Static, TabbedContent
 except ImportError:  # pragma: no cover - exercised in dependency-free CLI environments
-    Button = DataTable = Input = Static = TabbedContent = None  # type: ignore[assignment,misc]
+    Button = Checkbox = DataTable = Input = Static = TabbedContent = None  # type: ignore[assignment,misc]
 
 
 async def _call_inline(function: Any, *args: Any, **kwargs: Any) -> Any:
@@ -374,6 +374,7 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(app.state.search_trash_rows, [])
                 self.assertEqual(app.query_one("#search-trash-table", DataTable).row_count, 0)
                 self.assertEqual(app.query_one("#search-notes-table", DataTable).row_count, 1)
+                app.state.current_search_query = "no-such-note-match"
                 await app._run_search_async("no-such-note-match")
                 self.assertEqual(app.state.search_note_rows, [])
                 self.assertEqual(app.query_one("#search-notes-table", DataTable).row_count, 0)
@@ -411,6 +412,36 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("No matching notes", str(app.query_one("#search-notes-detail", Static).render()))
                 self.assertIn("No matching deleted notes", str(app.query_one("#search-trash-detail", Static).render()))
                 self.assertEqual(app.state.current_search_query, "no-such-result")
+
+    async def test_search_tab_supports_live_search_and_two_default_scopes(self) -> None:
+        with TemporaryDirectory(prefix="jot-tui-live-search-") as temporary:
+            service = real_service_fixture(Path(temporary))
+            app = build_tui(service, session_refresh_seconds=None, initial_tab="search-tab")
+
+            async with app.run_test(size=(100, 34)) as pilot:
+                await pilot.pause()
+                self.assertEqual(app.query_one("#main-tabs", TabbedContent).active, "search-tab")
+                self.assertTrue(app.query_one("#search-title-toggle", Checkbox).value)
+                self.assertTrue(app.query_one("#search-content-toggle", Checkbox).value)
+                self.assertEqual(app.focused.id, "search-input")
+
+                await pilot.press(*"Chapter 4")
+                await pilot.pause(0.5)
+
+                self.assertEqual(app.state.current_search_query, "Chapter 4")
+                self.assertGreaterEqual(app.query_one("#search-notes-table", DataTable).row_count, 1)
+
+                await pilot.click("#search-content-toggle")
+                await pilot.pause(0.35)
+                self.assertEqual(app.query_one("#search-notes-table", DataTable).row_count, 0)
+
+                app.query_one("#search-input", Input).value = "Read book"
+                await pilot.pause(0.35)
+                self.assertEqual(app.query_one("#search-notes-table", DataTable).row_count, 1)
+
+                await pilot.click("#search-title-toggle")
+                await pilot.pause(0.35)
+                self.assertEqual(app.query_one("#search-notes-table", DataTable).row_count, 0)
 
     async def test_note_history_palette_previews_diff_and_restores_revision(self) -> None:
         with TemporaryDirectory(prefix="jot-tui-history-") as temporary:
@@ -551,6 +582,31 @@ class TuiPilotTests(unittest.IsolatedAsyncioTestCase):
             service.update_progress.assert_called_once()
             await app._apply_delete_async(target)
             service.delete_task_note.assert_called_once_with("2d6d7d7d")
+
+    async def test_delete_confirmation_modal_renders_and_can_be_cancelled(self) -> None:
+        from jot_tui.modals.resources import build_common_modals
+
+        app = build_tui(FakeTuiService(), session_refresh_seconds=None)
+        ConfirmDeleteModal, _ResourcePickerModal = build_common_modals()
+        dismissed: list[bool] = []
+
+        async with app.run_test(size=(100, 32)) as pilot:
+            await pilot.pause()
+            app.push_screen(
+                ConfirmDeleteModal(
+                    label="task note",
+                    path="/tmp/task.md",
+                    trash_path="/tmp/.jot_trash/task.md",
+                ),
+                dismissed.append,
+            )
+            await pilot.pause()
+            self.assertEqual(str(app.screen.query_one("#details", Static).render()),
+                             "This will move the note to the trash folder.\n\nFrom: /tmp/task.md\nTo:   /tmp/.jot_trash/task.md")
+            await pilot.click("#cancel-btn")
+            await pilot.pause()
+
+        self.assertEqual(dismissed, [False])
 
     async def test_workspace_editor_and_palette_navigation_cover_project_paths(self) -> None:
         service = FakeTuiService()
